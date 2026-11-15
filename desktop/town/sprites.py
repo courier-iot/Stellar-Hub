@@ -136,6 +136,7 @@ def neon_icon(c, x, y, icon, col):
         "leaf": ["....###", "..#####", ".####.#", ".###.##", ".#.####", "#......"],
         "note": ["..####.", "..#..#.", "..#..#.", "..#..#.", "###.###", "###.###"],
         "rocket": ["...#...", "..###..", "..#.#..", "..###..", ".#####.", "#.#.#.#"],
+        "gavel": [".###...", ".####..", "..###..", "...#.#.", "....#.#", "######."],
     }
     for j, row in enumerate(shapes[icon]):
         for i, ch in enumerate(row):
@@ -446,6 +447,23 @@ WRITING_ICON = ["..........", ".kkkkkkk..", ".kttttttk.", ".ktkkkktk.", ".kttttt
                 ".kttttttk.", ".ktkkkktk.", ".kttttttk.", ".kkkkkkkk."]
 
 
+def b_exchange(lit):
+    c = Canvas(BW, BH)
+    c.box(3, 18, 38, 38, "R")
+    c.rect(3, 18, 38, 2, "y" if lit else "o")
+    c.disc(22, 18, 14, "y" if lit else "o", 6); c.rect(8, 18, 29, 6, ".")       # golden dome
+    c.disc(22, 18, 12, "Y" if lit else "O", 5); c.rect(10, 18, 25, 6, ".")
+    for x in (6, 14, 30, 38):
+        c.rect(x, 22, 2, 33, "M")
+    window(c, 9, 26, 4, 8, lit, "y"); window(c, 31, 26, 4, 8, lit, "y")
+    c.rect(16, 36, 13, 2, "y" if lit else "o")                                  # "SOLD" rail
+    d = door(c, 18, 40, 9, 15)
+    sign(c, 22, 2, "gavel", "y", lit)
+    c.outline()
+    c.rect(0, 55, BW, 1, "k")
+    return c, d
+
+
 STATION = [
     "............kk............",
     "...........kcck...........",
@@ -458,7 +476,7 @@ STATION = [
     "............kk............",
 ]
 
-BUILDERS = {"home": b_home, "gallery": b_gallery, "park": b_park, "library": b_library, "internet_cafe": b_cafe, "post_office": b_post,
+BUILDERS = {"home": b_home, "gallery": b_gallery, "park": b_park, "exchange": b_exchange, "library": b_library, "internet_cafe": b_cafe, "post_office": b_post,
             "salon": b_salon, "bank": b_bank, "workshop": b_workshop, "greenhouse": b_greenhouse,
             "radio_tower": b_radio, "archive": b_archive, "spaceport": b_spaceport}
 ORDER = ["home", "library", "internet_cafe", "post_office", "greenhouse", "radio_tower",

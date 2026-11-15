@@ -9,6 +9,7 @@ import traceback
 from . import prompts, sprites, web_tools
 from .colony import COLOUR_PRICE, FORM_PRICE, ColonyMixin
 from .backup import make_backup
+from .exchange import ExchangeMixin
 from .hobbies import HobbiesMixin, level_for
 from .life import LifeMixin
 from .plants import SPECIES as PLANT_SPECIES
@@ -21,7 +22,7 @@ class BudgetExceeded(Exception):
     pass
 
 
-class Agent(ColonyMixin, LifeMixin, HobbiesMixin):
+class Agent(ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
     def __init__(self, cfg, db, llm, data_dir):
         self.cfg, self.db, self.llm = cfg, db, llm
         self.mem = Memory(db)
@@ -276,6 +277,7 @@ What do you do now?"""
             self.space_event()          # ends an event that has run its course
             self.maybe_space_event()
             self.maybe_digest()
+            self.resolve_auctions()
             self.plan_day_if_new()
             needs = self.grow_needs()
             decision = self.ask(prompts.DECIDE.format(name=self.name, creator=self.creator),
@@ -629,8 +631,11 @@ What do you do now?"""
         paintings = [{**p, "rows": json.loads(p["rows"])} for p in
                      self.db.q("SELECT * FROM paintings ORDER BY id DESC LIMIT 60")]
         col = self.collection()
+        notes = self.db.get("curio_notes", {})
         owned = [{"id": cid, "name": CU.CATALOG[cid]["name"], "kind": CU.CATALOG[cid]["kind"],
-                  "rarity": CU.CATALOG[cid]["rarity"], "count": n, "sprite": CU.sprite(cid)}
+                  "rarity": CU.CATALOG[cid]["rarity"], "count": n, "sprite": CU.sprite(cid),
+                  "about": CU.CATALOG[cid]["about"], "note": (notes.get(cid) or {}).get("text", ""),
+                  "found": (notes.get(cid) or {}).get("source", "")}
                  for cid, n in sorted(col.items())]
         floors = []
         h = self.home()

@@ -52,7 +52,7 @@ class MainActivity : Activity() {
         "post_office" to "Relay Post", "salon" to "Nova Salon", "bank" to "Credit Vault",
         "workshop" to "Fabrication Hangar", "greenhouse" to "Hydro Greenhouse", "radio_tower" to "Radio Tower",
         "archive" to "Archive Vault", "spaceport" to "Spaceport", "gallery" to "Starlight Gallery", "park" to "Low-G Park",
-        "studio" to "Radio Studio", "station" to "Orbital Station"
+        "studio" to "Radio Studio", "station" to "Orbital Station", "exchange" to "Curio Exchange"
     )
     private val verbs = mapOf(
         "journal" to "writing in its journal", "update_personality" to "rethinking who it is", "rest" to "resting",
@@ -73,7 +73,9 @@ class MainActivity : Activity() {
         "upgrade_home" to "adding a floor to its home", "view_collection" to "admiring its collection",
         "observe_sky" to "at the telescope", "write" to "writing", "relax" to "relaxing in the park",
         "solve_puzzle" to "solving a puzzle", "hang_painting" to "hanging a painting", "compose" to "composing music",
-        "play_composition" to "playing its own song", "station_study" to "studying"
+        "play_composition" to "playing its own song", "station_study" to "studying",
+        "check_exchange" to "browsing the Exchange", "sell_curio" to "selling curios", "trade_up" to "trading up curios",
+        "auction_curio" to "starting an auction"
     )
     private val hobbyIcons = mapOf("painting" to "🎨", "writing" to "✍️", "composing" to "🎼", "astronomy" to "🔭",
         "collecting" to "🧺", "games" to "♟️", "gardening" to "🌱", "coding" to "🛠")
@@ -582,8 +584,8 @@ class MainActivity : Activity() {
 
     private fun loadGallery() {
         loading()
-        bgTask({ Pair(it.getObject("/api/gallery"), it.getObject("/api/chess")) }) { (gal, ch) ->
-            if (tab == "gallery") renderGallery(gal, ch)
+        bgTask({ Triple(it.getObject("/api/gallery"), it.getObject("/api/chess"), it.getObject("/api/exchange")) }) { (gal, ch, ex) ->
+            if (tab == "gallery") { renderGallery(gal, ch); renderExchange(ex) }
         }
     }
 
@@ -676,16 +678,56 @@ class MainActivity : Activity() {
         val cu = section("CURIO COLLECTION")
         val cl = gal.optJSONArray("curios") ?: JSONArray()
         cu.addView(label("${cl.length()} of ${gal.optInt("curio_total", 128)} found", 13f, dim))
+        val info = label("Tap a curio to read about it.", 13f, dim)
         val cViews = ArrayList<View>()
         for (i in 0 until cl.length()) {
             val c = cl.getJSONObject(i)
             cViews.add(pixelView(c.getJSONArray("sprite"), pal, 44).apply {
-                setOnClickListener { toast("${c.optString("name")} (${c.optString("rarity")})" + if (c.optInt("count") > 1) " ×${c.optInt("count")}" else "") }
+                setOnClickListener {
+                    val sb = StringBuilder("${c.optString("name")} · ${c.optString("rarity")}")
+                    if (c.optInt("count") > 1) sb.append(" · ×${c.optInt("count")}")
+                    sb.append("\n").append(c.optString("about"))
+                    val note = c.optString("note")
+                    if (note.isNotBlank()) sb.append("\n\n\"").append(note).append("\"")
+                    val found = c.optString("found")
+                    if (found.isNotBlank()) sb.append("\nFirst found: ").append(found)
+                    info.text = sb.toString()
+                    info.setTextColor(textCol)
+                }
             })
         }
         gridInto(cu, cViews, 6)
+        cu.addView(spaced(info))
 
         renderChessCard(ch)
+    }
+
+    private fun renderExchange(ex: JSONObject) {
+        val c = section("CURIO EXCHANGE")
+        c.addView(label("Trade up: 5 spares → 1 of the next rarity. Anything on display is never sold.", 12f, dim))
+        val wanted = ex.optJSONArray("wanted") ?: JSONArray()
+        c.addView(spaced(label("Today's wanted board", 13f, textCol, true)))
+        for (i in 0 until wanted.length()) {
+            val o = wanted.getJSONObject(i)
+            c.addView(label("${o.optString("collector")} wants ${o.optString("name")} (${o.optString("rarity")}) for ◈ ${o.optInt("price")}" +
+                if (o.optBoolean("spare")) "  ✓ has a spare" else "", 13f, if (o.optBoolean("spare")) good else textCol))
+        }
+        val au = ex.optJSONArray("auctions") ?: JSONArray()
+        if (au.length() > 0) c.addView(spaced(label("Auctions", 13f, textCol, true)))
+        for (i in 0 until au.length()) {
+            val x = au.getJSONObject(i)
+            val st = x.optString("status")
+            val info = if (st == "open") "closes ${fmt(x.optDouble("end_ts", 0.0))}" else "best bid ${x.optInt("best_bid")}"
+            c.addView(label("${x.optString("name")} · $st · reserve ${x.optInt("reserve")} · $info", 13f,
+                when (st) { "sold" -> good; "open" -> warn; else -> dim }))
+        }
+        val tr = ex.optJSONArray("trades") ?: JSONArray()
+        if (tr.length() > 0) c.addView(spaced(label("Recent trades", 13f, textCol, true)))
+        for (i in 0 until minOf(8, tr.length())) {
+            val t = tr.getJSONObject(i)
+            val cr = t.optInt("credits")
+            c.addView(label("${t.optString("kind").replace('_', ' ')}: ${t.optString("detail")}" + if (cr > 0) "  +$cr" else "", 12f, dim))
+        }
     }
 
     private fun playSong(id: Int) {

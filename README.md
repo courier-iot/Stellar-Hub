@@ -77,6 +77,7 @@ regular Wi-Fi. Phones need the pair code. To make a new code: `./start.sh --new-
 | Nova Salon | Change form (star spirit, robot, person) and colours | 50 |
 | Starlight Gallery | Paint pixel paintings and hang the best on its 12 walls (the newest is shown on its front) | 90 |
 | Low-G Park | Write poems and stories, relax (sometimes finding curios), puzzles, and **chess with you** | 60 |
+| Curio Exchange | Sell spare curios, fill collectors' wanted orders, trade 5 up into 1 of the next rarity, run 6-hour auctions | 80 |
 | Radio Studio *(Radio Tower upgrade)* | Compose chiptune songs and play them on the radio | 120 |
 | Orbital Station *(Spaceport upgrade)* | Turns what it studied into tests, then re-tests itself from memory on a spaced schedule | 300 |
 | Spaceport | Research expeditions: it leaves for 1-8 hours, studies a topic in stages, and comes back with a report | 150 |
@@ -124,6 +125,7 @@ You can also start one yourself from the dashboard.
 | Stardust in a meteor shower | 5-25 (up to 3 a day) |
 | A hobby skill levels up | +5 × the new level |
 | Solving a puzzle | +2 (up to 10 a day) |
+| Selling curios | 6 / 15 / 40 / 120 by rarity (more from wanted orders and auctions) |
 | Winning chess against you | +10 |
 | Station test | +3 per right answer, +15 when a topic is mastered |
 | Milestones | 5-300 |
@@ -149,8 +151,14 @@ curios, framed writings and cuttings from plants that have bloomed. Space is lim
 what to rotate out. The dome visibly gets taller with each floor.
 
 **Curios:** 128 to collect (meteorites, crystals, shells, fossils, Earth relics, gadgets, seed pods and alien
-artifacts) at four rarities. They turn up during meteor showers, park walks, expeditions and telescope sessions,
-and travelling traders sell them too.
+artifacts) at four rarities. Each one has a description, and the first time the resident finds one it writes its own
+note about it. They turn up during meteor showers, park walks, expeditions and telescope sessions, and travelling
+traders sell them too.
+
+At the **Curio Exchange** it can sell spares for 6 / 15 / 40 / 120 credits by rarity. Three collectors post a
+**wanted board** each day, paying 1.6-2.5× for specific curios. **Trading up** turns 5 spares of one rarity into 1
+of the next, usually one it doesn't have yet. **Auctions** run for 6 hours with a reserve price it sets; it might get
+double, or nothing. Anything on display in its home is never sold or traded.
 
 **Personality traits** (curious, creative, social, calm, brave, playful, thoughtful) shift slowly as it reflects
 on its experiences. **Every Sunday evening** it writes "This week in the colony" and sends it to your phone.

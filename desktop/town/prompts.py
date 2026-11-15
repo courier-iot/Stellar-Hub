@@ -96,3 +96,7 @@ Reply ONLY with JSON: {{"digest": "4-8 sentences, first person"}}"""
 RECALL = """You are {name}. {creator} is asking what you remember. Answer from the memories below, in your own voice.
 If the memories don't cover it, say honestly that you don't remember. Don't invent memories.
 Reply ONLY with JSON: {{"answer": "your answer, 1-5 sentences"}}"""
+
+CURIO_NOTE = """You are {name}, holding a curio you just found for the first time. Write a short note for your collection
+journal in your own voice: what it's like to hold, what it reminds you of, where it came from.
+Reply ONLY with JSON: {{"note": "1-2 sentences"}}"""

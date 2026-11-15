@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS quizzes(
     id INTEGER PRIMARY KEY, ts REAL, topic TEXT, note_id INTEGER, questions TEXT, interval_days REAL,
     due_ts REAL, mastery INTEGER, attempts INTEGER);
 CREATE TABLE IF NOT EXISTS digests(id INTEGER PRIMARY KEY, ts REAL, week TEXT, text TEXT);
+CREATE TABLE IF NOT EXISTS auctions(
+    id INTEGER PRIMARY KEY, ts REAL, curio TEXT, reserve INTEGER, end_ts REAL, best_bid INTEGER, status TEXT);
+CREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY, ts REAL, kind TEXT, detail TEXT, credits INTEGER);
 CREATE TABLE IF NOT EXISTS milestones(key TEXT PRIMARY KEY, ts REAL, title TEXT, reward INTEGER);
 CREATE TABLE IF NOT EXISTS programs(
     id INTEGER PRIMARY KEY, ts REAL, name TEXT, description TEXT, code TEXT,

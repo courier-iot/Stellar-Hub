@@ -147,6 +147,8 @@ def make_server(agent, host, port, pair_code):
                 self.end_headers()
                 self.wfile.write(data)
                 return None
+            if u.path == "/api/exchange":
+                return self._json(agent.exchange_overview())
             if u.path == "/api/gallery":
                 return self._json(agent.gallery_overview())
             if u.path == "/api/chess":

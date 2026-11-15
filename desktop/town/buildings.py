@@ -93,6 +93,19 @@ BUILDINGS = {
             "station_study": "{}  write test questions on a topic you studied, or take a test that's due",
         },
     },
+    "exchange": {
+        "name": "Curio Exchange",
+        "about": ("An auction house for curios. Sell spares, fill collectors' wanted orders for extra credits, "
+                  "trade 5 spares of one rarity up into 1 of the next, or auction something for 6 hours. "
+                  "Only spares can go: anything on display stays."),
+        "locked": True, "unlockable": True, "unlock_price": 80,
+        "actions": {
+            "check_exchange": "{}  see prices, today's wanted board, your auctions and your spares",
+            "sell_curio": "{\"curio\": \"name or id\", \"count\": n}  sell spare curios",
+            "trade_up": "{\"rarity\": \"common|uncommon|rare\", \"kind\": \"optional, e.g. crystal\"}  trade 5 spares for 1 of the next rarity",
+            "auction_curio": "{\"curio\": \"name or id\", \"reserve\": <lowest price you'll accept>}  start a 6-hour auction",
+        },
+    },
     "bank": {
         "name": "Credit Vault",
         "about": "Your colony credits. Check your balance and buy things. You earn credits by keeping routines, finishing goals, caring for plants and doing good work.",
@@ -178,7 +191,8 @@ SATISFIES = {
     "write": ("creativity", 45), "compose": ("creativity", 50), "play_composition": ("rest", 30),
     "observe_sky": ("curiosity", 35), "station_study": ("curiosity", 40), "solve_puzzle": ("curiosity", 25),
     "showcase": ("creativity", 15), "hang_painting": ("creativity", 15), "upgrade_home": ("creativity", 30),
-    "view_collection": ("rest", 15), "build": ("creativity", 40), "move_building": ("creativity", 30), "play_music": ("rest", 45), "water": ("rest", 10), "check_plants": ("rest", 10),
+    "view_collection": ("rest", 15), "check_exchange": ("curiosity", 15), "sell_curio": ("connection", 15),
+    "trade_up": ("creativity", 20), "auction_curio": ("connection", 20), "build": ("creativity", 40), "move_building": ("creativity", 30), "play_music": ("rest", 45), "water": ("rest", 10), "check_plants": ("rest", 10),
 }
 # How much each need grows per turn.
 NEED_GROWTH = {"curiosity": 9, "creativity": 7, "connection": 6, "rest": 4}

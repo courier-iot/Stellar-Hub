@@ -215,7 +215,13 @@
   <section>
     <h2>Curio collection</h2>
     <div id="curiocount" class="meta"></div>
+    <div id="curioinfo"><div class="meta">Click a curio to read about it.</div></div>
     <div id="curios" class="grid scroll" style="margin-top:8px"></div>
+  </section>
+
+  <section>
+    <h2>Curio Exchange</h2>
+    <div id="exchange"></div>
   </section>
 
   <section>
@@ -239,6 +245,7 @@
 <script>
 const NAMES = {home:"Home Dome", library:"Observatory Library", internet_cafe:"Uplink Café", post_office:"Relay Post",
   greenhouse:"Hydro Greenhouse", radio_tower:"Radio Tower", archive:"Archive Vault", salon:"Nova Salon",
+  gallery:"Starlight Gallery", park:"Low-G Park", studio:"Radio Studio", station:"Orbital Station", exchange:"Curio Exchange",
   spaceport:"Spaceport", bank:"Credit Vault", workshop:"Fabrication Hangar"};
 const VERBS = {journal:"writing in its journal", update_personality:"rethinking who it is", rest:"resting",
   recall:"looking through its notes", write_note:"writing a note", research:"researching", read_page:"reading a web page",
@@ -252,7 +259,8 @@ const VERBS = {journal:"writing in its journal", update_personality:"rethinking 
   paint:"painting", showcase:"arranging its home", remove_showcase:"rearranging its home", upgrade_home:"adding a floor to its home",
   view_collection:"admiring its collection", observe_sky:"at the telescope", write:"writing", relax:"relaxing in the park",
   solve_puzzle:"solving a puzzle", hang_painting:"hanging a painting", compose:"composing music", play_composition:"playing its own song",
-  station_study:"studying", build:"starting construction", move_building:"moving a building", set_bedtime:"changing its bedtime", stargaze:"stargazing",
+  station_study:"studying", check_exchange:"browsing the Exchange", sell_curio:"selling curios", trade_up:"trading up curios",
+  auction_curio:"starting an auction", build:"starting construction", move_building:"moving a building", set_bedtime:"changing its bedtime", stargaze:"stargazing",
   plan_colony:"planning the colony", sleep:"sleeping", expedition:"exploring"};
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const when = ts => ts ? new Date(ts * 1000).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"}) : "—";
@@ -409,6 +417,16 @@ async function refresh() {
     `<div class="lvl"><span>${esc(k)}</span><span class="meta">${v}</span></div><div class="bar"><div style="width:${v}%"></div></div>`).join("");
   const gal = await api("/api/gallery"), galKey = JSON.stringify(gal);
   if (galKey !== lastGallery) { lastGallery = galKey; renderGallery(gal); }
+  const ex = await api("/api/exchange");
+  document.getElementById("exchange").innerHTML =
+    `<div class="meta">Sells for: ${Object.entries(ex.prices).map(([r, p]) => `${r} ${p}`).join(" · ")}. Trade up: 5 spares → 1 of the next rarity.</div>
+     <h2 class="sub">Today's wanted board</h2>` +
+    ex.wanted.map(o => `<div class="item">${esc(o.collector)} wants <b>${esc(o.name)}</b> <span class="tag">${esc(o.rarity)}</span>
+      for <span class="credits">${o.price}</span>${o.spare ? ` <span class="tag approved">has a spare</span>` : ""}</div>`).join("") +
+    `<h2 class="sub">Auctions</h2>` + (ex.auctions.map(x => `<div class="item"><b>${esc(x.name)}</b> <span class="tag ${x.status === "sold" ? "approved" : x.status === "open" ? "pending" : ""}">${esc(x.status)}</span>
+      <span class="meta">reserve ${x.reserve}${x.best_bid != null ? " · best bid " + x.best_bid : " · closes " + when(x.end_ts)}</span></div>`).join("") || `<div class="meta">No auctions yet.</div>`) +
+    `<h2 class="sub">Recent trades</h2>` + (ex.trades.map(t => `<div class="item"><span class="tag">${esc(t.kind.replace("_", " "))}</span>${esc(t.detail)}
+      ${t.credits ? `<span class="plus">+${t.credits}</span>` : ""} <span class="meta">${when(t.ts)}</span></div>`).join("") || `<div class="meta">No trades yet.</div>`);
   if (!document.getElementById("board").dataset.busy) renderChess(await api("/api/chess"));
   document.getElementById("milestones").innerHTML = (await api("/api/milestones")).map(m =>
     `<div class="item">🏆 <b>${esc(m.title)}</b> <span class="meta">${when(m.ts)}${m.reward ? " · +" + m.reward + " credits" : ""}</span></div>`).join("")
@@ -563,9 +581,14 @@ function renderGallery(gal) {
   document.getElementById("curiocount").textContent = `${gal.curios.length} of ${gal.curio_total} curios found`;
   const cg = document.getElementById("curios"); cg.innerHTML = "";
   gal.curios.forEach(c => {
-    const t = document.createElement("div"); t.className = "tile"; t.title = `${c.name} (${c.rarity})`;
+    const t = document.createElement("div"); t.className = "tile"; t.style.cursor = "pointer";
+    t.title = `${c.name} (${c.rarity}): ${c.about}`;
     t.appendChild(pixelCanvas(c.sprite));
     t.insertAdjacentHTML("beforeend", `<div>${esc(c.name)}${c.count > 1 ? " ×" + c.count : ""}</div>`);
+    t.onclick = () => { document.getElementById("curioinfo").innerHTML =
+      `<div class="item"><b>${esc(c.name)}</b> <span class="tag">${esc(c.rarity)}</span><span class="tag">${esc(c.kind.replace("_", " "))}</span>
+       <div>${esc(c.about)}</div>${c.note ? `<div style="color:var(--accent); margin-top:4px">"${esc(c.note)}"</div>` : ""}
+       ${c.found ? `<div class="meta">First found: ${esc(c.found)}</div>` : ""}</div>`; };
     cg.appendChild(t);
   });
   document.getElementById("digests").innerHTML = gal.digests.map(d =>

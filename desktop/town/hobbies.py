@@ -352,12 +352,31 @@ class HobbiesMixin:
         col[cid] = col.get(cid, 0) + 1
         self.db.set("curios", col)
         item = curios.CATALOG[cid]
+        if first:
+            self.note_curio(cid, source)
         self.gain_xp("collecting", 3 + {"common": 0, "uncommon": 2, "rare": 6, "legendary": 15}[item["rarity"]], source)
         label = f"a {item['rarity']} {item['name']}" + (" (new to my collection!)" if first else "")
         self.mem.add("observation", f"I found {label} from {source}.", self.db.get("location", "home"), 5 if item["rarity"] == "common" else 8)
         if item["rarity"] in ("rare", "legendary"):
             self.add_event("curio", f"✨ {self.name} found a {item['rarity']} curio", f"{item['name']} ({source})")
         return label
+
+    def note_curio(self, cid, source):
+        """The resident writes its own journal note the first time it finds a curio."""
+        notes = self.db.get("curio_notes", {})
+        if cid in notes:
+            return
+        item = curios.CATALOG[cid]
+        try:
+            out = self.ask(prompts.CURIO_NOTE.format(name=self.name),
+                           f"CURIO: {item['name']} ({item['rarity']} {item['kind'].replace('_', ' ')})\n"
+                           f"WHAT IT IS: {item['about']}\nWHERE YOU FOUND IT: {source}", "curio_note")
+            note = str(out.get("note", "")).strip()[:400]
+        except Exception:
+            note = ""
+        if note:
+            notes[cid] = {"text": note, "ts": time.time(), "source": source}
+            self.db.set("curio_notes", notes)
 
     def act_display_curio(self, a, imp):
         return self.act_showcase({"type": "curio", "id": a.get("curio"), "floor": a.get("floor"), "spot": a.get("spot")}, imp)
@@ -369,7 +388,9 @@ class HobbiesMixin:
         by = {}
         for cid in col:
             by.setdefault(curios.CATALOG[cid]["kind"], []).append(curios.CATALOG[cid]["name"])
-        return (f"I have {len(col)} of 128 curios. " +
+        pick = random.choice(list(col))
+        return (f"I have {len(col)} of 128 curios. I turned the {curios.CATALOG[pick]['name']} over in my hands: "
+                f"{curios.CATALOG[pick]['about']} " +
                 "; ".join(f"{k.replace('_', ' ')}: {', '.join(v)}" for k, v in by.items()))
 
     # ================================================================ games: puzzles

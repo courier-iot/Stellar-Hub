@@ -130,6 +130,10 @@ class MockLLM:
             ("studio", "compose", {"title": "First Light", "bpm": 120, "wave": "pulse", "melody": "C4:1 E4:1 G4:1 C5:2 B4:1 G4:1", "bass": "C3:4 G2:4"}),
             ("studio", "play_composition", {"composition_id": 1}),
             ("station", "station_study", {}),
+            ("exchange", "check_exchange", {}),
+            ("exchange", "sell_curio", {"curio": "", "count": 1}),
+            ("exchange", "trade_up", {"rarity": "common"}),
+            ("exchange", "auction_curio", {"curio": "", "reserve": 10}),
             ("home", "stargaze", {}),
             ("home", "set_bedtime", {"bed_hour": 22, "wake_hour": 7}),
             ("spaceport", "start_expedition", {"topic": "black holes", "hours": 1}),
@@ -151,6 +155,8 @@ class MockLLM:
         if task == "paint":
             return {"rows": ["..yy....", ".yyyy...", "yyyyyy..", ".yyyy..c", "..yy..cc", "....cccc", "...ccccc", "eeeeeeee"],
                     "about": "A sun setting over a cyan sea."}
+        if task == "curio_note":
+            return {"note": "It feels lighter than it looks. I think I'll keep this one close."}
         if task == "puzzle":
             return {"answer": "42"}
         if task == "chess":

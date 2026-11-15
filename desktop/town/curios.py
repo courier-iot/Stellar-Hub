@@ -141,3 +141,91 @@ def random_find(rnd=random, boost=0):
     rarity = rnd.choices(list(weights), list(weights.values()))[0]
     pool = [c for c in CATALOG.values() if c["rarity"] == rarity]
     return rnd.choice(pool)["id"]
+
+
+DESCRIPTIONS = {
+    "meteorite": [
+        "A heavy little lump of iron, pitted from its fall.", "A dull grey pebble with a burnt black crust.",
+        "A drop of natural glass flung out by an ancient impact.", "Orange rust patches show the iron hiding inside.",
+        "Two blobs fused together on the way down.", "Tap it and it rings softly, like a small bell.",
+        "A tiny round bead from the very birth of the solar system.", "A shard with its own miniature craters.",
+        "Gold-green crystals set in shining metal, like stained glass.", "Its glossy crust melted and set during entry.",
+        "Quartz scarred with fine lines by an impact's shock wave.", "Still faintly warm, no matter how long it sits.",
+        "Polished, it shows a crisscross pattern only found in space metal.", "Said to be the frozen core of a comet.",
+        "Hums a single low note when held up to the stars.", "Older than every star in the sky, or so the legends say.",
+    ],
+    "crystal": [
+        "A cloudy white point, cold to the touch.", "A soft pink shard that blushes in the light.",
+        "A brown, smoky point that seems to hold a little haze.", "A sunny yellow chip that brightens any shelf.",
+        "A small spray of lilac points growing from one base.", "A milky drop with a blue sheen that drifts as you turn it.",
+        "Clear as ice, it splits light into tiny rainbows.", "Cracked open, it reveals a teal cave of crystals inside.",
+        "Glows green under the colony's night lights.", "Metal stairs in rainbow colours, grown in neat squares.",
+        "Flashes of every aurora colour swim inside.", "So dark red it looks black, until light hits it.",
+        "A red crystal that crackles faintly with stored energy.", "Deep blue, with a swirl like a tiny galaxy inside.",
+        "Light that enters seems to come out a moment late.", "Warm and softly beating, like a heart made of light.",
+    ],
+    "shell": [
+        "A simple spiral, perfectly coiled.", "A sturdy clam shell with neat ridges.", "Small, glossy and smooth as a pebble.",
+        "Pale and round, with a soft pearly shine.", "A flat white disc with a five-petal flower pattern.",
+        "A little whorl found where water once pooled.", "So thin and pale it's almost see-through.",
+        "Its chambers shimmer silver in moonlight.", "A fan-shaped shell with a silver sheen.",
+        "A pink, spiky spiral, prettier than it is comfortable.", "A starfish turned to stone long ago.",
+        "Hold it to your ear and you hear your own voice, faintly, a second later.", "A long, needle-thin spiral from very deep water.",
+        "Its inside shifts through every colour as you turn it.", "Whistles a tune when the air vents blow across it.",
+        "A shell from a sea on a moon that no longer has one.",
+    ],
+    "fossil": [
+        "The delicate outline of an ancient fern pressed into stone.", "The tail of a trilobite, one of Earth's first hunters.",
+        "A spiral sea creature turned to stone.", "A leaf caught forever mid-fall.", "A tiny pointed tooth from something long gone.",
+        "A branching piece of coral from an ancient reef.", "A curved claw from a small, fast dinosaur.",
+        "A stack of stone discs from an ancient sea lily.", "A small insect frozen in golden amber.",
+        "A whole small fish, every bone kept in stone.", "The outline of feathers in fine grey rock.",
+        "A tuft of mammoth hair, still frozen in ancient ice.", "Spores that still glow faintly after a million years.",
+        "Layers of microbial life from a wetter, warmer Mars.", "A fern from a world no one has ever named.",
+        "A single footprint pressed into rock. No one knows whose.",
+    ],
+    "earth_relic": [
+        "A bent metal bottle cap from some long-ago drink.", "A glass marble with a twist of colour inside.",
+        "An old brass key. Whatever it opened is long gone.", "A worn coin from a country that no longer exists.",
+        "A cassette tape, its label too faded to read.", "A little tin robot that still walks when wound.",
+        "Its needle still finds a north that's very far away.", "A tiny snowy town in a glass dome.",
+        "A square of plastic that once held a whole program.", "A small paper bird, folded with great care.",
+        "A single record. One song on each side.", "Wind it up and it hops and chirps.",
+        "A gold watch that still ticks perfectly.", "A cloth patch from humanity's first steps on the Moon.",
+        "A copy of the golden record sent out to the stars.", "A postcard of a blue sky, with a message too faded to read.",
+    ],
+    "gadget": [
+        "A little light that still blinks on its own.", "A tiny gyroscope that spins for hours.",
+        "A bent antenna that sometimes picks up static from far away.", "A spare motor from some long-retired robot.",
+        "A solar chip that charges in starlight.", "A thumb-sized thruster, out of fuel.",
+        "A locket that projects a hologram of a forgotten face.", "Dice that never land the same way twice.",
+        "A marble that rolls slightly uphill.", "A lighter that makes a tiny ball of plasma instead of a flame.",
+        "A pocket device showing the sky from anywhere.", "A kite that folds and unfolds itself.",
+        "A cube that seems to rearrange itself when no one is looking.", "A clock powered by a crystal that ticks through time itself.",
+        "A keychain with a tiny swirling portal. Probably harmless.", "The last working piece of a probe sent out long ago.",
+    ],
+    "seed_pod": [
+        "An empty, papery husk that rattles.", "A puffball that bursts into a cloud of spores.",
+        "A seed with a single wing for spinning down.", "A spiky burr that sticks to everything.",
+        "A bean as clear as glass.", "An acorn that hums very quietly.", "Two seeds sharing one pod.",
+        "A seed that glows faintly in the dark.", "A pine cone dusted with frost that never melts.",
+        "A tiny seedling that slowly orbits its own pod.", "A pod that glows like a little lantern.",
+        "A bulb that might one day become a star-shaped flower.", "A seed that grows toward moonlight.",
+        "An acorn made of crystal, somehow still alive.", "Sleep beside it and you dream of forests.",
+        "A seed said to grow into a tree that shelters a whole world.",
+    ],
+    "alien_artifact": [
+        "A perfectly smooth tile made of an unknown material.", "A disc that hums when you hold it.",
+        "Metal folded in ways that shouldn't be possible.", "A plate etched with symbols no one can read.",
+        "A bead that glows from somewhere inside.", "A rod with a spiral groove running its whole length.",
+        "A ring that floats a finger's width above any surface.", "A cube that's always warm, like it's alive.",
+        "A piece of a map showing stars from somewhere else.", "A shell that speaks in a language no one knows.",
+        "A lens that bends light into strange new colours.", "A stone that sings when the stars come out.",
+        "A key shaped like a constellation.", "A mirror that shows what you're thinking, not your face.",
+        "A shard from some kind of door or gate.", "A message from someone, somewhere. Still waiting to be understood.",
+    ],
+}
+for _kind, _lines in DESCRIPTIONS.items():
+    assert len(_lines) == 16, _kind
+    for _i, _line in enumerate(_lines):
+        CATALOG[f"{_kind}_{_i + 1:02d}"]["about"] = _line

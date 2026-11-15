@@ -106,8 +106,11 @@ class ColonyMixin:
                 inv["seeds"][name] = inv["seeds"].get(name, 0) + 1
             elif key.startswith("curio:"):
                 col = self.collection()
+                first = name not in col
                 col[name] = col.get(name, 0) + 1
                 self.db.set("curios", col)
+                if first:
+                    self.note_curio(name, "a travelling trader")
                 self.gain_xp("collecting", 4, "bought a curio from the trader")
             else:
                 inv["decor"].append(name)
