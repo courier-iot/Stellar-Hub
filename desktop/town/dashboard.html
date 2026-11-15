@@ -47,6 +47,21 @@
   pre { white-space:pre-wrap; margin:0; font:inherit; }
   pre.src { font:12px/1.4 ui-monospace, monospace; background:#080a18; border:1px solid var(--line); border-radius:8px; padding:8px; max-height:260px; overflow:auto; margin-top:6px; }
   .plus { color:var(--good); } .minus { color:var(--bad); }
+  canvas.px { image-rendering:pixelated; image-rendering:crisp-edges; background:#080a18; border:1px solid var(--line); border-radius:6px; }
+  .grid { display:grid; gap:8px; grid-template-columns:repeat(auto-fill, minmax(84px, 1fr)); }
+  .tile { text-align:center; font-size:11px; color:var(--dim); }
+  .tile canvas { width:72px; height:72px; }
+  .spots { display:grid; grid-template-columns:repeat(12, minmax(0, 1fr)); gap:6px; margin:6px 0 12px; max-width:980px; }
+  @media (max-width:700px) { .spots { grid-template-columns:repeat(6, 1fr); } }
+  .spot { aspect-ratio:1; border:1px dashed var(--line); border-radius:6px; display:flex; align-items:center; justify-content:center; }
+  .spot canvas { width:90%; height:90%; border:0; background:transparent; }
+  .board { display:grid; grid-template-columns:repeat(8, 1fr); width:min(100%, 360px); aspect-ratio:1; border:2px solid var(--line); border-radius:6px; overflow:hidden; }
+  .sq { display:flex; align-items:center; justify-content:center; font-size:min(5.2vw, 30px); cursor:pointer; user-select:none; }
+  .sq.l { background:#3a4060; } .sq.d { background:#232a52; }
+  .sq.sel { outline:3px solid var(--warn); outline-offset:-3px; } .sq.tgt { box-shadow:inset 0 0 0 3px rgba(94,242,255,.7); }
+  .sq.last { background:#5b3fb5; }
+  .wp { color:#fff; text-shadow:0 0 2px #000; } .bp { color:#0b0d17; text-shadow:0 0 2px #a7b0d3; }
+  .lvl { display:flex; justify-content:space-between; font-size:13px; }
 </style>
 </head>
 <body>
@@ -55,6 +70,7 @@
   <span class="meta" id="sub"></span>
   <span class="credits" id="credits"></span>
   <span style="flex:1"></span>
+  <button class="ghost" onclick="photo()">📷 Photo</button>
   <button id="turnBtn" onclick="takeTurn()">Take a turn now</button>
 </header>
 <main>
@@ -159,6 +175,58 @@
   </section>
 
   <section>
+    <h2>Hobbies &amp; skills</h2>
+    <div id="hobbies"></div>
+    <h2 class="sub">Personality traits</h2>
+    <div id="traits"></div>
+  </section>
+
+  <section>
+    <h2>Ask what it remembers</h2>
+    <div class="row"><input id="searchq" placeholder="e.g. What do you remember about the trader?" style="flex:1">
+      <button onclick="searchMem()">Ask</button></div>
+    <div id="searchout" class="scroll" style="max-height:300px; margin-top:8px"></div>
+    <h2 class="sub">Weekly digests</h2>
+    <div id="digests" class="scroll" style="max-height:260px"></div>
+  </section>
+
+  <section class="wide" style="padding:14px">
+    <h2>Home Dome showcase</h2>
+    <div id="showcase"></div>
+  </section>
+
+  <section>
+    <h2>Starlight Gallery · paintings</h2>
+    <div id="paintings" class="grid"></div>
+  </section>
+
+  <section>
+    <h2>Low-G Park · writings</h2>
+    <div id="writings" class="scroll"></div>
+  </section>
+
+  <section>
+    <h2>Radio Studio · its songs</h2>
+    <div id="songs" class="scroll"></div>
+    <h2 class="sub">Orbital Station · studies</h2>
+    <div id="quizzes" class="scroll" style="max-height:220px"></div>
+  </section>
+
+  <section>
+    <h2>Curio collection</h2>
+    <div id="curiocount" class="meta"></div>
+    <div id="curios" class="grid scroll" style="margin-top:8px"></div>
+  </section>
+
+  <section>
+    <h2>Chess at the park</h2>
+    <div id="chessinfo" class="meta"></div>
+    <div id="board" class="board" style="margin-top:8px"></div>
+    <div class="row"><button onclick="chessNew('white')">New game (you're white)</button>
+      <button class="ghost" onclick="chessNew('black')">New game (you're black)</button></div>
+  </section>
+
+  <section>
     <h2>Milestones</h2>
     <div id="milestones" class="scroll"></div>
   </section>
@@ -181,7 +249,10 @@ const VERBS = {journal:"writing in its journal", update_personality:"rethinking 
   stop_music:"turning the music off", broadcast_log:"broadcasting a colony log", archive_memories:"writing its life story",
   read_chapter:"rereading its life story", start_expedition:"launching an expedition", read_reports:"reading old reports",
   write_program:"building a program", list_programs:"checking its programs", expedition_return:"just back from an expedition",
-  build:"starting construction", move_building:"moving a building", set_bedtime:"changing its bedtime", stargaze:"stargazing",
+  paint:"painting", showcase:"arranging its home", remove_showcase:"rearranging its home", upgrade_home:"adding a floor to its home",
+  view_collection:"admiring its collection", observe_sky:"at the telescope", write:"writing", relax:"relaxing in the park",
+  solve_puzzle:"solving a puzzle", hang_painting:"hanging a painting", compose:"composing music", play_composition:"playing its own song",
+  station_study:"studying", build:"starting construction", move_building:"moving a building", set_bedtime:"changing its bedtime", stargaze:"stargazing",
   plan_colony:"planning the colony", sleep:"sleeping", expedition:"exploring"};
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const when = ts => ts ? new Date(ts * 1000).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"}) : "—";
@@ -214,9 +285,13 @@ const Town = {
     this.sprites.frames = w.resident.frames.map(f => this.bake(f, pal));
     this.sprites.emotes = {}; for (const k in (w.emotes || {})) this.sprites.emotes[k] = this.bake(w.emotes[k], pal);
     this.sprites.ship = w.trader_ship ? this.bake(w.trader_ship, pal) : null;
+    this.sprites.station = w.station ? this.bake(w.station.sprite, pal) : null;
     if (this.location) this.targetX = this.door(this.location);
   },
-  door(id) { const b = this.world && this.world.buildings.find(b => b.id === id); return b ? b.door_x : this.world.w / 2; },
+  door(id) {
+    if (this.world && this.world.aliases && this.world.aliases[id]) id = this.world.aliases[id];
+    const b = this.world && this.world.buildings.find(b => b.id === id); return b ? b.door_x : this.world.w / 2;
+  },
   setLocation(loc, prev, lastTurn) {
     if (!this.world || loc === this.location) return;
     const fresh = lastTurn && (Date.now() / 1000 - lastTurn) < 120;
@@ -253,6 +328,12 @@ const Town = {
           c.fillStyle = "rgba(255,233,168,.6)"; c.fillRect(mx - 6, my - 3, 6, 1); c.fillRect(mx - 3, my - 1, 3, 1);
         }
       }
+      if (this.sprites.station) {                       // the Orbital Station, drifting slowly
+        const sx = w.station.x + Math.round(Math.sin(t / 4000) * 3), sy = w.station.y + Math.round(Math.sin(t / 2600) * 1);
+        c.drawImage(this.sprites.station, sx, sy);
+        const fast = this.inOrbit ? 250 : 900;
+        if (Math.floor(t / fast) % 2) { c.fillStyle = this.inOrbit ? "#ffd86b" : "#ff5d73"; c.fillRect(sx + 12, sy, 2, 1); }
+      }
       w.twinkle.forEach(([x, y], i) => {
         const p = Math.sin(t / 600 + i * 1.7);
         if (p > .6) { c.fillStyle = "#ffffff"; c.fillRect(x, y, 1, 1); if (p > .93) { c.fillStyle = "#a7b0d3"; c.fillRect(x - 1, y, 3, 1); c.fillRect(x, y - 1, 1, 3); } }
@@ -272,7 +353,7 @@ const Town = {
         if (Math.floor(t / 300) % 2) { c.fillStyle = "#ff9f43"; c.fillRect(tx + 4, ty + 11, 1, 2); c.fillRect(tx + 15, ty + 11, 1, 2); }
       }
       if (w.night || ev === "eclipse") { c.fillStyle = ev === "eclipse" ? "rgba(5,6,20,.35)" : "rgba(5,6,20,.18)"; c.fillRect(0, 138, w.w, w.h - 138); }
-      if (this.x !== null && !this.away) {
+      if (this.x !== null && !this.away && !this.inOrbit) {
         const dx = this.targetX - this.x;
         const walking = Math.abs(dx) > 0.5;
         if (walking) this.x += Math.sign(dx) * Math.min(0.9, Math.abs(dx));
@@ -299,7 +380,7 @@ async function refresh() {
   const [s, inbox, feed, lib, col] = await Promise.all([api("/api/status"), api("/api/inbox"), api("/api/feed?limit=80"),
                                                         api("/api/library?limit=40"), api("/api/colony")]);
   if (s.world_version !== worldVersion) { Town.setWorld(await api("/api/world")); worldVersion = s.world_version; }
-  Town.away = !!s.away; Town.emote = s.emote; Town.daylight = s.daylight; Town.event = s.event; Town.asleep = s.asleep;
+  Town.away = !!s.away; Town.inOrbit = !!s.in_orbit; Town.emote = s.emote; Town.daylight = s.daylight; Town.event = s.event; Town.asleep = s.asleep;
   Town.setLocation(s.location, s.prev_location, s.last_turn);
   programs = {}; (col.programs || []).forEach(p => programs[p.id] = p);
 
@@ -308,6 +389,7 @@ async function refresh() {
   if (!s.name) cap = "A star spirit is about to be born. Press <b>Take a turn now</b>.";
   else if (s.chat) cap = `<b>${esc(s.name)}</b> is chatting with you.`;
   else if (s.asleep && !s.away) cap = `<b>${esc(s.name)}</b> is asleep in the Home Dome (until ${s.sleep.wake}:00).`;
+  else if (s.in_orbit) cap = `<b>${esc(s.name)}</b> is up at the Orbital Station, studying.`;
   else if (s.away) cap = `<b>${esc(s.name)}</b> is away on an expedition: <i>${esc(s.away.topic)}</i> (back around ${when(s.away.return_ts)}).`;
   else cap = `<b>${esc(s.name)}</b> is at the ${esc(NAMES[s.location] || s.location)}${act.action ? ", " + esc(VERBS[act.action] || act.action) : ""}.` +
              (act.thought ? `<br><i>"${esc(act.thought)}"</i>` : "");
@@ -320,6 +402,14 @@ async function refresh() {
   const lb = s.last_backup;
   document.getElementById("backup").innerHTML = lb ? (lb.error ? `Last backup failed: ${esc(lb.error)}` : `Last backup ${when(lb.ts)}<br>${esc(lb.file)}`) : "No backup yet (runs nightly after 4:00).";
   if (!chatBusy) renderChat(await api("/api/chat"), s.chat);
+  document.getElementById("hobbies").innerHTML = Object.entries(s.hobbies || {}).sort((a, b) => b[1].xp - a[1].xp).map(([k, v]) =>
+    `<div class="lvl"><span>${HOBBY_ICON[k] || ""} ${esc(k)}</span><span class="meta">level ${v.level} · ${v.xp} xp</span></div>
+     <div class="bar"><div style="width:${Math.min(100, v.level * 10)}%"></div></div>`).join("") || `<div class="meta">No hobbies yet. It picks them up as it tries things.</div>`;
+  document.getElementById("traits").innerHTML = Object.entries(s.traits || {}).map(([k, v]) =>
+    `<div class="lvl"><span>${esc(k)}</span><span class="meta">${v}</span></div><div class="bar"><div style="width:${v}%"></div></div>`).join("");
+  const gal = await api("/api/gallery"), galKey = JSON.stringify(gal);
+  if (galKey !== lastGallery) { lastGallery = galKey; renderGallery(gal); }
+  if (!document.getElementById("board").dataset.busy) renderChess(await api("/api/chess"));
   document.getElementById("milestones").innerHTML = (await api("/api/milestones")).map(m =>
     `<div class="item">🏆 <b>${esc(m.title)}</b> <span class="meta">${when(m.ts)}${m.reward ? " · +" + m.reward + " credits" : ""}</span></div>`).join("")
     || `<div class="meta">No milestones yet.</div>`;
@@ -422,6 +512,121 @@ function renderColony(col) {
   document.getElementById("chapters").innerHTML = col.chapters.map(c =>
     `<div class="item"><b>${esc(c.title)}</b> <span class="meta">${when(c.ts)}</span><pre class="meta">${esc(c.text)}</pre></div>`).join("")
     || `<div class="meta">No chapters yet.</div>`;
+}
+
+const HOBBY_ICON = {painting:"🎨", writing:"✍️", composing:"🎼", astronomy:"🔭", collecting:"🧺", games:"♟️", gardening:"🌱", coding:"🛠"};
+let PAL = {}, lastGallery = null;
+function pixelCanvas(rows, size) {
+  const c = document.createElement("canvas"), n = rows.length, m = rows[0].length;
+  c.width = m; c.height = n; c.className = "px";
+  const g = c.getContext("2d");
+  for (let y = 0; y < n; y++) for (let x = 0; x < m; x++) {
+    const ch = rows[y][x]; if (ch === "." || !PAL[ch]) continue;
+    g.fillStyle = PAL[ch]; g.fillRect(x, y, 1, 1);
+  }
+  if (size) { c.style.width = size + "px"; c.style.height = size + "px"; }
+  return c;
+}
+function renderGallery(gal) {
+  PAL = gal.palette;
+  const sc = document.getElementById("showcase"); sc.innerHTML = "";
+  gal.home_floors.forEach((spots, f) => {
+    const h = document.createElement("div");
+    h.innerHTML = `<div class="meta">Floor ${f + 1} · ${spots.filter(Boolean).length}/12 spots used</div>`;
+    const grid = document.createElement("div"); grid.className = "spots";
+    spots.forEach((sp, i) => {
+      const d = document.createElement("div"); d.className = "spot"; d.title = sp ? `Spot ${i + 1}: ${sp.label}` : `Spot ${i + 1}: empty`;
+      if (sp && (sp.rows || sp.icon)) d.appendChild(pixelCanvas(sp.rows || sp.icon));
+      else if (!sp) d.innerHTML = `<span class="meta">${i + 1}</span>`;
+      grid.appendChild(d);
+    });
+    h.appendChild(grid); sc.appendChild(h);
+  });
+  const pg = document.getElementById("paintings"); pg.innerHTML = "";
+  gal.paintings.forEach(p => {
+    const t = document.createElement("div"); t.className = "tile"; t.title = p.about || "";
+    t.appendChild(pixelCanvas(p.rows));
+    t.insertAdjacentHTML("beforeend", `<div>${esc(p.title)}</div>${p.hung ? `<div>🖼 ${esc(p.hung)}</div>` : ""}`);
+    pg.appendChild(t);
+  });
+  if (!gal.paintings.length) pg.innerHTML = `<div class="meta">No paintings yet.</div>`;
+  document.getElementById("writings").innerHTML = gal.writings.map(w =>
+    `<div class="item"><b>${esc(w.title)}</b> <span class="tag">${esc(w.kind)}</span> <span class="meta">${when(w.ts)}</span><pre>${esc(w.text)}</pre></div>`).join("")
+    || `<div class="meta">Nothing written yet.</div>`;
+  document.getElementById("songs").innerHTML = gal.compositions.map(c =>
+    `<div class="item"><b>${esc(c.title)}</b> <span class="meta">${esc(c.mood || "")} · ${c.bpm} bpm · ${esc(c.wave)} · ${Math.round(c.seconds || 0)}s</span>
+     <audio controls preload="none" src="/api/compositions/${c.id}.wav" style="width:100%; margin-top:4px"></audio></div>`).join("")
+    || `<div class="meta">No songs yet.</div>`;
+  document.getElementById("quizzes").innerHTML = gal.quizzes.map(q =>
+    `<div class="item"><div class="lvl"><span>${esc(q.topic)}</span><span class="meta">${q.mastery}% · ${q.attempts} tests</span></div>
+     <div class="bar"><div style="width:${q.mastery}%"></div></div></div>`).join("") || `<div class="meta">No studies yet.</div>`;
+  document.getElementById("curiocount").textContent = `${gal.curios.length} of ${gal.curio_total} curios found`;
+  const cg = document.getElementById("curios"); cg.innerHTML = "";
+  gal.curios.forEach(c => {
+    const t = document.createElement("div"); t.className = "tile"; t.title = `${c.name} (${c.rarity})`;
+    t.appendChild(pixelCanvas(c.sprite));
+    t.insertAdjacentHTML("beforeend", `<div>${esc(c.name)}${c.count > 1 ? " ×" + c.count : ""}</div>`);
+    cg.appendChild(t);
+  });
+  document.getElementById("digests").innerHTML = gal.digests.map(d =>
+    `<div class="item"><span class="meta">${esc(d.week)}</span><div>${esc(d.text)}</div></div>`).join("") || `<div class="meta">The first digest arrives Sunday evening.</div>`;
+}
+
+const PIECES = {K:"♚", Q:"♛", R:"♜", B:"♝", N:"♞", P:"♟"};
+let chessSel = null, chessGame = null;
+function renderChess(v) {
+  const g = v.game, board = document.getElementById("board"), info = document.getElementById("chessinfo");
+  chessGame = g; board.innerHTML = "";
+  if (!g) { info.textContent = "No game yet. Start one: your resident plays at the park's chess tables."; return; }
+  const flip = g.creator === "b";
+  const last = g.last ? [g.last.slice(0, 2), g.last.slice(2, 4)] : [];
+  const targets = chessSel ? g.legal.filter(m => m.startsWith(chessSel)).map(m => m.slice(2, 4)) : [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const rr = flip ? 7 - r : r, cc = flip ? 7 - c : c, i = rr * 8 + cc, p = g.board[i];
+    const name = "abcdefgh"[cc] + (8 - rr);
+    const d = document.createElement("div");
+    d.className = "sq " + ((rr + cc) % 2 ? "d" : "l") + (last.includes(name) ? " last" : "") +
+                  (chessSel === name ? " sel" : "") + (targets.includes(name) ? " tgt" : "");
+    if (p !== ".") d.innerHTML = `<span class="${p === p.toUpperCase() ? "wp" : "bp"}">${PIECES[p.toUpperCase()]}</span>`;
+    d.onclick = () => chessClick(name);
+    board.appendChild(d);
+  }
+  const yourTurn = !g.result && g.turn === g.creator;
+  const res = g.result ? ({"1-0": "White wins", "0-1": "Black wins", "1/2-1/2": "Draw"}[g.result]) : null;
+  const cm = g.comments.length ? `<br><i>"${esc(g.comments[g.comments.length - 1].text)}"</i>` : "";
+  info.innerHTML = (res ? `<b>${res}</b> after ${g.moves.length} moves.` : yourTurn ? `<b>Your move</b>${g.check ? " (you're in check!)" : ""}` : "Your resident is thinking…") + cm;
+}
+async function chessClick(name) {
+  const g = chessGame; if (!g || g.result || g.turn !== g.creator) return;
+  if (chessSel && g.legal.some(m => m.startsWith(chessSel + name))) {
+    const mv = g.legal.find(m => m.startsWith(chessSel + name) && (m.length === 4 || m.endsWith("q")));
+    chessSel = null;
+    const board = document.getElementById("board"); board.dataset.busy = "1";
+    document.getElementById("chessinfo").textContent = "Your resident is thinking…";
+    try { const v = await api("/api/chess/move", {move: mv}); renderChess(v); } finally { delete board.dataset.busy; }
+    return;
+  }
+  chessSel = g.legal.some(m => m.startsWith(name)) ? name : null;
+  renderChess({game: g});
+}
+async function chessNew(color) {
+  const board = document.getElementById("board"); board.dataset.busy = "1"; chessSel = null;
+  try { renderChess(await api("/api/chess/new", {color})); } finally { delete board.dataset.busy; }
+}
+async function searchMem() {
+  const q = document.getElementById("searchq").value.trim(); if (!q) return;
+  const out = document.getElementById("searchout"); out.innerHTML = `<div class="meta">Remembering…</div>`;
+  const r = await api("/api/search", {q});
+  out.innerHTML = `<div class="item"><b>${esc(r.answer || r.error || "")}</b></div>` + (r.memories || []).map(m =>
+    `<div class="item"><span class="tag">${esc(m.kind)}</span><span class="meta">${when(m.ts)}</span><div>${esc(m.text)}</div></div>`).join("");
+}
+document.getElementById("searchq").addEventListener("keydown", e => { if (e.key === "Enter") searchMem(); });
+function photo() {
+  const src = document.getElementById("town"), scale = 4, c = document.createElement("canvas");
+  c.width = src.width * scale; c.height = src.height * scale;
+  const g = c.getContext("2d"); g.imageSmoothingEnabled = false; g.drawImage(src, 0, 0, c.width, c.height);
+  const a = document.createElement("a"); a.download = `stellar-hub-${new Date().toISOString().slice(0, 16).replace(":", "")}.png`;
+  a.href = c.toDataURL("image/png"); a.click();
 }
 
 let chatBusy = false;

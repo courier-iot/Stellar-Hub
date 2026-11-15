@@ -32,6 +32,15 @@ CREATE TABLE IF NOT EXISTS chapters(
 CREATE TABLE IF NOT EXISTS expeditions(
     id INTEGER PRIMARY KEY, ts REAL, topic TEXT, hours REAL, return_ts REAL, legs TEXT,
     notes TEXT DEFAULT '', report TEXT, status TEXT DEFAULT 'away');
+CREATE TABLE IF NOT EXISTS paintings(
+    id INTEGER PRIMARY KEY, ts REAL, title TEXT, about TEXT, size INTEGER, rows TEXT, hung TEXT, hung_ts REAL);
+CREATE TABLE IF NOT EXISTS writings(id INTEGER PRIMARY KEY, ts REAL, kind TEXT, title TEXT, text TEXT);
+CREATE TABLE IF NOT EXISTS compositions(
+    id INTEGER PRIMARY KEY, ts REAL, title TEXT, mood TEXT, melody TEXT, bass TEXT, bpm INTEGER, wave TEXT, seconds REAL);
+CREATE TABLE IF NOT EXISTS quizzes(
+    id INTEGER PRIMARY KEY, ts REAL, topic TEXT, note_id INTEGER, questions TEXT, interval_days REAL,
+    due_ts REAL, mastery INTEGER, attempts INTEGER);
+CREATE TABLE IF NOT EXISTS digests(id INTEGER PRIMARY KEY, ts REAL, week TEXT, text TEXT);
 CREATE TABLE IF NOT EXISTS milestones(key TEXT PRIMARY KEY, ts REAL, title TEXT, reward INTEGER);
 CREATE TABLE IF NOT EXISTS programs(
     id INTEGER PRIMARY KEY, ts REAL, name TEXT, description TEXT, code TEXT,

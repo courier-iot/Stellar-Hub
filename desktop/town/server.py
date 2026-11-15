@@ -134,6 +134,23 @@ def make_server(agent, host, port, pair_code):
                         e["open"] = bool(r and r[0]["status"] in ("pending", "unread"))
                         e["request_kind"] = r[0]["kind"] if r else None
                 return self._json({"latest": latest, "events": ev})
+            m = re.fullmatch(r"/api/compositions/(\d+)\.wav", u.path)
+            if m:
+                path = os.path.join(agent.studio_dir, f"{int(m.group(1))}.wav")
+                if not os.path.exists(path):
+                    return self._json({"error": "not found"}, 404)
+                with open(path, "rb") as f:
+                    data = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "audio/wav")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return None
+            if u.path == "/api/gallery":
+                return self._json(agent.gallery_overview())
+            if u.path == "/api/chess":
+                return self._json(agent.chess_view())
             if u.path == "/api/chat":
                 return self._json(agent.chat_state() or {"messages": []})
             if u.path == "/api/milestones":
@@ -177,6 +194,20 @@ def make_server(agent, host, port, pair_code):
                 agent.earn(amount, f"from {agent.creator}: {note}")
                 agent.send_letter(f"I gave you {amount} credits: {note}" if amount > 0 else f"I took {-amount} credits: {note}")
                 return self._json({"ok": True, "credits": agent.credits()})
+            if path == "/api/chess/new":
+                agent.chess_new("b" if str(body.get("color", "white")).lower().startswith("b") else "w")
+                return self._json(agent.chess_view())
+            if path == "/api/chess/move":
+                try:
+                    agent.chess_creator_move(str(body.get("move", "")))
+                except ValueError as e:
+                    return self._json({"error": str(e), **agent.chess_view()}, 400)
+                return self._json(agent.chess_view())
+            if path == "/api/search":
+                q = str(body.get("q", "")).strip()[:300]
+                if not q:
+                    return self._json({"error": "ask something"}, 400)
+                return self._json(agent.search_memories(q))
             if path == "/api/chat/start":
                 return self._json(agent.chat_start())
             if path == "/api/chat/say":

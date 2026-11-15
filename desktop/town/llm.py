@@ -119,6 +119,17 @@ class MockLLM:
             ("radio_tower", "play_music", {"song_id": 1}),
             ("workshop", "write_program", {"name": "hello", "description": "prints primes", "code": "print([p for p in range(2,30) if all(p%d for d in range(2,p))])"}),
             ("home", "build", {"building": "greenhouse", "plot": 4}),
+            ("home", "paint", {"subject": "a sunset over the sea", "title": "Sunset"}),
+            ("home", "showcase", {"type": "painting", "id": 1}),
+            ("home", "upgrade_home", {}),
+            ("library", "observe_sky", {}),
+            ("park", "write", {"kind": "poem", "title": "Orbit", "text": "Round and round the quiet planet goes, carrying my little colony."}),
+            ("park", "relax", {}),
+            ("park", "solve_puzzle", {}),
+            ("gallery", "hang_painting", {"painting_id": 1}),
+            ("studio", "compose", {"title": "First Light", "bpm": 120, "wave": "pulse", "melody": "C4:1 E4:1 G4:1 C5:2 B4:1 G4:1", "bass": "C3:4 G2:4"}),
+            ("studio", "play_composition", {"composition_id": 1}),
+            ("station", "station_study", {}),
             ("home", "stargaze", {}),
             ("home", "set_bedtime", {"bed_hour": 22, "wake_hour": 7}),
             ("spaceport", "start_expedition", {"topic": "black holes", "hours": 1}),
@@ -135,7 +146,26 @@ class MockLLM:
         if task == "plan":
             return {"goals": ["Learn something about space", "Write in my journal"]}
         if task == "reflect":
-            return {"insights": [{"text": "I seem happiest when I'm learning about the sky.", "importance": 7}]}
+            return {"insights": [{"text": "I seem happiest when I'm learning about the sky.", "importance": 7}],
+                    "traits": {"curious": 3, "calm": -1}}
+        if task == "paint":
+            return {"rows": ["..yy....", ".yyyy...", "yyyyyy..", ".yyyy..c", "..yy..cc", "....cccc", "...ccccc", "eeeeeeee"],
+                    "about": "A sun setting over a cyan sea."}
+        if task == "puzzle":
+            return {"answer": "42"}
+        if task == "chess":
+            return {"move": "zz99", "comment": "Hmm, let me think..."}
+        if task == "quiz_make":
+            return {"questions": [{"q": "What is a star made of?", "a": "plasma"}, {"q": "Nearest star?", "a": "the Sun"},
+                                  {"q": "What powers stars?", "a": "fusion"}]}
+        if task == "quiz_take":
+            return {"answers": ["plasma", "the Sun", "I don't remember"]}
+        if task == "quiz_grade":
+            return {"correct": 2}
+        if task == "digest":
+            return {"digest": "This week I painted a sunset and learned about stars."}
+        if task == "recall":
+            return {"answer": "I remember writing in my journal on my first day."}
         if task == "layout":
             return {"placements": {"library": 6, "post_office": 9, "internet_cafe": 5, "bank": 10}, "why": "Books and mail close to home."}
         if task == "dream":

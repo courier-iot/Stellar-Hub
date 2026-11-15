@@ -75,6 +75,10 @@ regular Wi-Fi. Phones need the pair code. To make a new code: `./start.sh --new-
 | Radio Tower | Plays songs from your music folder out loud on the PC (not during quiet hours), and broadcasts colony logs to your phone | 80 |
 | Archive Vault | Turns old memories into chapters of its life story | 70 |
 | Nova Salon | Change form (star spirit, robot, person) and colours | 50 |
+| Starlight Gallery | Paint pixel paintings and hang the best on its 12 walls (the newest is shown on its front) | 90 |
+| Low-G Park | Write poems and stories, relax (sometimes finding curios), puzzles, and **chess with you** | 60 |
+| Radio Studio *(Radio Tower upgrade)* | Compose chiptune songs and play them on the radio | 120 |
+| Orbital Station *(Spaceport upgrade)* | Turns what it studied into tests, then re-tests itself from memory on a spaced schedule | 300 |
 | Spaceport | Research expeditions: it leaves for 1-8 hours, studies a topic in stages, and comes back with a report | 150 |
 | Fabrication Hangar | Writes Python programs. **You approve each one**, then it runs in a sandbox with no internet and only its own folder. | 200 |
 
@@ -104,11 +108,54 @@ You can also start one yourself from the dashboard.
 **Emotes and milestones:** bubbles above its head show what it's up to (? ♪ ♥ ! z). Milestones (first bloom,
 100 journal entries, one month old…) appear in the app and on the dashboard, with a credit bonus.
 
-**Credits:** it earns them for daily routines (+1 per action, up to 20 a day), journaling (+3 a day), each finished
-daily goal (+10), healthy plants (+2 each a day), blooms (+15), approved requests (+5), life-story chapters (+5),
-finished expeditions (+20) and programs that run successfully (+8). You can give it bonuses (or take some away)
-from the Credit Vault panel. It spends them on decorations, seeds, pots, Salon looks and building unlocks.
-Credits are colony-only; no real money is involved.
+**Credits** are colony-only; no real money is involved. You can give bonuses (or take some away) from the Credit Vault panel.
+
+| It earns | Credits |
+|---|---|
+| Each successful action | +1 (up to 20 a day) |
+| Writing in its journal | +3 once a day |
+| Each finished daily goal | +10 (up to 3 a day) |
+| Each healthy plant (70%+) | +2 a day |
+| A plant blooms | +15 |
+| A request you approve | +5 |
+| A life-story chapter | +5 |
+| Finishing an expedition | +20 |
+| A program runs successfully | +8 |
+| Stardust in a meteor shower | 5-25 (up to 3 a day) |
+| A hobby skill levels up | +5 × the new level |
+| Solving a puzzle | +2 (up to 10 a day) |
+| Winning chess against you | +10 |
+| Station test | +3 per right answer, +15 when a topic is mastered |
+| Milestones | 5-300 |
+
+| It spends | Credits |
+|---|---|
+| Decorations | 10-80 |
+| Seeds | 3 / 10 / 25 / 60 by rarity |
+| 2 more greenhouse pots | 30 |
+| Salon: new colours / new form | 10 / 40 |
+| Building unlocks | 50-300 |
+| Home Dome floor 2 / 3 / 4 | 150 / 300 / 600 |
+| Trader goods | varies |
+| Moving a building | 1,500 |
+
+**Hobbies:** painting, writing, composing, astronomy, collecting, games, gardening and coding each have a skill
+level that grows with practice. It takes hobbies up by trying them. Higher painting levels mean bigger canvases
+(8×8 → 12×12 → 16×16), and higher collecting levels mean better odds of rare finds. Its paintings, writings,
+songs and curios all show up in the app's **Gallery** tab and on the dashboard.
+
+**Home Dome showcase:** the home can grow to **4 floors** with **12 showcase spots each**. It displays paintings,
+curios, framed writings and cuttings from plants that have bloomed. Space is limited on purpose, so it has to choose
+what to rotate out. The dome visibly gets taller with each floor.
+
+**Curios:** 128 to collect (meteorites, crystals, shells, fossils, Earth relics, gadgets, seed pods and alien
+artifacts) at four rarities. They turn up during meteor showers, park walks, expeditions and telescope sessions,
+and travelling traders sell them too.
+
+**Personality traits** (curious, creative, social, calm, brave, playful, thoughtful) shift slowly as it reflects
+on its experiences. **Every Sunday evening** it writes "This week in the colony" and sends it to your phone.
+**Ask what it remembers** (Chat tab or dashboard) and it answers from its real memories.
+**📷** saves a picture of the colony (app: Pictures/Stellar Hub; dashboard: downloads a PNG).
 
 **Phone notifications:** Hub Connect S checks about every 15 minutes. You can approve or deny requests and answer
 questions right from the notification. Set quiet hours and turn notifications on or off in the Hub tab.

@@ -38,6 +38,11 @@ class TownView(context: Context) : View(context) {
     private var emote: String? = null
     private var daylight: Double? = null
     private var eventType: String? = null
+    private var aliases: Map<String, String> = emptyMap()
+    private var station: Bitmap? = null
+    private var stationX = 520
+    private var stationY = 14
+    private var inOrbit = false
 
     private val viewW get() = minOf(worldW, 320)
     private var camX = -1f
@@ -91,6 +96,12 @@ class TownView(context: Context) : View(context) {
         }
         emotes = em
         ship = world.optJSONArray("trader_ship")?.let { bake(it, pal) }
+        val al = HashMap<String, String>()
+        world.optJSONObject("aliases")?.let { aj -> val ak = aj.keys(); while (ak.hasNext()) { val k = ak.next(); al[k] = aj.getString(k) } }
+        aliases = al
+        val st = world.optJSONObject("station")
+        station = st?.optJSONArray("sprite")?.let { bake(it, pal) }
+        if (st != null) { stationX = st.optInt("x", 520); stationY = st.optInt("y", 14) }
         val r = world.getJSONObject("resident")
         val fr = r.getJSONArray("frames")
         frames = (0 until fr.length()).map { bake(fr.getJSONArray(it), pal) }
@@ -109,8 +120,10 @@ class TownView(context: Context) : View(context) {
         invalidate()
     }
 
-    private fun doorOf(id: String): Float =
-        (buildings.firstOrNull { it.id == id }?.doorX ?: worldW / 2).toFloat()
+    private fun doorOf(id: String): Float {
+        val real = aliases[id] ?: id
+        return (buildings.firstOrNull { it.id == real }?.doorX ?: worldW / 2).toFloat()
+    }
 
     private fun circle(c: Canvas, x: Float, y: Float, r: Float, color: Int) {
         fill.color = color
@@ -119,6 +132,26 @@ class TownView(context: Context) : View(context) {
 
     fun setAway(isAway: Boolean) {
         away = isAway
+    }
+
+    fun setOrbit(orbit: Boolean) {
+        inOrbit = orbit
+    }
+
+    /** The whole colony as a picture, for photo mode. */
+    fun snapshot(scale: Int = 4): Bitmap? {
+        val bg = background ?: return null
+        val out = Bitmap.createBitmap(worldW * scale, worldH * scale, Bitmap.Config.ARGB_8888)
+        val c = Canvas(out)
+        c.scale(scale.toFloat(), scale.toFloat())
+        c.drawBitmap(bg, 0f, 0f, pixelPaint)
+        station?.let { c.drawBitmap(it, stationX.toFloat(), stationY.toFloat(), pixelPaint) }
+        for (b in buildings) c.drawBitmap(b.bitmap, b.x.toFloat(), b.y.toFloat(), pixelPaint)
+        for (d in decor) c.drawBitmap(d.bitmap, d.x.toFloat(), d.y.toFloat(), pixelPaint)
+        if (residentX >= 0 && frames.isNotEmpty() && !away && !inOrbit) {
+            c.drawBitmap(frames[0], residentX.roundToInt() - 8f, (feetY - 16).toFloat(), pixelPaint)
+        }
+        return out
     }
 
     fun setLife(emoteName: String?, light: Double?, event: String?) {
@@ -161,7 +194,7 @@ class TownView(context: Context) : View(context) {
         val scale = width.toFloat() / viewW
         // camera: follow the resident (or the spaceport while it's away) unless you're dragging
         val focus = when {
-            away -> doorOf("spaceport")
+            away || inOrbit -> doorOf("spaceport")
             residentX >= 0 -> residentX
             else -> worldW / 2f
         }
@@ -207,6 +240,17 @@ class TownView(context: Context) : View(context) {
             }
         }
 
+        station?.let { st ->                    // the Orbital Station, drifting slowly
+            val sx = stationX + (sin(t / 4000) * 3).roundToInt()
+            val sy = stationY + (sin(t / 2600)).roundToInt()
+            canvas.drawBitmap(st, sx.toFloat(), sy.toFloat(), pixelPaint)
+            val fast = if (inOrbit) 250 else 900
+            if ((t / fast).toLong() % 2 == 1L) {
+                fill.color = if (inOrbit) Color.parseColor("#ffd86b") else Color.parseColor("#ff5d73")
+                canvas.drawRect(sx + 12f, sy.toFloat(), sx + 14f, sy + 1f, fill)
+            }
+        }
+
         twinkle.forEachIndexed { i, (x, y) ->
             val p = sin(t / 600 + i * 1.7)
             if (p > 0.6) {
@@ -241,7 +285,7 @@ class TownView(context: Context) : View(context) {
             fill.color = if (ev == "eclipse") Color.argb(89, 5, 6, 20) else Color.argb(46, 5, 6, 20)
             canvas.drawRect(0f, 138f, worldW.toFloat(), worldH.toFloat(), fill)
         }
-        if (residentX >= 0 && frames.isNotEmpty() && !away) {
+        if (residentX >= 0 && frames.isNotEmpty() && !away && !inOrbit) {
             val dx = targetX - residentX
             val walking = abs(dx) > 0.5f
             if (walking) residentX += sign(dx) * min(0.9f, abs(dx))

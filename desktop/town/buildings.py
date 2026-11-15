@@ -19,6 +19,12 @@ BUILDINGS = {
             "build": "{\"building\": \"<blueprint id>\", \"plot\": <empty plot number>}  choose where a new building goes and start building it",
             "move_building": "{\"building\": \"<id>\", \"plot\": <empty plot number>}  move a finished building ({move_cost} credits, rebuilds over a few hours)",
             "set_bedtime": "{\"bed_hour\": 0-23, \"wake_hour\": 0-23}  change when you sleep (8-10 hours a night)",
+            "paint": "{\"subject\": \"what to paint\", \"title\": \"...\"}  paint a pixel painting",
+            "showcase": ("{\"type\": \"painting|curio|plant|writing\", \"id\": <id or curio name>, \"floor\": <n>, \"spot\": <1-12, optional>}  "
+                         "display something in your home (each floor has 12 spots; giving a taken spot rotates that item out)"),
+            "remove_showcase": "{\"floor\": <n>, \"spot\": <n>}  take something off display",
+            "upgrade_home": "{}  add a floor to your Home Dome (floor 2: 150, floor 3: 300, floor 4: 600 credits)",
+            "view_collection": "{}  look through your curio collection",
         },
     },
     "library": {
@@ -27,6 +33,7 @@ BUILDINGS = {
         "actions": {
             "recall": "{\"topic\": \"...\"}  look through your notes, memories and life story on a topic",
             "write_note": "{\"topic\": \"...\", \"text\": \"...\"}  write or add to a note",
+            "observe_sky": "{}  use the observatory telescope: moon phase, today's sky picture, events",
         },
     },
     "internet_cafe": {
@@ -46,6 +53,44 @@ BUILDINGS = {
             "send_request": ("{\"kind\": \"want|access|learn|other\", \"content\": \"...\", \"reason\": \"...\", "
                              "\"building\": \"<building id, for access requests>\"}  ask your creator for something"),
             "write_letter": "{\"text\": \"...\"}  write your creator a letter (no request, just talking)",
+        },
+    },
+    "gallery": {
+        "name": "Starlight Gallery",
+        "about": "An art gallery. Paint here, and hang your best paintings on its 12 walls for the colony to see.",
+        "locked": True, "unlockable": True, "unlock_price": 90,
+        "actions": {
+            "paint": "{\"subject\": \"what to paint\", \"title\": \"...\"}  paint a pixel painting",
+            "hang_painting": "{\"painting_id\": <id>, \"replace_id\": <id, only when the walls are full>}  hang a painting",
+        },
+    },
+    "park": {
+        "name": "Low-G Park",
+        "about": "A green park with benches, a fountain and chess tables. Write, relax, play puzzles. Chess games with your creator happen here.",
+        "locked": True, "unlockable": True, "unlock_price": 60,
+        "actions": {
+            "write": "{\"kind\": \"poem|story|myth|essay|song lyrics|letter to the future\", \"title\": \"...\", \"text\": \"...\"}  write something original",
+            "relax": "{}  stroll and unwind (you might find something)",
+            "solve_puzzle": "{}  try a puzzle at the game tables",
+        },
+    },
+    "studio": {
+        "name": "Radio Studio",
+        "about": "A recording studio built onto the Radio Tower. Compose chiptune music and play your own songs.",
+        "locked": True, "unlockable": True, "unlock_price": 120, "upgrade_of": "radio_tower",
+        "actions": {
+            "compose": ("{\"title\": \"...\", \"mood\": \"...\", \"bpm\": 60-200, \"wave\": \"square|pulse|triangle|saw\", "
+                        "\"melody\": \"C4:1 E4:1 G4:2 R:1 ...\", \"bass\": \"C3:4 F2:4 ... (optional)\"}  write a song "
+                        "(notes A-G with # or b, octave 2-6, then :beats; R is a rest)"),
+            "play_composition": "{\"composition_id\": <id>}  play one of your songs over the radio",
+        },
+    },
+    "station": {
+        "name": "Orbital Station",
+        "about": "A space station above the colony, reached from the Spaceport. Study what you've learned and test yourself from memory.",
+        "locked": True, "unlockable": True, "unlock_price": 300, "upgrade_of": "spaceport",
+        "actions": {
+            "station_study": "{}  write test questions on a topic you studied, or take a test that's due",
         },
     },
     "bank": {
@@ -129,7 +174,11 @@ SATISFIES = {
     "archive_memories": ("creativity", 25), "plant": ("creativity", 20),
     "read_mail": ("connection", 35), "send_request": ("connection", 35), "write_letter": ("connection", 45),
     "ask_question": ("connection", 40),
-    "rest": ("rest", 60), "stargaze": ("rest", 40), "build": ("creativity", 40), "move_building": ("creativity", 30), "play_music": ("rest", 45), "water": ("rest", 10), "check_plants": ("rest", 10),
+    "rest": ("rest", 60), "stargaze": ("rest", 40), "relax": ("rest", 55), "paint": ("creativity", 45),
+    "write": ("creativity", 45), "compose": ("creativity", 50), "play_composition": ("rest", 30),
+    "observe_sky": ("curiosity", 35), "station_study": ("curiosity", 40), "solve_puzzle": ("curiosity", 25),
+    "showcase": ("creativity", 15), "hang_painting": ("creativity", 15), "upgrade_home": ("creativity", 30),
+    "view_collection": ("rest", 15), "build": ("creativity", 40), "move_building": ("creativity", 30), "play_music": ("rest", 45), "water": ("rest", 10), "check_plants": ("rest", 10),
 }
 # How much each need grows per turn.
 NEED_GROWTH = {"curiosity": 9, "creativity": 7, "connection": 6, "rest": 4}

@@ -9,6 +9,7 @@ import traceback
 from . import prompts, sprites, web_tools
 from .colony import COLOUR_PRICE, FORM_PRICE, ColonyMixin
 from .backup import make_backup
+from .hobbies import HobbiesMixin, level_for
 from .life import LifeMixin
 from .plants import SPECIES as PLANT_SPECIES
 from .buildings import BUILDINGS, NEED_GROWTH, SATISFIES
@@ -20,7 +21,7 @@ class BudgetExceeded(Exception):
     pass
 
 
-class Agent(ColonyMixin, LifeMixin):
+class Agent(ColonyMixin, LifeMixin, HobbiesMixin):
     def __init__(self, cfg, db, llm, data_dir):
         self.cfg, self.db, self.llm = cfg, db, llm
         self.mem = Memory(db)
@@ -194,8 +195,12 @@ class Agent(ColonyMixin, LifeMixin):
                  f"decor: {', '.join(inv['decor']) or 'none'}; forms owned: {', '.join(inv['forms'])}")
         bl = []
         for bid, b in BUILDINGS.items():
+            parent = b.get("upgrade_of")
             if self.is_locked(bid):
-                bl.append(f"- {bid}: LOCKED. {b.get('locked_about', b['about'])}")
+                need = f" Needs the {BUILDINGS[parent]['name']} built first." if parent else ""
+                bl.append(f"- {bid}: LOCKED ({b.get('unlock_price', '?')} credits or ask). {b.get('locked_about', b['about'])}{need}")
+            elif parent and not self.is_built(parent):
+                bl.append(f"- {bid}: unlocked, but the {BUILDINGS[parent]['name']} has to be built first.")
             elif bid in self.constructions():
                 bl.append(f"- {bid}: being built on plot {self.constructions()[bid]['plot'] + 1}.")
             elif not self.is_built(bid):
@@ -216,6 +221,10 @@ YOU ARE AT: {self.db.get('location', 'home')}
 HOW YOU LOOK: {self.describe_look()}
 YOUR THINGS: {stuff}
 YOUR SLEEP: {self.bedtime()['bed']}:00 to {self.bedtime()['wake']}:00
+YOUR TRAITS (0-100): {self.traits_text()}
+YOUR HOBBIES: {self.hobbies_text()}
+YOUR WORKS: {self.works_text()}
+HOME DOME ({self.floors()} floor{'s' if self.floors() > 1 else ''}, 12 showcase spots each): {self.showcase_text()}
 COLONY MAP (plots along the walkway): {self.map_text()}
 
 WHO YOU ARE:
@@ -266,6 +275,7 @@ What do you do now?"""
                 return self._special_turn(self.sleep_turn())
             self.space_event()          # ends an event that has run its course
             self.maybe_space_event()
+            self.maybe_digest()
             self.plan_day_if_new()
             needs = self.grow_needs()
             decision = self.ask(prompts.DECIDE.format(name=self.name, creator=self.creator),
@@ -336,6 +346,26 @@ What do you do now?"""
         self.db.set("last_backup", {"ts": time.time(), "file": path})
         return path
 
+    def works_text(self):
+        ps = self.db.q("SELECT id, title, hung FROM paintings ORDER BY id DESC LIMIT 6")
+        ws = self.db.q("SELECT id, kind, title FROM writings ORDER BY id DESC LIMIT 4")
+        cs = self.db.q("SELECT id, title FROM compositions ORDER BY id DESC LIMIT 4")
+        col = self.collection()
+        parts = []
+        if ps:
+            parts.append("paintings " + ", ".join(f"#{p['id']} {p['title']}" + (f" (in {p['hung']})" if p["hung"] else "") for p in ps))
+        if ws:
+            parts.append("writings " + ", ".join(f"#{w['id']} {w['title']} ({w['kind']})" for w in ws))
+        if cs:
+            parts.append("songs " + ", ".join(f"#{c['id']} {c['title']}" for c in cs))
+        if col:
+            from .curios import CATALOG
+            parts.append(f"curios {len(col)}/128 (e.g. " + ", ".join(CATALOG[c]["name"] for c in list(col)[-5:]) + ")")
+        bloomed = self.db.q("SELECT id, nickname, species FROM plants WHERE bloomed=1 ORDER BY id DESC LIMIT 4")
+        if bloomed:
+            parts.append("bloomed plants (can give cuttings) " + ", ".join(f"#{b['id']} {b['nickname'] or b['species']}" for b in bloomed))
+        return "; ".join(parts) or "nothing yet"
+
     def _special_turn(self, out):
         """Records a turn that didn't go through the normal choose-an-action step."""
         self.db.x("INSERT INTO turns(ts, building, action, thought, result) VALUES(?,?,?,?,?)",
@@ -349,8 +379,12 @@ What do you do now?"""
         since = self.db.get("last_reflect_id", 0)
         if self.mem.importance_since(since) < self.cfg["reflect_threshold"]:
             return
-        ctx = f"WHO YOU ARE:\n{self.personality()}\n\nRECENT MEMORIES:\n{Memory.fmt(self.mem.recent(30))}"
+        ctx = (f"WHO YOU ARE:\n{self.personality()}\nTRAITS: {self.traits_text()}\n\n"
+               f"RECENT MEMORIES:\n{Memory.fmt(self.mem.recent(30))}")
         out = self.ask(prompts.REFLECT.format(name=self.name), ctx, "reflect")
+        moved = self.adjust_traits(out.get("traits") if isinstance(out.get("traits"), dict) else {})
+        if moved:
+            self.mem.add("reflection", "I can feel myself changing: " + ", ".join(moved) + ".", "home", 5)
         for ins in (out.get("insights") or [])[:3]:
             if isinstance(ins, dict) and ins.get("text"):
                 self.mem.add("reflection", str(ins["text"])[:600], "home", ins.get("importance", 6))
@@ -585,7 +619,55 @@ What do you do now?"""
             leaf, flower = PLANT_SPECIES[p["species"]]["colors"]
             plants.append([leaf, flower, "wilted" if p["alive"] == 0 else p["stage"]])
         return {"plants": plants, "playing": bool(self.now_playing()), "away": bool(self.expedition()),
-                "decor": self.inventory()["decor"], "night": self.is_night()}
+                "decor": self.inventory()["decor"], "night": self.is_night(),
+                "floors": self.floors(), "featured": self.featured_painting(),
+                "studio": self.is_built("studio"), "station": self.is_built("station")}
+
+    def gallery_overview(self):
+        from . import curios as CU
+        from .plants import SPECIES
+        paintings = [{**p, "rows": json.loads(p["rows"])} for p in
+                     self.db.q("SELECT * FROM paintings ORDER BY id DESC LIMIT 60")]
+        col = self.collection()
+        owned = [{"id": cid, "name": CU.CATALOG[cid]["name"], "kind": CU.CATALOG[cid]["kind"],
+                  "rarity": CU.CATALOG[cid]["rarity"], "count": n, "sprite": CU.sprite(cid)}
+                 for cid, n in sorted(col.items())]
+        floors = []
+        h = self.home()
+        for f in range(1, h["floors"] + 1):
+            spots = []
+            for n in range(1, 13):
+                it = h["spots"].get(str(f), {}).get(str(n))
+                if not it:
+                    spots.append(None)
+                    continue
+                icon, rows = None, None
+                if it["type"] == "painting":
+                    r = self.db.q("SELECT rows FROM paintings WHERE id=?", (it["id"],))
+                    rows = json.loads(r[0]["rows"]) if r else None
+                elif it["type"] == "curio" and it["id"] in CU.CATALOG:
+                    icon = CU.sprite(it["id"])
+                elif it["type"] == "plant":
+                    r = self.db.q("SELECT species FROM plants WHERE id=?", (it["id"],))
+                    if r and r[0]["species"] in SPECIES:
+                        icon = sprites.cutting_icon(*SPECIES[r[0]["species"]]["colors"])
+                elif it["type"] == "writing":
+                    icon = sprites.WRITING_ICON
+                spots.append({"type": it["type"], "id": it["id"], "label": self.showcase_label(it),
+                              "icon": icon, "rows": rows})
+            floors.append(spots)
+        return {
+            "palette": sprites.PALETTE, "paintings": paintings,
+            "writings": self.db.q("SELECT * FROM writings ORDER BY id DESC LIMIT 40"),
+            "compositions": self.db.q("SELECT id, ts, title, mood, bpm, wave, seconds FROM compositions ORDER BY id DESC LIMIT 30"),
+            "curios": owned, "curio_total": len(CU.CATALOG), "home_floors": floors,
+            "digests": self.db.q("SELECT * FROM digests ORDER BY id DESC LIMIT 8"),
+            "quizzes": self.db.q("SELECT topic, mastery, attempts, interval_days, due_ts FROM quizzes ORDER BY mastery DESC LIMIT 30"),
+        }
+
+    def featured_painting(self):
+        r = self.db.q("SELECT rows FROM paintings WHERE hung='gallery' ORDER BY hung_ts DESC LIMIT 1")
+        return json.loads(r[0]["rows"]) if r else None
 
     def draw_layout(self):
         lay = dict(self.layout() or {sprites.HOME_PLOT: "home"})
@@ -630,6 +712,10 @@ What do you do now?"""
             "chat": bool(self.chat_state()), "event": self.space_event(),
             "blueprints": self.blueprints(), "map": self.map_text(),
             "last_backup": self.db.get("last_backup"),
+            "in_orbit": self.db.get("location") == "station" and bool((self.db.get("last_turn") or 0) > time.time() - 30 * 60),
+            "traits": self.traits(), "floors": self.floors(),
+            "hobbies": {k: {"xp": v["xp"], "level": level_for(v["xp"])}
+                        for k, v in self.hobbies().items()},
             "credits": self.credits(), "now_playing": self.now_playing(),
             "away": (lambda e: {"topic": e["topic"], "return_ts": e["return_ts"]} if e else None)(self.expedition()),
             "latest_event": self.db.q("SELECT COALESCE(MAX(id),0) AS m FROM events")[0]["m"],

@@ -104,6 +104,11 @@ class ColonyMixin:
                 return f"I can't afford the trader's {name.replace('_', ' ')} ({have}/{price} credits)."
             if key.startswith("seeds:"):
                 inv["seeds"][name] = inv["seeds"].get(name, 0) + 1
+            elif key.startswith("curio:"):
+                col = self.collection()
+                col[name] = col.get(name, 0) + 1
+                self.db.set("curios", col)
+                self.gain_xp("collecting", 4, "bought a curio from the trader")
             else:
                 inv["decor"].append(name)
             self.db.set("inventory", inv)
@@ -238,6 +243,7 @@ class ColonyMixin:
             if growth >= 1 and not bloomed:
                 bloomed = 1
                 self.earn(15, f"{name} bloomed")
+                self.gain_xp("gardening", 10, f"{name} bloomed")
                 self.mem.add("observation", f"My {name} ({p['species'].replace('_', ' ')}) bloomed in the greenhouse!", "greenhouse", 8)
                 self.add_event("plant", f"🌸 {name} bloomed", f"{self.name}'s {p['species'].replace('_', ' ')} is in full bloom.")
             alive = 1
@@ -296,6 +302,7 @@ class ColonyMixin:
         pid = self.db.x("INSERT INTO plants(species, nickname, planted_ts, last_water, last_feed, light, updated_ts) "
                         "VALUES(?,?,?,?,?,?,?)", (species, nick, now, now, now, "medium", now))
         sp = P.SPECIES[species]
+        self.gain_xp("gardening", 3, f"planted {species}")
         return (f"I planted a {species.replace('_', ' ')} (#{pid}{', ' + nick if nick else ''}): {sp['about']}. "
                 f"Care: water every {sp['water_h']}h, feed every {sp['feed_h']}h, {sp['light']} light.")
 
@@ -315,6 +322,7 @@ class ColonyMixin:
             else:
                 self.db.x(f"UPDATE plants SET {field}=?, health=MIN(100, health+3) WHERE id=?", (now, p["id"]))
                 out.append(f"{name}: done")
+                self.gain_xp("gardening", 1)
         return f"I {past}: " + "; ".join(out)
 
     def act_water(self, a, imp):
@@ -412,28 +420,31 @@ class ColonyMixin:
             song = songs[int(a.get("song_id")) - 1]
         except (TypeError, ValueError, IndexError):
             return "I couldn't find that song on the shelf. I should list the music first."
-        label = f"\"{song['title']}\" by {song['artist']}"
+        return self.play_file(song["path"], song["title"], song["artist"])
+
+    def play_file(self, path, title, artist):
+        label = f"\"{title}\" by {artist}"
         if self.quiet_now():
             return f"It's quiet hours, so I listened to {label} softly in my head instead of out loud."
         if self._usage().get("plays", 0) >= self.cfg.get("radio", {}).get("plays_per_day", 12):
             return "I've played a lot of music today. The radio needs a rest."
         cmd = self.player_cmd()
         if not cmd:
-            return f"I wanted to play {label}, but the radio has no player installed (my creator could install mpv)."
+            return f"I wanted to play {label}, but the radio has no player installed."
         self.act_stop_music({}, 0)
         env = dict(os.environ)
         if cmd[0] == "powershell":
-            env["STELLAR_SONG"] = song["path"]
+            env["STELLAR_SONG"] = path
             env["STELLAR_VOLUME"] = str(self.cfg.get("radio", {}).get("volume", 60) / 100)
             full = cmd
         else:
-            full = cmd + [song["path"]]
+            full = cmd + [path]
         try:
             self._proc = subprocess.Popen(full, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                           stderr=subprocess.DEVNULL, env=env, creationflags=NO_WINDOW)
         except OSError as e:
             return f"The radio crackled and failed: {e}"
-        self._now = {"title": song["title"], "artist": song["artist"], "started": time.time()}
+        self._now = {"title": title, "artist": artist, "started": time.time()}
         self._bump("plays")
         return f"I put on {label}. The colony fills with sound."
 
@@ -583,9 +594,10 @@ class ColonyMixin:
         self.db.set("away", None)
         self.mem.add("observation", f"I came home from my expedition on \"{e['topic']}\". {report[:400]}", "spaceport", 8)
         self.earn(20, f"completed expedition: {e['topic'][:60]}")
+        souvenir = self.find_curio(f"my expedition to study {e['topic'][:40]}", boost=1)
         self.add_event("expedition", f"🛬 {self.name} is back: {title}", report[:600], e["id"])
         return {"building": "spaceport", "action": "expedition_return", "thought": "Home again!",
-                "result": f"Returned with a report: {title}"}
+                "result": f"Returned with a report: {title}, and a souvenir: {souvenir}"}
 
     def act_read_reports(self, a, imp):
         rows = self.db.q("SELECT topic, report FROM expeditions WHERE status='returned' ORDER BY id DESC LIMIT 3")
@@ -620,6 +632,7 @@ class ColonyMixin:
                         (time.time(), "run_program", f"Run my program '{name}': {desc}", "", json.dumps({"program_id": pid})))
         self.db.x("UPDATE programs SET request_id=? WHERE id=?", (rid, pid))
         self.add_event("request", f"🛠 {self.name} wants to run '{name}'", desc, rid)
+        self.gain_xp("coding", 4, f"wrote {name}")
         return f"I wrote a program called '{name}' and asked {self.creator} to approve running it."
 
     def act_list_programs(self, a, imp):
@@ -694,6 +707,7 @@ class ColonyMixin:
         self.db.x("UPDATE programs SET status=?, output=?, exit_code=? WHERE id=?", (status, output, code, pid))
         if code == 0:
             self.earn(8, f"program '{prog['name']}' ran successfully")
+            self.gain_xp("coding", 6)
         self.db.x("INSERT INTO letters(ts, sender, content) VALUES(?,?,?)",
                   (time.time(), "Fabrication Hangar", f"Your program '{prog['name']}' {'finished' if code == 0 else 'failed'} "
                                                      f"(exit {code}). Output:\n{output[:1500]}"))

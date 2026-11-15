@@ -154,21 +154,29 @@ def antenna(c, x, y, h, tip="r", lit=True):
 
 
 # ---------------------------------------------------------------- buildings
-def b_home(lit):
-    c = Canvas(BW, BH)
-    c.disc(22, 34, 19, "p", 18)                     # dome habitat
-    c.rect(0, 34, BW, 22, ".")
-    c.rect(3, 34, 38, 21, "P")
-    c.rect(3, 34, 38, 2, "V")
+def b_home(lit, floors=1):
+    """The Home Dome. Each extra floor adds a 14px habitat ring under the dome."""
+    extra = 14 * (max(1, min(4, floors)) - 1)
+    c = Canvas(BW, BH + extra)
+    c.disc(22, 34, 19, "p", 18)                     # dome
+    c.rect(0, 34, BW, 22 + extra, ".")
     for x in range(8, 38, 9):
-        c.rect(x, 18, 1, 16, "P")                   # dome ribs
-    c.disc(16, 24, 3, "X")                          # dome shine
-    porthole(c, 11, 42, 3, lit, "y")
-    porthole(c, 33, 42, 3, lit, "y")
-    d = door(c, 18, 40, 9, 15)
+        c.rect(x, 18, 1, 16, "P")
+    c.disc(16, 24, 3, "X")
+    for f in range(floors - 1):                     # upper floors
+        y = 34 + f * 14
+        c.rect(4, y, 36, 14, "P"); c.rect(4, y, 36, 1, "V"); c.rect(4, y + 13, 36, 1, "M")
+        for wx in (9, 17, 25, 33):
+            porthole(c, wx, y + 7, 2, lit, "y")
+    base = 34 + extra
+    c.rect(3, base, 38, 21, "P")
+    c.rect(3, base, 38, 2, "V")
+    porthole(c, 11, base + 8, 3, lit, "y")
+    porthole(c, 33, base + 8, 3, lit, "y")
+    d = door(c, 18, base + 6, 9, 15)
     c.outline()
     antenna(c, 30, 8, 8, "m", lit)
-    c.rect(0, 55, BW, 1, "k")
+    c.rect(0, BH + extra - 1, BW, 1, "k")
     return c, d
 
 
@@ -381,7 +389,76 @@ def b_spaceport(lit, away=False):
     return c, (3, 44, 8, 6)
 
 
-BUILDERS = {"home": b_home, "library": b_library, "internet_cafe": b_cafe, "post_office": b_post,
+def b_gallery(lit, painting=None):
+    c = Canvas(BW, BH)
+    c.box(2, 14, 40, 42, "N")
+    c.rect(0, 10, 44, 5, "s"); c.rect(0, 10, 44, 1, "w")             # roof cornice
+    for x in (3, 39):
+        c.rect(x, 16, 2, 39, "s")                                    # pillars
+    c.box(10, 17, 24, 22, "o")                                       # big frame
+    c.rect(12, 19, 20, 18, "n")
+    if painting:                                                     # featured painting, scaled to fit 18x18
+        n = len(painting)
+        for y in range(18):
+            for x in range(18):
+                ch = painting[y * n // 18][x * n // 18]
+                if ch != ".":
+                    c.px(13 + x, 19 + y, ch)
+    c.rect(6, 42, 32, 2, "m" if lit else "M")                        # neon strip
+    d = door(c, 18, 44, 9, 11)
+    window(c, 6, 46, 6, 6, lit, "y"); window(c, 32, 46, 6, 6, lit, "y")
+    sign(c, 22, 0, "star", "m", lit)
+    c.outline()
+    c.rect(0, 55, BW, 1, "k")
+    return c, d
+
+
+def b_park(lit):
+    c = Canvas(BW, BH)
+    c.rect(0, 46, BW, 9, "E"); c.rect(0, 46, BW, 1, "e")             # lawn
+    for x in range(0, 44, 3):
+        c.px(x, 47 + (x % 2), "e")
+    for (tx, h, r) in ((8, 24, 7), (35, 20, 6)):                       # trees
+        c.rect(tx, 46 - h + r, 2, h - r, "o")
+        c.disc(tx + 1, 46 - h + r, r, "E")
+        c.disc(tx, 46 - h + r - 1, r - 2, "e")
+    c.disc(22, 44, 5, "S", 2); c.disc(22, 43, 4, "c" if lit else "C", 1)    # fountain
+    c.rect(22, 36, 1, 7, "c" if lit else "C"); c.px(21, 36, "w")
+    c.rect(14, 49, 7, 1, "o"); c.px(14, 50, "O"); c.px(20, 50, "O")        # bench
+    c.rect(26, 48, 5, 2, "k")                                               # chess table
+    for x in range(26, 31):
+        c.px(x, 48, "w" if x % 2 else "k")
+    c.px(28, 50, "O")
+    c.rect(0, 54, BW, 1, "U")
+    sign(c, 22, 18, "leaf", "e", lit)
+    c.outline()
+    c.rect(0, 55, BW, 1, "k")
+    return c, (18, 45, 9, 10)
+
+
+def cutting_icon(leaf, flower):
+    rows = ["..F..F....", "...LFL....", "...LLL....", ".....L....", "....LL....",
+            "...kkkkk..", "...kooook.", "...kooook.", "....kook..", ".........."]
+    return [r.replace("L", leaf).replace("F", flower) for r in rows]
+
+
+WRITING_ICON = ["..........", ".kkkkkkk..", ".kttttttk.", ".ktkkkktk.", ".kttttttk.", ".ktkkkttk.",
+                ".kttttttk.", ".ktkkkktk.", ".kttttttk.", ".kkkkkkkk."]
+
+
+STATION = [
+    "............kk............",
+    "...........kcck...........",
+    "kkkkkkkk...kssk...kkkkkkkk",
+    "kCCcCCck..kssssk..kcCCcCCk",
+    "kCCcCCcSSSssccssSSScCCcCCk",
+    "kCCcCCck..kssssk..kcCCcCCk",
+    "kkkkkkkk...kssk...kkkkkkkk",
+    "...........kSSk...........",
+    "............kk............",
+]
+
+BUILDERS = {"home": b_home, "gallery": b_gallery, "park": b_park, "library": b_library, "internet_cafe": b_cafe, "post_office": b_post,
             "salon": b_salon, "bank": b_bank, "workshop": b_workshop, "greenhouse": b_greenhouse,
             "radio_tower": b_radio, "archive": b_archive, "spaceport": b_spaceport}
 ORDER = ["home", "library", "internet_cafe", "post_office", "greenhouse", "radio_tower",
@@ -394,10 +471,21 @@ def building_sprite(bid, variant, extra=None):
     lit = variant == "open"
     extra = extra or {}
     _DAY = not extra.get("night", True)
-    if bid == "greenhouse":
+    if bid == "home":
+        c, (dx, dy, dw, dh) = b_home(lit, extra.get("floors", 1))
+    elif bid == "gallery":
+        c, (dx, dy, dw, dh) = b_gallery(lit, extra.get("featured"))
+    elif bid == "greenhouse":
         c, (dx, dy, dw, dh) = b_greenhouse(lit, extra.get("plants", ()))
     elif bid == "radio_tower":
         c, (dx, dy, dw, dh) = b_radio(lit, extra.get("playing", False))
+        if extra.get("studio"):                                     # studio annex
+            c.box(32, 40, 12, 15, "M")
+            c.rect(32, 40, 12, 1, "m" if lit else "M")
+            window(c, 35, 44, 6, 4, lit, "m")
+            c.rect(34, 50, 8, 1, "k")
+            for x in range(34, 42, 2):
+                c.px(x, 51, "w")
     elif bid == "spaceport":
         c, (dx, dy, dw, dh) = b_spaceport(lit, extra.get("away", False))
     else:
@@ -676,8 +764,10 @@ def world(layout, building_states, look, extras=None):
         bid = layout.get(i) if isinstance(layout, dict) else None
         if bid:
             variant = building_states.get(bid, "open")
-            buildings.append({"id": bid, "plot": i, "x": x, "y": WALK_Y - BH + 1, "w": BW, "h": BH, "variant": variant,
-                              "door_x": x + BW // 2, "sprite": building_sprite(bid, variant, extras)})
+            spr = building_sprite(bid, variant, extras)
+            h = len(spr)
+            buildings.append({"id": bid, "plot": i, "x": x, "y": WALK_Y - h + 1, "w": BW, "h": h, "variant": variant,
+                              "door_x": x + BW // 2, "sprite": spr})
         else:
             buildings.append({"id": None, "plot": i, "x": x, "y": WALK_Y - BH + 1, "w": BW, "h": BH, "variant": "empty",
                               "door_x": x + BW // 2, "sprite": empty_lot(i + 1)})
@@ -690,6 +780,8 @@ def world(layout, building_states, look, extras=None):
     data = {"w": W, "h": H, "palette": pal, "background": _BG, "buildings": buildings, "decor": decor,
             "away": bool(extras.get("away")), "night": bool(extras.get("night", True)),
             "emotes": EMOTES, "trader_ship": TRADER_SHIP, "home_plot": HOME_PLOT,
+            "aliases": {"studio": "radio_tower", "station": "spaceport"},
+            "station": {"sprite": STATION, "x": 520, "y": 14} if extras.get("station") else None,
             "resident": {"frames": resident_frames(look), "form": look.get("form", "star_spirit"),
                          "feet_y": FEET_Y, "floats": look.get("form", "star_spirit") == "star_spirit"},
             "twinkle": stars_for_twinkle()}

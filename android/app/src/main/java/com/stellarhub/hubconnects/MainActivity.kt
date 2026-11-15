@@ -1,6 +1,12 @@
 package com.stellarhub.hubconnects
 
 import android.app.Activity
+import android.content.ContentValues
+import android.graphics.Bitmap
+import android.media.MediaPlayer
+import android.net.Uri
+import android.provider.MediaStore
+import android.widget.ImageView
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -45,7 +51,8 @@ class MainActivity : Activity() {
         "home" to "Home Dome", "library" to "Observatory Library", "internet_cafe" to "Uplink Café",
         "post_office" to "Relay Post", "salon" to "Nova Salon", "bank" to "Credit Vault",
         "workshop" to "Fabrication Hangar", "greenhouse" to "Hydro Greenhouse", "radio_tower" to "Radio Tower",
-        "archive" to "Archive Vault", "spaceport" to "Spaceport"
+        "archive" to "Archive Vault", "spaceport" to "Spaceport", "gallery" to "Starlight Gallery", "park" to "Low-G Park",
+        "studio" to "Radio Studio", "station" to "Orbital Station"
     )
     private val verbs = mapOf(
         "journal" to "writing in its journal", "update_personality" to "rethinking who it is", "rest" to "resting",
@@ -61,8 +68,15 @@ class MainActivity : Activity() {
         "read_reports" to "reading old reports", "write_program" to "building a program",
         "list_programs" to "checking its programs", "expedition_return" to "just back from an expedition",
         "build" to "starting construction", "move_building" to "moving a building", "set_bedtime" to "changing its bedtime",
-        "stargaze" to "stargazing", "plan_colony" to "planning the colony", "sleep" to "sleeping", "expedition" to "exploring"
+        "stargaze" to "stargazing", "plan_colony" to "planning the colony", "sleep" to "sleeping", "expedition" to "exploring",
+        "paint" to "painting", "showcase" to "arranging its home", "remove_showcase" to "rearranging its home",
+        "upgrade_home" to "adding a floor to its home", "view_collection" to "admiring its collection",
+        "observe_sky" to "at the telescope", "write" to "writing", "relax" to "relaxing in the park",
+        "solve_puzzle" to "solving a puzzle", "hang_painting" to "hanging a painting", "compose" to "composing music",
+        "play_composition" to "playing its own song", "station_study" to "studying"
     )
+    private val hobbyIcons = mapOf("painting" to "🎨", "writing" to "✍️", "composing" to "🎼", "astronomy" to "🔭",
+        "collecting" to "🧺", "games" to "♟️", "gardening" to "🌱", "coding" to "🛠")
 
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -78,6 +92,8 @@ class MainActivity : Activity() {
     private var lastStatus: JSONObject? = null
     private var tab = "inbox"
     private var resumed = false
+    private var player: MediaPlayer? = null
+    private var chessSel: String? = null
 
     private val poller = object : Runnable {
         override fun run() {
@@ -105,19 +121,27 @@ class MainActivity : Activity() {
             letterSpacing = 0.12f
             setPadding(dp(16), dp(12), dp(16), dp(8))
         }
-        root.addView(header)
+        val headRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        headRow.addView(header, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        headRow.addView(Button(this).apply {
+            text = "📷"
+            isAllCaps = false
+            background = GradientDrawable().apply { setColor(panel); setStroke(dp(1), line); cornerRadius = dp(8).toFloat() }
+            setOnClickListener { savePhoto() }
+        }, LinearLayout.LayoutParams(dp(52), dp(40)).apply { setMargins(0, 0, dp(10), 0) })
+        root.addView(headRow)
         town = TownView(this)
         root.addView(town, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         caption = label("Connecting to Stellar Hub…", 14f, dim).apply { setPadding(dp(14), dp(8), dp(14), dp(8)) }
         root.addView(caption)
 
         tabRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(8), 0, dp(8), dp(4)) }
-        for ((id, title) in listOf("inbox" to "Inbox", "chat" to "Chat", "colony" to "Colony", "feed" to "Feed", "hub" to "Hub")) {
+        for ((id, title) in listOf("inbox" to "Inbox", "chat" to "Chat", "colony" to "Colony", "gallery" to "Gallery", "feed" to "Feed", "hub" to "Hub")) {
             tabRow.addView(Button(this).apply {
                 text = title
                 tag = id
                 isAllCaps = false
-                textSize = 13f
+                textSize = 12f
                 setPadding(0, 0, 0, 0)
                 setOnClickListener { showTab(id) }
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
@@ -259,6 +283,7 @@ class MainActivity : Activity() {
         val loc = s.optString("location", "home")
         val away = s.optJSONObject("away")
         town.setAway(away != null)
+        town.setOrbit(s.optBoolean("in_orbit"))
         val ev = s.optJSONObject("event")
         town.setLife(s.optString("emote").takeIf { it.isNotBlank() && it != "null" },
             if (s.isNull("daylight")) null else s.optDouble("daylight"), ev?.optString("type"))
@@ -277,6 +302,8 @@ class MainActivity : Activity() {
         val sb = StringBuilder()
         if (s.optBoolean("chat")) {
             sb.append("$name is chatting with you.")
+        } else if (s.optBoolean("in_orbit")) {
+            sb.append("$name is up at the Orbital Station, studying.")
         } else if (s.optBoolean("asleep") && away == null) {
             sb.append("$name is asleep in the Home Dome (until ${s.optJSONObject("sleep")?.optInt("wake")}:00).")
         } else if (away != null) {
@@ -311,6 +338,7 @@ class MainActivity : Activity() {
         when (id) {
             "inbox" -> loadInbox()
             "colony" -> loadColony()
+            "gallery" -> loadGallery()
             "feed" -> loadFeed()
             "chat" -> loadChat()
             "hub" -> showHub()
@@ -384,14 +412,35 @@ class MainActivity : Activity() {
 
     private fun loadColony() {
         loading()
-        bgTask({ Pair(it.getObject("/api/colony"), it.getArray("/api/milestones")) }) { (col, ms) ->
-            if (tab == "colony") { renderColony(col); renderMilestones(ms) }
+        bgTask({ Triple(it.getObject("/api/colony"), it.getArray("/api/milestones"), it.getObject("/api/gallery")) }) { (col, ms, gal) ->
+            if (tab == "colony") { renderDigests(gal); renderColony(col, false); renderMilestones(ms); renderStudies(gal) }
         }
     }
 
     private fun renderMilestones(ms: JSONArray) {
         val s = lastStatus
         if (s != null) {
+            val hb = section("HOBBIES & SKILLS")
+            val hj = s.optJSONObject("hobbies")
+            if (hj == null || hj.length() == 0) hb.addView(label("No hobbies yet. It picks them up as it tries things.", 13f, dim))
+            hj?.let { h ->
+                val ks = h.keys()
+                while (ks.hasNext()) {
+                    val k = ks.next()
+                    val o = h.getJSONObject(k)
+                    hb.addView(spaced(label("${hobbyIcons[k] ?: ""} $k · level ${o.optInt("level")} · ${o.optInt("xp")} xp", 14f)))
+                    hb.addView(ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100; progress = minOf(100, o.optInt("level") * 10) })
+                }
+            }
+            val tr = section("PERSONALITY TRAITS")
+            s.optJSONObject("traits")?.let { t ->
+                val ks = t.keys()
+                while (ks.hasNext()) {
+                    val k = ks.next()
+                    tr.addView(label("$k · ${t.optInt(k)}", 13f))
+                    tr.addView(ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100; progress = t.optInt(k) })
+                }
+            }
             val plan = section("COLONY PLAN")
             s.optString("map").split("; ").forEach { plan.addView(label(it, 13f, if (it.endsWith("empty")) dim else textCol)) }
             val bp = s.optJSONArray("blueprints")
@@ -416,9 +465,33 @@ class MainActivity : Activity() {
         content.addView(it)
     }
 
-    private fun renderColony(col: JSONObject) {
+    private fun renderDigests(gal: JSONObject) {
         content.removeAllViews()
         content.addView(button("Refresh", panel) { loadColony() }.apply { setTextColor(textCol) })
+        val ds = gal.optJSONArray("digests") ?: JSONArray()
+        if (ds.length() > 0) {
+            val d = ds.getJSONObject(0)
+            val c = section("📰 THIS WEEK IN THE COLONY · ${d.optString("week")}")
+            c.addView(label(d.optString("text"), 14f))
+        }
+    }
+
+    private fun renderStudies(gal: JSONObject) {
+        val qs = gal.optJSONArray("quizzes") ?: JSONArray()
+        if (qs.length() == 0) return
+        val c = section("ORBITAL STATION · STUDIES")
+        for (i in 0 until qs.length()) {
+            val q = qs.getJSONObject(i)
+            c.addView(spaced(label("${q.optString("topic")} · ${q.optInt("mastery")}% mastered", 13f)))
+            c.addView(ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100; progress = q.optInt("mastery") })
+        }
+    }
+
+    private fun renderColony(col: JSONObject, clear: Boolean = true) {
+        if (clear) {
+            content.removeAllViews()
+            content.addView(button("Refresh", panel) { loadColony() }.apply { setTextColor(textCol) })
+        }
 
         // Credit Vault
         val cv = section("CREDIT VAULT")
@@ -485,7 +558,7 @@ class MainActivity : Activity() {
 
         // Fabrication Hangar
         val fh = section("FABRICATION HANGAR")
-        if (!col.optBoolean("sandbox")) fh.addView(label("Sandbox not installed on the hub (sudo apt install bubblewrap).", 12f, warn))
+        if (!col.optBoolean("sandbox")) fh.addView(label("Sandbox not installed on the hub: ${col.optString("sandbox_hint")}", 12f, warn))
         val progs = col.optJSONArray("programs") ?: JSONArray()
         if (progs.length() == 0) fh.addView(label("No programs yet.", 13f, dim))
         for (i in 0 until progs.length()) {
@@ -504,6 +577,231 @@ class MainActivity : Activity() {
             val ch = chapters.getJSONObject(i)
             av.addView(spaced(label(ch.optString("title"), 14f, textCol, true)))
             av.addView(label(ch.optString("text"), 13f, dim))
+        }
+    }
+
+    private fun loadGallery() {
+        loading()
+        bgTask({ Pair(it.getObject("/api/gallery"), it.getObject("/api/chess")) }) { (gal, ch) ->
+            if (tab == "gallery") renderGallery(gal, ch)
+        }
+    }
+
+    private fun pixelView(rows: JSONArray, pal: Map<Char, Int>, sizeDp: Int): ImageView = ImageView(this).apply {
+        val n = maxOf(1, rows.length())
+        setImageBitmap(Pixel.bitmap(rows, pal, maxOf(1, dp(sizeDp) / n), Color.parseColor("#080A18")))
+        layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp)).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
+    }
+
+    /** Lays views out in rows of `perRow`. */
+    private fun gridInto(parent: LinearLayout, items: List<View>, perRow: Int) {
+        var row: LinearLayout? = null
+        items.forEachIndexed { i, v ->
+            if (i % perRow == 0) {
+                row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                parent.addView(row)
+            }
+            row?.addView(v)
+        }
+    }
+
+    private fun renderGallery(gal: JSONObject, ch: JSONObject) {
+        content.removeAllViews()
+        content.addView(button("Refresh", panel) { loadGallery() }.apply { setTextColor(textCol) })
+        val pal = Pixel.palette(gal.getJSONObject("palette"))
+
+        // Home showcase
+        val hs = section("HOME DOME SHOWCASE")
+        val floors = gal.optJSONArray("home_floors") ?: JSONArray()
+        for (f in 0 until floors.length()) {
+            val spots = floors.getJSONArray(f)
+            var used = 0
+            val views = ArrayList<View>()
+            for (i in 0 until spots.length()) {
+                if (spots.isNull(i)) {
+                    views.add(label("${i + 1}", 11f, dim).apply {
+                        gravity = Gravity.CENTER
+                        background = GradientDrawable().apply { setStroke(dp(1), line); cornerRadius = dp(6).toFloat() }
+                        layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
+                    })
+                } else {
+                    used++
+                    val sp = spots.getJSONObject(i)
+                    val rows = sp.optJSONArray("rows") ?: sp.optJSONArray("icon") ?: JSONArray().put("..")
+                    views.add(pixelView(rows, pal, 44))
+                }
+            }
+            hs.addView(spaced(label("Floor ${f + 1} · $used/12", 12f, dim, true)))
+            gridInto(hs, views, 6)
+        }
+
+        // Paintings
+        val pg = section("STARLIGHT GALLERY · PAINTINGS")
+        val ps = gal.optJSONArray("paintings") ?: JSONArray()
+        if (ps.length() == 0) pg.addView(label("No paintings yet.", 13f, dim))
+        val pViews = ArrayList<View>()
+        for (i in 0 until ps.length()) {
+            val p = ps.getJSONObject(i)
+            val cell = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+            cell.addView(pixelView(p.getJSONArray("rows"), pal, 96))
+            cell.addView(label(p.optString("title").take(18), 11f, textCol).apply { gravity = Gravity.CENTER })
+            cell.setOnClickListener { toast(p.optString("about")) }
+            pViews.add(cell)
+        }
+        gridInto(pg, pViews, 3)
+
+        // Songs
+        val sg = section("RADIO STUDIO · SONGS")
+        val cs = gal.optJSONArray("compositions") ?: JSONArray()
+        if (cs.length() == 0) sg.addView(label("No songs yet.", 13f, dim))
+        for (i in 0 until cs.length()) {
+            val c = cs.getJSONObject(i)
+            val id = c.getInt("id")
+            sg.addView(rowOf(button("▶", cyan) { playSong(id) },
+                label("${c.optString("title")} · ${c.optInt("bpm")} bpm · ${c.optDouble("seconds", 0.0).toInt()}s", 14f)))
+        }
+        sg.addView(rowOf(button("■ Stop", dim) { player?.release(); player = null }))
+
+        // Writings
+        val wr = section("LOW-G PARK · WRITINGS")
+        val ws = gal.optJSONArray("writings") ?: JSONArray()
+        if (ws.length() == 0) wr.addView(label("Nothing written yet.", 13f, dim))
+        for (i in 0 until minOf(15, ws.length())) {
+            val w = ws.getJSONObject(i)
+            wr.addView(spaced(label("${w.optString("title")} · ${w.optString("kind")}", 14f, textCol, true)))
+            wr.addView(label(w.optString("text"), 13f, dim))
+        }
+
+        // Curios
+        val cu = section("CURIO COLLECTION")
+        val cl = gal.optJSONArray("curios") ?: JSONArray()
+        cu.addView(label("${cl.length()} of ${gal.optInt("curio_total", 128)} found", 13f, dim))
+        val cViews = ArrayList<View>()
+        for (i in 0 until cl.length()) {
+            val c = cl.getJSONObject(i)
+            cViews.add(pixelView(c.getJSONArray("sprite"), pal, 44).apply {
+                setOnClickListener { toast("${c.optString("name")} (${c.optString("rarity")})" + if (c.optInt("count") > 1) " ×${c.optInt("count")}" else "") }
+            })
+        }
+        gridInto(cu, cViews, 6)
+
+        renderChessCard(ch)
+    }
+
+    private fun playSong(id: Int) {
+        val a = api ?: return
+        player?.release()
+        player = MediaPlayer().apply {
+            try {
+                setDataSource(this@MainActivity, Uri.parse("${a.base}/api/compositions/$id.wav"),
+                    mapOf("X-Hub-Token" to (prefs.getString("code", "") ?: "").trim().uppercase()))
+                setOnPreparedListener { it.start() }
+                setOnErrorListener { _, _, _ -> toast("Couldn't play that song"); true }
+                prepareAsync()
+            } catch (e: Exception) {
+                toast("Couldn't play that song")
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        player?.release()
+        player = null
+        super.onDestroy()
+    }
+
+    private val pieces = mapOf('K' to "♚", 'Q' to "♛", 'R' to "♜", 'B' to "♝", 'N' to "♞", 'P' to "♟")
+
+    private fun renderChessCard(ch: JSONObject) {
+        val card = section("CHESS AT THE PARK")
+        val g = ch.optJSONObject("game")
+        if (g == null) {
+            card.addView(label("No game yet. Your resident plays at the park's chess tables.", 13f, dim))
+        } else {
+            val board = g.optString("board")
+            val creator = g.optString("creator", "w")
+            val legal = g.optJSONArray("legal") ?: JSONArray()
+            val legalList = (0 until legal.length()).map { legal.getString(it) }
+            val result = g.optString("result").takeIf { it.isNotBlank() && it != "null" }
+            val last = g.optString("last").takeIf { it.isNotBlank() && it != "null" }
+            val yourTurn = result == null && g.optString("turn") == creator
+            val status = when {
+                result != null -> mapOf("1-0" to "White wins", "0-1" to "Black wins").getOrElse(result) { "Draw" }
+                yourTurn -> if (g.optBoolean("check")) "Your move (you're in check!)" else "Your move"
+                else -> "Your resident is thinking…"
+            }
+            card.addView(label(status, 14f, if (yourTurn) warn else textCol, true))
+            g.optJSONArray("comments")?.let { cm ->
+                if (cm.length() > 0) card.addView(label("\"" + cm.getJSONObject(cm.length() - 1).optString("text") + "\"", 13f, cyan))
+            }
+            val flip = creator == "b"
+            val targets = chessSel?.let { sel -> legalList.filter { it.startsWith(sel) }.map { it.substring(2, 4) } } ?: emptyList()
+            val size = (resources.displayMetrics.widthPixels - dp(60)) / 8
+            for (r in 0 until 8) {
+                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                for (c in 0 until 8) {
+                    val rr = if (flip) 7 - r else r
+                    val cc = if (flip) 7 - c else c
+                    val name = "abcdefgh"[cc].toString() + (8 - rr)
+                    val p = board[rr * 8 + cc]
+                    val base = if ((rr + cc) % 2 == 1) Color.parseColor("#232A52") else Color.parseColor("#3A4060")
+                    val bg = when {
+                        name == chessSel -> warn
+                        name in targets -> Color.parseColor("#1F8FB3")
+                        last != null && (last.startsWith(name) || last.substring(2, 4) == name) -> Color.parseColor("#5B3FB5")
+                        else -> base
+                    }
+                    row.addView(TextView(this).apply {
+                        text = if (p == '.') "" else pieces[p.uppercaseChar()]
+                        textSize = 22f
+                        gravity = Gravity.CENTER
+                        setTextColor(if (p.isUpperCase()) Color.WHITE else Color.parseColor("#0B0D17"))
+                        setBackgroundColor(bg)
+                        setOnClickListener {
+                            if (!yourTurn) return@setOnClickListener
+                            val sel = chessSel
+                            val mv = if (sel != null) legalList.firstOrNull { it.startsWith(sel + name) && (it.length == 4 || it.endsWith("q")) } else null
+                            if (mv != null) {
+                                chessSel = null
+                                toast("Your resident is thinking…")
+                                bgTask({ it.post("/api/chess/move", JSONObject().put("move", mv)) }) { loadGallery() }
+                            } else {
+                                chessSel = if (legalList.any { it.startsWith(name) }) name else null
+                                loadGallery()
+                            }
+                        }
+                    }, LinearLayout.LayoutParams(size, size))
+                }
+                card.addView(row)
+            }
+        }
+        card.addView(rowOf(
+            button("New game (white)", cyan) { chessSel = null; bgTask({ it.post("/api/chess/new", JSONObject().put("color", "white")) }) { loadGallery() } },
+            button("(black)", dim) { chessSel = null; bgTask({ it.post("/api/chess/new", JSONObject().put("color", "black")) }) { loadGallery() } }
+        ))
+    }
+
+    private fun savePhoto() {
+        val bmp: Bitmap = town.snapshot() ?: run { toast("The colony hasn't loaded yet"); return }
+        val name = "stellar-hub-${System.currentTimeMillis()}.png"
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/Stellar Hub")
+                }
+                val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                    ?: throw IllegalStateException("no storage")
+                contentResolver.openOutputStream(uri)?.use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                toast("Saved to Pictures/Stellar Hub")
+            } else {
+                val dir = getExternalFilesDir("Pictures") ?: filesDir
+                java.io.File(dir, name).outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                toast("Saved to ${dir.absolutePath}")
+            }
+        } catch (e: Exception) {
+            toast("Couldn't save the photo: ${e.message}")
         }
     }
 
@@ -534,6 +832,27 @@ class MainActivity : Activity() {
 
     private fun renderChat(st: JSONObject) {
         content.removeAllViews()
+        val sc = card()
+        sc.addView(label("ASK WHAT IT REMEMBERS", 13f, dim, true))
+        val qbox = input("e.g. What do you remember about the trader?")
+        sc.addView(spaced(qbox))
+        val answer = label("", 14f, cyan)
+        sc.addView(rowOf(button("Ask", cyan) {
+            val q = qbox.text.toString().trim()
+            if (q.isEmpty()) return@button
+            answer.text = "Remembering…"
+            bgTask({ it.post("/api/search", JSONObject().put("q", q)) }) { r ->
+                val mems = r.optJSONArray("memories") ?: JSONArray()
+                val sb = StringBuilder(r.optString("answer"))
+                for (i in 0 until minOf(4, mems.length())) {
+                    val m = mems.getJSONObject(i)
+                    sb.append("\n\n• ").append(fmt(m.optDouble("ts", 0.0))).append(": ").append(m.optString("text").take(200))
+                }
+                answer.text = sb.toString()
+            }
+        }))
+        sc.addView(spaced(answer))
+        content.addView(sc)
         val c = card()
         c.addView(label("LIVE CHAT", 13f, dim, true))
         c.addView(label("Your resident pauses what it's doing to talk with you, and remembers the conversation afterwards.", 12f, dim))

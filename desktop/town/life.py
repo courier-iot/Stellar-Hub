@@ -6,7 +6,7 @@ import random
 import time
 
 from . import plants as P
-from . import prompts, sprites
+from . import curios, prompts, sprites
 from .buildings import BUILDINGS
 from .memory import Memory
 
@@ -66,11 +66,15 @@ class LifeMixin:
         return None
 
     def is_built(self, bid):
+        parent = BUILDINGS.get(bid, {}).get("upgrade_of")
+        if parent:   # upgrades (Studio, Station) need no plot: they exist once unlocked and their parent is built
+            return not self.is_locked(bid) and self.is_built(parent)
         return bid == "home" or (bid in (self.layout() or {}).values() and bid not in self.constructions())
 
     def available_buildings(self):
-        """Buildings it's allowed to have (open by default, or unlocked)."""
-        return [bid for bid in BUILDINGS if bid != "home" and not self.is_locked(bid)]
+        """Plot buildings it's allowed to have (open by default, or unlocked). Upgrades aren't placed on plots."""
+        return [bid for bid in BUILDINGS if bid != "home" and not self.is_locked(bid)
+                and not BUILDINGS[bid].get("upgrade_of")]
 
     def blueprints(self):
         placed = set((self.layout() or {}).values()) | set(self.constructions())
@@ -353,8 +357,12 @@ class LifeMixin:
             stock = {f"seeds:{n}": int(P.TIER_PRICE[P.SPECIES[n]["tier"]] * 0.7) for n in random.sample(rare, 3)}
             deco = random.choice(list(sprites.DECOR_PRICES))
             stock[f"decor:{deco}"] = int(sprites.DECOR_PRICES[deco] * 0.7)
+            pick = curios.random_find(boost=2)
+            stock[f"curio:{pick}"] = {"common": 15, "uncommon": 30, "rare": 60, "legendary": 150}[curios.CATALOG[pick]["rarity"]]
             ev["stock"] = stock
-            ev["about"] += " Today's goods: " + ", ".join(f"trader:{k.split(':')[1]} ({v} credits)" for k, v in stock.items())
+            ev["about"] += " Today's goods: " + ", ".join(
+                f"trader:{k.split(':')[1]} ({curios.CATALOG[k.split(':')[1]]['name'] + ', ' if k.startswith('curio:') else ''}{v} credits)"
+                for k, v in stock.items())
         self.db.set("space_event", ev)
         self.mem.add("observation", f"{info['title']}! {ev['about']}", self.db.get("location", "home"), 7)
         self.add_event("space", f"{info['title']} over the colony", ev["about"][:300])
@@ -370,6 +378,8 @@ class LifeMixin:
             if self._usage().get("stardust", 0) >= 3:
                 return "I watched the meteors streak by. I've collected all the stardust I can carry tonight."
             self._bump("stardust")
+            if random.random() < 0.3:
+                return "A fragment fell nearby and I ran to it: " + self.find_curio("the meteor shower", boost=1)
             if random.random() < 0.2:
                 pick = random.choice([n for n, s in P.SPECIES.items() if s["tier"] in ("rare", "legendary")])
                 inv = self.inventory()
