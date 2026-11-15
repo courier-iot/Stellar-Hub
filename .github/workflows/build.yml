@@ -8,6 +8,12 @@ on:
 permissions:
   contents: write
 
+# Uploading through GitHub's web page can make several commits at once. Only the newest build
+# runs, so two builds never fight over the same release.
+concurrency:
+  group: release-build
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -55,12 +61,12 @@ jobs:
           zip -r "out/StellarHub-v${V}.zip" StellarHub -x '*/__pycache__/*' 'StellarHub/data/*'
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.v.outputs.version }}
-          name: v${{ steps.v.outputs.version }}
-          body: ""
-          files: out/*
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.v.outputs.version }}
+        run: |
+          gh release view "v${V}" > /dev/null 2>&1 || gh release create "v${V}" --title "v${V}" --notes "" --target "${GITHUB_SHA}"
+          gh release upload "v${V}" out/* --clobber
 
   windows-installer:
     needs: build
@@ -93,9 +99,11 @@ jobs:
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer\StellarHub.iss
 
       - name: Add installer to the release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.v.outputs.version }}
-          name: v${{ steps.v.outputs.version }}
-          body: ""
-          files: out/*.exe
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.v.outputs.version }}
+        run: |
+          gh release view "v$env:V" *> $null
+          if ($LASTEXITCODE -ne 0) { gh release create "v$env:V" --title "v$env:V" --notes "" --target "$env:GITHUB_SHA" }
+          gh release upload "v$env:V" (Get-ChildItem out\*.exe).FullName --clobber
