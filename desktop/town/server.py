@@ -120,6 +120,23 @@ def make_server(agent, host, port, pair_code):
                     (limit,)))
             if u.path == "/api/library":
                 return self._json(db.q("SELECT * FROM library ORDER BY id DESC LIMIT ?", (limit,)))
+            if u.path == "/api/events":
+                try:
+                    after = int((qs.get("after") or ["0"])[0])
+                except ValueError:
+                    after = 0
+                latest = db.q("SELECT COALESCE(MAX(id),0) AS m FROM events")[0]["m"]
+                if after < 0:  # phone asking only "where are we?" when it first pairs
+                    return self._json({"latest": latest, "events": []})
+                ev = db.q("SELECT * FROM events WHERE id > ? ORDER BY id LIMIT 50", (after,))
+                for e in ev:
+                    if e["kind"] in ("request", "question", "letter"):
+                        r = db.q("SELECT status, kind FROM requests WHERE id=?", (e["ref_id"],))
+                        e["open"] = bool(r and r[0]["status"] in ("pending", "unread"))
+                        e["request_kind"] = r[0]["kind"] if r else None
+                return self._json({"latest": latest, "events": ev})
+            if u.path == "/api/colony":
+                return self._json(agent.colony_overview())
             if u.path == "/api/letters":
                 return self._json(db.q("SELECT * FROM letters ORDER BY id DESC LIMIT ?", (limit,)))
             return self._json({"error": "not found"}, 404)
@@ -146,6 +163,19 @@ def make_server(agent, host, port, pair_code):
             if m:
                 open_now = agent.toggle_building(m.group(1))
                 return self._json({"ok": open_now is not None, "open": open_now})
+            if path == "/api/credits/bonus":
+                try:
+                    amount = max(-1000, min(1000, int(body.get("amount", 0))))
+                except (TypeError, ValueError):
+                    amount = 0
+                if not amount:
+                    return self._json({"ok": False, "error": "amount needed"}, 400)
+                note = str(body.get("note", "")).strip()[:150] or "a gift"
+                agent.earn(amount, f"from {agent.creator}: {note}")
+                agent.send_letter(f"I gave you {amount} credits: {note}" if amount > 0 else f"I took {-amount} credits: {note}")
+                return self._json({"ok": True, "credits": agent.credits()})
+            if path == "/api/radio/stop":
+                return self._json({"ok": True, "result": agent.act_stop_music({}, 0)})
             m = re.fullmatch(r"/api/buildings/(\w+)/lock", path)
             if m:
                 unlocked = agent.toggle_lock(m.group(1))

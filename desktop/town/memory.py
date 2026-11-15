@@ -55,7 +55,7 @@ class Memory:
         rows = self.db.q("SELECT * FROM memories ORDER BY id DESC LIMIT 1500")
         scored = []
         for r in rows:
-            if r["id"] in exclude_ids:
+            if r["id"] in exclude_ids or r.get("archived"):
                 continue
             overlap = len(q & words(r["content"]))
             if not overlap:

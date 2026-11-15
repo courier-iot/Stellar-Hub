@@ -3,7 +3,8 @@
   "ollama": {
     "url": "http://localhost:11434",
     "model": "qwen2.5:7b",
-    "temperature": 0.8
+    "temperature": 0.8,
+    "num_ctx": 8192
   },
   "creator_name": "Creator",
   "resident_name": null,
@@ -16,5 +17,14 @@
   },
   "port": 8080,
   "phone_access": true,
-  "data_dir": "data"
+  "data_dir": "data",
+  "radio": {
+    "music_dir": "~/Music",
+    "quiet_hours": [
+      23,
+      8
+    ],
+    "volume": 60,
+    "plays_per_day": 12
+  }
 }

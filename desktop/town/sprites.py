@@ -10,7 +10,7 @@ import json
 import math
 import random
 
-W, H = 384, 216            # scene size in pixels
+W, H = 600, 216            # scene size in pixels
 BW, BH = 44, 56            # building sprite size
 GROUND_Y = 138             # where the moon surface starts
 WALK_Y = 186               # top of the walkway
@@ -120,6 +120,10 @@ def neon_icon(c, x, y, icon, col):
         "star": ["...#...", "..###..", "#######", ".#####.", ".##.##.", "#.....#"],
         "coin": [".#####.", "#..#..#", "#.###.#", "#..#..#", "#.###.#", ".#####."],
         "gear": ["#.#.#.#", ".#####.", "##...##", "##...##", ".#####.", "#.#.#.#"],
+        "box": ["#######", "#.....#", "#######", "#.###.#", "#.....#", "#######"],
+        "leaf": ["....###", "..#####", ".####.#", ".###.##", ".#.####", "#......"],
+        "note": ["..####.", "..#..#.", "..#..#.", "..#..#.", "###.###", "###.###"],
+        "rocket": ["...#...", "..###..", "..#.#..", "..###..", ".#####.", "#.#.#.#"],
     }
     for j, row in enumerate(shapes[icon]):
         for i, ch in enumerate(row):
@@ -261,14 +265,129 @@ def b_workshop(lit):
     return c, (12, 40, 9, 15)
 
 
+def b_greenhouse(lit, plants=()):
+    c = Canvas(BW, BH)
+    c.disc(22, 30, 20, "C", 20)
+    c.rect(0, 30, BW, 26, ".")
+    c.box(2, 30, 40, 26, "C")
+    c.disc(22, 30, 19, "N" if not lit else "n", 19)
+    c.rect(3, 30, 38, 25, "N" if not lit else "n")
+    for x in range(6, 40, 8):                               # glass panes
+        c.rect(x, 12, 1, 43, "C")
+    c.rect(2, 30, 40, 1, "C")
+    c.disc(13, 20, 3, "c" if lit else "C")
+    # planter boxes with the resident's real plants (up to 8)
+    c.rect(4, 49, 36, 3, "O"); c.rect(4, 49, 36, 1, "o")
+    slots = [6, 10, 14, 30, 34, 38, 8, 36]
+    for i, (leaf, flower, stage) in enumerate(list(plants)[:8]):
+        px = slots[i]
+        h = {"seed": 1, "sprout": 3, "young": 5, "mature": 8, "blooming": 9}.get(stage, 2)
+        c.rect(px, 49 - h, 1, h, leaf)
+        if h >= 5:
+            c.px(px - 1, 49 - h + 2, leaf); c.px(px + 1, 49 - h + 3, leaf)
+        if stage == "blooming":
+            c.px(px, 48 - h, flower); c.px(px - 1, 49 - h, flower); c.px(px + 1, 49 - h, flower)
+        elif stage == "wilted":
+            c.rect(px, 47, 2, 2, "O")
+    d = door(c, 18, 40, 9, 15)
+    sign(c, 22, 1, "leaf", "e", lit)
+    c.outline()
+    c.rect(0, 55, BW, 1, "k")
+    return c, d
+
+
+def b_radio(lit, playing=False):
+    c = Canvas(BW, BH)
+    for y in range(4, 42):                                  # lattice tower
+        half = 2 + (y - 4) // 5
+        c.px(22 - half, y, "S"); c.px(22 + half, y, "S")
+        if y % 4 == 0:
+            c.rect(22 - half, y, half * 2 + 1, 1, "S")
+        if y % 8 == 2:
+            for i in range(-half, half + 1):
+                c.px(22 + i, y + (i % 2), "g")
+    c.disc(32, 16, 4, "s", 3)                               # dish
+    c.px(30, 16, "k")
+    c.box(8, 38, 28, 18, "N")
+    c.rect(8, 38, 28, 2, "p" if lit else "P")
+    window(c, 11, 43, 5, 5, lit, "p")
+    d = door(c, 18, 42, 9, 13)
+    window(c, 29, 43, 5, 5, lit, "p")
+    sign(c, 22, 26, "note", "p", lit)
+    c.outline()
+    c.px(22, 2, "r" if lit else "R"); c.px(22, 3, "r" if lit else "R")
+    if playing and lit:
+        for (x, y) in ((6, 8), (36, 6), (10, 20)):          # floating music notes
+            c.rect(x, y, 1, 4, "c"); c.rect(x - 2, y + 3, 2, 2, "c"); c.px(x + 1, y, "c")
+    c.rect(0, 55, BW, 1, "k")
+    return c, d
+
+
+def b_archive(lit):
+    c = Canvas(BW, BH)
+    c.box(2, 14, 40, 42, "Q")
+    c.rect(2, 14, 40, 3, "s")
+    for y in range(20, 55, 5):
+        c.rect(3, y, 38, 1, "L")
+    c.disc(22, 36, 12, "k")
+    c.disc(22, 36, 11, "y" if lit else "o")                 # round vault door
+    c.disc(22, 36, 9, "S")
+    c.disc(22, 36, 3, "s")
+    for dx, dy in ((0, -6), (0, 6), (-6, 0), (6, 0)):
+        c.rect(22 + dx, 36 + dy, 1, 1, "y" if lit else "o")
+    sign(c, 22, 2, "box", "y", lit)
+    window(c, 5, 22, 4, 6, lit, "y"); window(c, 35, 22, 4, 6, lit, "y")
+    c.outline()
+    c.rect(0, 55, BW, 1, "k")
+    return c, (18, 42, 9, 13)
+
+
+def b_spaceport(lit, away=False):
+    c = Canvas(BW, BH)
+    c.rect(0, 50, BW, 5, "S"); c.rect(0, 50, BW, 1, "s")    # launch pad
+    for x in range(1, 44, 6):
+        c.px(x, 52, "Y" if lit else "o")
+    c.rect(34, 6, 2, 44, "o")                               # gantry
+    for y in range(8, 50, 5):
+        c.rect(30, y, 6, 1, "O")
+    if not away:
+        c.rect(16, 14, 8, 30, "w")                          # rocket body
+        c.rect(16, 14, 2, 30, "s")
+        c.disc(20, 14, 4, "r", 6); c.rect(16, 14, 8, 2, "w")
+        c.rect(15, 10, 10, 1, ".")
+        porthole(c, 20, 24, 2, lit, "c")
+        c.rect(12, 38, 4, 8, "r"); c.rect(24, 38, 4, 8, "r")  # fins
+        c.rect(18, 44, 4, 6, "S")
+    else:
+        for x in range(14, 27):
+            c.px(x, 49, "k" if x % 2 else "U")              # scorch marks
+    c.box(1, 34, 12, 16, "N")                               # control hut
+    window(c, 3, 37, 8, 5, lit, "c")
+    sign(c, 7, 22, "rocket", "c", lit)
+    c.outline()
+    c.rect(0, 55, BW, 1, "k")
+    return c, (3, 44, 8, 6)
+
+
 BUILDERS = {"home": b_home, "library": b_library, "internet_cafe": b_cafe, "post_office": b_post,
-            "salon": b_salon, "bank": b_bank, "workshop": b_workshop}
-ORDER = ["home", "library", "internet_cafe", "post_office", "salon", "bank", "workshop"]
+            "salon": b_salon, "bank": b_bank, "workshop": b_workshop, "greenhouse": b_greenhouse,
+            "radio_tower": b_radio, "archive": b_archive, "spaceport": b_spaceport}
+ORDER = ["home", "library", "internet_cafe", "post_office", "greenhouse", "radio_tower",
+         "archive", "salon", "spaceport", "bank", "workshop"]
+X0, STEP = 13, 53
 
 
-def building_sprite(bid, variant):
+def building_sprite(bid, variant, extra=None):
     lit = variant == "open"
-    c, (dx, dy, dw, dh) = BUILDERS[bid](lit)
+    extra = extra or {}
+    if bid == "greenhouse":
+        c, (dx, dy, dw, dh) = b_greenhouse(lit, extra.get("plants", ()))
+    elif bid == "radio_tower":
+        c, (dx, dy, dw, dh) = b_radio(lit, extra.get("playing", False))
+    elif bid == "spaceport":
+        c, (dx, dy, dw, dh) = b_spaceport(lit, extra.get("away", False))
+    else:
+        c, (dx, dy, dw, dh) = BUILDERS[bid](lit)
     if variant == "locked":                         # chained airlock + padlock
         for x in range(dx - 1, dx + dw + 1):
             c.px(x, dy + 6 + (x % 2), "S")
@@ -302,21 +421,21 @@ def background():
             thresh = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]][y % 4][x % 4] / 16
             c.px(x, y, nxt if frac > 0.55 and thresh < (frac - 0.55) * 2.2 else bands[i])
     # nebula
-    for _ in range(900):
+    for _ in range(1300):
         a = rnd.random() * math.tau
         r = abs(rnd.gauss(0, 1)) * 26
-        x, y = int(120 + math.cos(a) * r * 2.2), int(44 + math.sin(a) * r * 0.8)
+        x, y = int(210 + math.cos(a) * r * 2.6), int(44 + math.sin(a) * r * 0.8)
         c.px(x, y, rnd.choice("PPMVJ"))
     # stars
-    for _ in range(230):
+    for _ in range(360):
         x, y = rnd.randrange(W), rnd.randrange(GROUND_Y - 30)
         c.px(x, y, rnd.choice("wwtsSG"))
-    for _ in range(6):                               # bigger cross stars
+    for _ in range(9):                               # bigger cross stars
         x, y = rnd.randrange(10, W - 10), rnd.randrange(8, 90)
         for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
             c.px(x + dx, y + dy, "w" if dx == dy == 0 else "s")
     # ringed planet
-    cx, cy = 312, 42
+    cx, cy = 505, 42
     c.disc(cx, cy, 22, "C")
     c.disc(cx - 4, cy - 4, 18, "c")
     c.disc(cx + 6, cy + 6, 16, "C")
@@ -351,13 +470,13 @@ def background():
         for x in range(W):
             c.px(x, y, "K" if (x * 7 + y * 13) % 23 else "U")
     c.rect(0, GROUND_Y, W, 1, "L")
-    for _ in range(26):                              # craters
+    for _ in range(40):                              # craters
         cx2, cy2, r = rnd.randrange(W), rnd.randrange(GROUND_Y + 6, WALK_Y - 4), rnd.randint(3, 7)
         c.disc(cx2, cy2, r, "U", r * .45)
         c.disc(cx2 + 1, cy2 + 1, r - 1, "K", (r - 1) * .4)
         for xx in range(int(cx2 - r + 1), int(cx2 + r)):
             c.px(xx, int(cy2 - r * .45), "L")
-    for _ in range(60):
+    for _ in range(95):
         c.px(rnd.randrange(W), rnd.randrange(GROUND_Y + 2, WALK_Y), rnd.choice("LQ"))
     # metal walkway
     c.rect(0, WALK_Y, W, 1, "s")
@@ -373,7 +492,7 @@ def background():
             c.px(x, y, "U" if (x + y * 3) % 17 else "h")
     # lamp posts between buildings
     for i in range(len(ORDER) + 1):
-        lx = 6 + i * 53
+        lx = X0 - 4 + i * STEP
         c.rect(lx, WALK_Y - 26, 1, 26, "S")
         c.rect(lx - 1, WALK_Y - 28, 3, 2, "c")
     return c.rows()
@@ -381,7 +500,7 @@ def background():
 
 def stars_for_twinkle():
     rnd = random.Random(11)
-    return [[rnd.randrange(W), rnd.randrange(GROUND_Y - 30)] for _ in range(40)]
+    return [[rnd.randrange(W), rnd.randrange(GROUND_Y - 30)] for _ in range(60)]
 
 
 # ---------------------------------------------------------------- the resident
@@ -449,26 +568,54 @@ def resident_palette(look):
 _BG = None
 
 
-def world(building_states, look):
-    """building_states: {id: 'open'|'closed'|'locked'|'construction'}"""
+DECOR = {
+    "bench": ["..........", "..........", "..........", "kkkkkkkkkk", "kooooooook", "kkkkkkkkkk",
+              ".kk....kk.", ".kS....Sk.", ".kS....Sk.", ".kk....kk."],
+    "lantern": ["...kk.....", "..kSSk....", "..kyyk....", "..kyyk....", "..kSSk....", "...kk.....",
+                "...kS.....", "...kS.....", "..kSSk....", "..kkkk...."],
+    "flag": ["kmmmmk....", "kmccmk....", "kmmmmk....", "kS........", "kS........", "kS........",
+             "kS........", "kS........", "kSk.......", "kkk......."],
+    "telescope": [".......kk.", ".....kkwwk", "...kkssk..", ".kkssk....", ".ksk......", "..k.k.....",
+                  ".k...k....", ".k...k....", "k.....k...", "k.....k..."],
+    "fountain": ["....cc....", "...c..c...", "..c.cc.c..", "....cc....", "...kSSk...", ".kkkkkkkk.",
+                 "kcccccccck", "kCCCCCCCCk", ".kkkkkkkk.", ".........."],
+    "robot_pet": ["..........", "...k..k...", "...kkkk...", "..kssssk..", "..kcsscsk.",
+                  "..kssssk..", "...kkkk...", "..kSSSSk..", "..kk..kk..", ".........."],
+    "neon_sign": ["kkkkkkkkkk", "kmmmmmmmmk", "kmkmmkmmmk", "kmmmmmmmmk", "kkkkkkkkkk", "....kk....",
+                  "....kS....", "....kS....", "...kSSk...", "...kkkk..."],
+    "satellite_dish": ["...kkkk...", "..kssssk..", ".kss..ssk.", ".ks....sk.", "..kk..kk..", "....kk....",
+                       "....kS....", "....kS....", "...kSSk...", "..kkkkkk.."],
+}
+DECOR_PRICES = {"bench": 15, "lantern": 20, "flag": 10, "telescope": 40, "fountain": 60,
+                "robot_pet": 80, "neon_sign": 35, "satellite_dish": 45}
+
+
+def world(building_states, look, extras=None):
+    """building_states: {id: 'open'|'closed'|'locked'|'construction'}
+    extras: {"plants": [(leaf, flower, stage)], "playing": bool, "away": bool, "decor": [names]}"""
     global _BG
+    extras = extras or {}
     if _BG is None:
         _BG = background()
     buildings = []
     for i, bid in enumerate(ORDER):
-        x = 10 + i * 53
+        x = X0 + i * STEP
         variant = building_states.get(bid, "open")
         buildings.append({"id": bid, "x": x, "y": WALK_Y - BH + 1, "w": BW, "h": BH, "variant": variant,
-                          "door_x": x + BW // 2, "sprite": building_sprite(bid, variant)})
+                          "door_x": x + BW // 2, "sprite": building_sprite(bid, variant, extras)})
+    decor = []
+    for i, name in enumerate([d for d in extras.get("decor", []) if d in DECOR][:20]):
+        decor.append({"name": name, "x": 6 + i * 14, "y": WALK_Y + 12, "sprite": DECOR[name]})
     pal = dict(PALETTE)
     pal.update(resident_palette(look))
-    data = {"w": W, "h": H, "palette": pal, "background": _BG, "buildings": buildings,
+    data = {"w": W, "h": H, "palette": pal, "background": _BG, "buildings": buildings, "decor": decor,
+            "away": bool(extras.get("away")),
             "resident": {"frames": resident_frames(look), "form": look.get("form", "star_spirit"),
                          "feet_y": FEET_Y, "floats": look.get("form", "star_spirit") == "star_spirit"},
             "twinkle": stars_for_twinkle()}
-    data["version"] = world_version(building_states, look)
+    data["version"] = world_version(building_states, look, extras)
     return data
 
 
-def world_version(building_states, look):
-    return hashlib.md5(json.dumps([building_states, look], sort_keys=True).encode()).hexdigest()[:10]
+def world_version(building_states, look, extras=None):
+    return hashlib.md5(json.dumps([building_states, look, extras or {}], sort_keys=True).encode()).hexdigest()[:10]

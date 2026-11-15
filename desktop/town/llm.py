@@ -1,6 +1,7 @@
 """Talks to the local Ollama server. Standard library only."""
 import json
 import re
+import urllib.error
 import urllib.request
 
 
@@ -9,7 +10,7 @@ class LLMError(Exception):
 
 
 def _extract_json(text):
-    text = (text or "").strip()
+    text = re.sub(r"<think>.*?</think>", "", text or "", flags=re.S).strip()
     try:
         return json.loads(text)
     except json.JSONDecodeError:
@@ -24,7 +25,9 @@ def _extract_json(text):
 
 
 class OllamaLLM:
-    def __init__(self, url, model, temperature=0.8, timeout=300):
+    def __init__(self, url, model, temperature=0.8, timeout=300, num_ctx=8192):
+        self.num_ctx = num_ctx
+        self.think_param = True   # turned off automatically if the model doesn't understand it
         self.url = url.rstrip("/")
         self.model = model
         self.temperature = temperature
@@ -36,6 +39,9 @@ class OllamaLLM:
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as r:
                 return json.loads(r.read().decode())
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode(errors="replace")[:300]
+            raise LLMError(f"Ollama error {e.code}: {detail}") from e
         except Exception as e:
             raise LLMError(f"Could not reach Ollama at {self.url}: {e}") from e
 
@@ -57,11 +63,21 @@ class OllamaLLM:
             "model": self.model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             "stream": False,
-            "options": {"temperature": self.temperature},
+            "options": {"temperature": self.temperature, "num_ctx": self.num_ctx},
         }
         if json_mode:
             payload["format"] = "json"
-        out = self._post("/api/chat", payload)
+        if self.think_param:
+            payload["think"] = False   # thinking models: answer directly (faster, cleaner JSON)
+        try:
+            out = self._post("/api/chat", payload)
+        except LLMError as e:
+            if self.think_param and "think" in str(e).lower():
+                self.think_param = False
+                payload.pop("think", None)
+                out = self._post("/api/chat", payload)
+            else:
+                raise
         return out.get("message", {}).get("content", "")
 
     def chat_json(self, system, user, task=None):
@@ -91,6 +107,18 @@ class MockLLM:
             ("post_office", "read_mail", {}),
             ("bank", "enter", {}),
             ("salon", "change_look", {"form": "robot", "primary": "silver", "secondary": "blue", "accent": "cyan"}),
+            ("post_office", "ask_question", {"question": "What does rain feel like?"}),
+            ("post_office", "send_request", {"kind": "access", "content": "May I use the greenhouse?", "reason": "I want to grow things.", "building": "greenhouse"}),
+            ("bank", "check_balance", {}),
+            ("bank", "buy", {"item": "decor:bench"}),
+            ("greenhouse", "plant", {"species": "moon_moss", "nickname": "Silvy"}),
+            ("greenhouse", "check_plants", {}),
+            ("greenhouse", "water", {"plant_id": "all"}),
+            ("radio_tower", "broadcast_log", {"text": "Day one log: quiet skies."}),
+            ("radio_tower", "list_music", {"search": ""}),
+            ("radio_tower", "play_music", {"song_id": 1}),
+            ("workshop", "write_program", {"name": "hello", "description": "prints primes", "code": "print([p for p in range(2,30) if all(p%d for d in range(2,p))])"}),
+            ("spaceport", "start_expedition", {"topic": "black holes", "hours": 1}),
             ("home", "rest", {}),
         ]
 
@@ -105,6 +133,14 @@ class MockLLM:
             return {"goals": ["Learn something about space", "Write in my journal"]}
         if task == "reflect":
             return {"insights": [{"text": "I seem happiest when I'm learning about the sky.", "importance": 7}]}
+        if task == "review":
+            return {"completed": [0], "note": "I did the first one."}
+        if task == "chapter":
+            return {"title": "Waking Up", "text": "Mock chapter about my first days."}
+        if task == "exp_plan":
+            return {"legs": ["basics", "history", "open questions"]}
+        if task == "exp_report":
+            return {"title": "Mock Report", "report": "I learned a lot.", "skills": ["explain the basics"]}
         if task == "summarize":
             return {"summary": "Mock notes about the topic.", "follow_up": "something related"}
         b, a, args = self.script[self.i % len(self.script)]

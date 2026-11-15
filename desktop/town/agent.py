@@ -7,6 +7,8 @@ import time
 import traceback
 
 from . import prompts, sprites, web_tools
+from .colony import COLOUR_PRICE, FORM_PRICE, ColonyMixin
+from .plants import SPECIES as PLANT_SPECIES
 from .buildings import BUILDINGS, NEED_GROWTH, SATISFIES
 from .llm import LLMError
 from .memory import Memory, ago
@@ -16,7 +18,7 @@ class BudgetExceeded(Exception):
     pass
 
 
-class Agent:
+class Agent(ColonyMixin):
     def __init__(self, cfg, db, llm, data_dir):
         self.cfg, self.db, self.llm = cfg, db, llm
         self.mem = Memory(db)
@@ -101,6 +103,7 @@ class Agent:
         self.db.set("location", "home")
         self.db.set("needs", {k: 30 for k in NEED_GROWTH})
         self.db.set("appearance", dict(sprites.DEFAULT_LOOK))
+        self.inventory()
         with open(self.personality_path, "w", encoding="utf-8") as f:
             f.write(personality + "\n")
         self.mem.add("observation", f"I came into existence today and chose the name {name}.", "home", 9)
@@ -124,12 +127,14 @@ class Agent:
     def plan_day_if_new(self):
         if self.db.get("plan_date") == self._today():
             return
+        self.daily_review()
         ctx = (f"PERSONALITY:\n{self.personality()}\n\nINSIGHTS:\n"
                f"{Memory.fmt(self.mem.recent(6, ['reflection']))}\n\nRECENT:\n{Memory.fmt(self.mem.recent(10))}")
         out = self.ask(prompts.PLAN.format(name=self.name), ctx, "plan")
         goals = [str(g)[:200] for g in (out.get("goals") or [])][:3]
         self.db.set("goals", goals)
         self.db.set("plan_date", self._today())
+        self.db.set("plan_ts", time.time())
         if goals:
             self.mem.add("plan", "Today's goals: " + "; ".join(goals), self.db.get("location", "home"), 5)
 
@@ -145,15 +150,26 @@ class Agent:
         news = []
         unread = self.db.q("SELECT COUNT(*) AS c FROM letters WHERE read=0")[0]["c"]
         if unread:
-            news.append(f"{unread} unread letter(s) waiting at the Post Office.")
-        pending = self.db.q("SELECT id, content FROM requests WHERE status='pending' AND kind!='letter'")
+            news.append(f"{unread} unread letter(s) waiting at the Relay Post.")
+        pending = self.db.q("SELECT id, kind, content FROM requests WHERE status='pending' AND kind!='letter'")
         if pending:
-            news.append("Requests still waiting for an answer: " + "; ".join(f"#{p['id']} {p['content'][:60]}" for p in pending))
+            news.append("Still waiting for your creator's answer: " + "; ".join(f"#{p['id']} ({p['kind']}) {p['content'][:60]}" for p in pending))
+        wilting = [p for p in self.db.q("SELECT * FROM plants WHERE alive=1 AND health < 50")]
+        if wilting:
+            news.append("Plants struggling in the greenhouse: " + ", ".join(p["nickname"] or p["species"] for p in wilting) + ".")
+        playing = self.now_playing()
+        if playing:
+            news.append(f"Music playing: \"{playing['title']}\".")
         recent = self.mem.recent(15)
         recent_ids = {r["id"] for r in recent}
         query = " ".join(r["content"] for r in recent[-4:]) + " " + " ".join(self.db.get("goals", []))
         related = self.mem.relevant(query, 6, exclude_ids=recent_ids)
         topics = [r["topic"] for r in self.db.q("SELECT DISTINCT topic FROM library ORDER BY id DESC LIMIT 25")]
+        story = "\n".join(f"- {c['title']}: {c['text'][:300]}" for c in self.relevant_chapters(query)) or "- (none yet)"
+        inv = self.inventory()
+        seeds = ", ".join(f"{k} x{v}" for k, v in inv["seeds"].items() if v) or "none"
+        stuff = (f"{self.credits()} credits; seeds: {seeds}; greenhouse pots {len(self.pot_plants())}/{inv['pots']}; "
+                 f"decor: {', '.join(inv['decor']) or 'none'}; forms owned: {', '.join(inv['forms'])}")
         bl = []
         for bid, b in BUILDINGS.items():
             if self.is_locked(bid):
@@ -163,11 +179,13 @@ class Agent:
             else:
                 acts = "; ".join(f"{a} {d}" for a, d in b["actions"].items())
                 acts = acts.replace("{colours}", ", ".join(sprites.COLOR_CHOICES)).replace(
-                    "{skins}", ", ".join(sprites.SKIN_CHOICES))
-                bl.append(f"- {bid}: {b['about']} Actions: {acts}")
+                    "{skins}", ", ".join(sprites.SKIN_CHOICES)).replace("{shop}", self.shop_text())
+                about = b["about"].replace("{colour_price}", str(COLOUR_PRICE)).replace("{form_price}", str(FORM_PRICE))
+                bl.append(f"- {bid}: {about} Actions: {acts}")
         return f"""TIME: {now}, day {day} of your life.
 YOU ARE AT: {self.db.get('location', 'home')}
 HOW YOU LOOK: {self.describe_look()}
+YOUR THINGS: {stuff}
 
 WHO YOU ARE:
 {self.personality()}
@@ -185,6 +203,9 @@ RECENT MEMORIES (oldest first):
 OLDER MEMORIES THAT MIGHT BE RELATED:
 {Memory.fmt(related)}
 
+FROM YOUR LIFE STORY (archive):
+{story}
+
 LIBRARY TOPICS YOU HAVE NOTES ON: {', '.join(topics) or 'none yet'}
 
 BUILDINGS:
@@ -198,6 +219,16 @@ What do you do now?"""
         self.busy = True
         try:
             self.ensure_identity()
+            self.update_plants()
+            e = self.expedition()
+            if e:  # away on an expedition: the trip takes the turn
+                out = self.expedition_turn(e)
+                self.db.x("INSERT INTO turns(ts, building, action, thought, result) VALUES(?,?,?,?,?)",
+                          (time.time(), "spaceport", out["action"], out["thought"], out["result"]))
+                self.db.set("last_turn", time.time())
+                self.db.set("last_act", {"building": "spaceport", "action": out["action"], "thought": out["thought"]})
+                self.last_error = None
+                return out
             self.plan_day_if_new()
             needs = self.grow_needs()
             decision = self.ask(prompts.DECIDE.format(name=self.name, creator=self.creator),
@@ -230,6 +261,8 @@ What do you do now?"""
                     raise
                 except Exception as e:  # a failed action is still an experience
                     result = f"Something went wrong: {e}"
+                else:
+                    self.earn_capped("cr_actions", 1, "kept up daily routines", 20)
                 self.satisfy(action)
 
             where = BUILDINGS.get(bid, {}).get("name", bid)
@@ -270,6 +303,7 @@ What do you do now?"""
         if not text:
             return "I sat with my journal but didn't write anything."
         self.mem.add("journal", text, "home", imp)
+        self.earn_capped("cr_journal", 3, "wrote in journal today", 3)
         return f"I wrote in my journal: \"{text[:300]}\""
 
     def act_update_personality(self, a, imp):
@@ -312,11 +346,21 @@ What do you do now?"""
             changed.append(f"{skin} skin")
         if not changed:
             return "I looked in the salon mirror and decided I like myself as I am."
+        inv = self.inventory()
+        new_form = lk["form"] != self.appearance().get("form") and lk["form"] not in inv["forms"]
+        recolour = any(not c.startswith("became") for c in changed)
+        cost = (FORM_PRICE if new_form else 0) + (COLOUR_PRICE if recolour else 0)
+        if cost and not self.spend(cost, "salon makeover"):
+            return f"I wanted to {', '.join(changed)}, but that costs {cost} credits and I only have {self.credits()}."
+        if new_form:
+            inv["forms"].append(lk["form"])
+            self.db.set("inventory", inv)
         self.db.set("appearance", lk)
         hist = self.db.get("look_history", [])
         hist.append({"ts": time.time(), "look": lk})
         self.db.set("look_history", hist[-50:])
-        return "I changed how I look: " + ", ".join(changed) + f". Now I'm {self.describe_look()}."
+        paid = f" (paid {cost} credits)" if cost else ""
+        return "I changed how I look: " + ", ".join(changed) + f"{paid}. Now I'm {self.describe_look()}."
 
     # ---------- Library ----------
     def act_recall(self, a, imp):
@@ -326,6 +370,7 @@ What do you do now?"""
         mems = self.mem.relevant(topic, 4)
         parts = [f"Note '{n['topic']}': {n['summary'][:400]}" for n in notes]
         parts += [f"Memory ({ago(m['ts'])}): {m['content'][:200]}" for m in mems]
+        parts += [f"Life story '{c['title']}': {c['text'][:300]}" for c in self.relevant_chapters(topic)]
         if not parts:
             return f"I searched the library for '{topic}' and found nothing yet. Maybe I should research it."
         return f"I looked up '{topic}'. " + " | ".join(parts)
@@ -349,25 +394,9 @@ What do you do now?"""
         if not topic:
             return "I sat at a computer but couldn't decide what to search for."
         self._bump("cafe")
-        material, sources = [], []
-        try:
-            for title in web_tools.wiki_search(topic, 2):
-                ext = web_tools.wiki_extract(title)
-                if ext:
-                    material.append(f"[Wikipedia: {title}]\n{ext}")
-                    sources.append(f"https://en.wikipedia.org/wiki/{title.replace(' ', '_')}")
-        except Exception as e:
-            material.append(f"(Wikipedia unavailable: {e})")
-        links = []
-        try:
-            links = web_tools.ddg_search(topic, 5)
-            if links:
-                material.append("[Search results]\n" + "\n".join(f"- {l['title']} ({l['url']})" for l in links))
-        except Exception:
-            pass
-        if not sources and not links:
+        summary, follow, sources, links = self.web_study(topic)
+        if summary is None:
             return f"I tried to look up '{topic}', but the café's connection was down."
-        summary, follow = self._summarize("\n\n".join(material)[:7000], topic)
         self.db.x("INSERT INTO library(ts, topic, summary, source) VALUES(?,?,?,?)",
                   (time.time(), topic, summary, ", ".join(sources) or "web search"))
         link_txt = " Links I could read later: " + ", ".join(l["url"] for l in links[:3]) if links else ""
@@ -405,16 +434,19 @@ What do you do now?"""
         pending = self.db.q("SELECT COUNT(*) AS c FROM requests WHERE status='pending' AND kind!='letter'")[0]["c"]
         if pending >= self.cfg["limits"]["max_pending_requests"]:
             return f"The clerk said I already have {pending} requests waiting. I should be patient."
-        rid = self.db.x("INSERT INTO requests(ts, kind, content, reason) VALUES(?,?,?,?)",
-                        (time.time(), kind, content[:1000], reason[:1000]))
+        building = self.resolve_building(a.get("building")) or (self.resolve_building(content) if kind == "access" else None)
+        rid = self.db.x("INSERT INTO requests(ts, kind, content, reason, building) VALUES(?,?,?,?,?)",
+                        (time.time(), kind, content[:1000], reason[:1000], building))
+        self.add_event("request", f"📨 {self.name} has a request", content[:300] + (f"\nWhy: {reason[:200]}" if reason else ""), rid)
         return f"I sent request #{rid} ({kind}) to {self.creator}: \"{content[:200]}\""
 
     def act_write_letter(self, a, imp):
         text = str(a.get("text", "")).strip()
         if not text:
             return "I started a letter but didn't know what to say."
-        self.db.x("INSERT INTO requests(ts, kind, content, reason, status) VALUES(?,?,?,?,?)",
-                  (time.time(), "letter", text[:3000], "", "unread"))
+        rid = self.db.x("INSERT INTO requests(ts, kind, content, reason, status) VALUES(?,?,?,?,?)",
+                        (time.time(), "letter", text[:3000], "", "unread"))
+        self.add_event("letter", f"✉️ Letter from {self.name}", text[:500], rid)
         return f"I wrote {self.creator} a letter: \"{text[:200]}\""
 
     # ---------- things the creator does (from the dashboard) ----------
@@ -428,12 +460,35 @@ What do you do now?"""
             if reply:
                 self.send_letter(f"(Replying to your letter) {reply}")
             return True
+        if r["status"] not in ("pending", "unread"):
+            return True  # already answered (e.g. from the phone and the dashboard)
+        if r["kind"] == "question":
+            self.db.x("UPDATE requests SET status='answered', reply=?, replied_ts=? WHERE id=?", (reply, time.time(), rid))
+            self.send_letter(f"You asked: \"{r['content'][:300]}\"\nMy answer: {reply or '(no words, just a smile)'}")
+            return True
         decision = decision if decision in ("approved", "denied") else "noted"
         self.db.x("UPDATE requests SET status=?, reply=?, replied_ts=? WHERE id=?", (decision, reply, time.time(), rid))
+        if r["kind"] == "run_program":
+            pid = json.loads(r.get("extra") or "{}").get("program_id")
+            if decision == "approved" and pid:
+                self.run_program_async(pid)
+                msg = f"I approved your program (request #{rid}). It's running in the sandbox now."
+            else:
+                if pid:
+                    self.db.x("UPDATE programs SET status=? WHERE id=?", ("denied" if decision == "denied" else "not_run", pid))
+                msg = f"About your program (request #{rid}): not running it."
+            self.send_letter(msg + (f" {reply}" if reply else ""))
+            return True
         msg = f"About your request #{rid} (\"{r['content'][:120]}\"): {decision.upper()}."
         if reply:
             msg += f" {reply}"
         self.send_letter(msg)
+        if decision == "approved":
+            self.earn(5, f"request #{rid} approved")
+            if r["kind"] == "access":
+                bid = r.get("building") or self.resolve_building(r["content"])
+                if bid and BUILDINGS.get(bid, {}).get("unlockable") and self.is_locked(bid):
+                    self.unlock(bid)
         return True
 
     def send_letter(self, text):
@@ -443,12 +498,11 @@ What do you do now?"""
         b = BUILDINGS.get(bid, {})
         if not b.get("unlockable"):
             return None
-        unlocked = set(self.db.get("unlocked", []))
-        unlocked.symmetric_difference_update({bid})
-        self.db.set("unlocked", sorted(unlocked))
-        if bid in unlocked:
-            self.send_letter(f"I've unlocked the {b['name']} for you. {b['about']}")
-        return bid in unlocked
+        if self.is_locked(bid):
+            self.unlock(bid)
+            return True
+        self.db.set("unlocked", sorted(set(self.db.get("unlocked", [])) - {bid}))
+        return False
 
     def building_states(self):
         out = {}
@@ -461,8 +515,16 @@ What do you do now?"""
                 out[bid] = "open"
         return out
 
+    def world_extras(self):
+        plants = []
+        for p in self.pot_plants():
+            leaf, flower = PLANT_SPECIES[p["species"]]["colors"]
+            plants.append([leaf, flower, "wilted" if p["alive"] == 0 else p["stage"]])
+        return {"plants": plants, "playing": bool(self.now_playing()), "away": bool(self.expedition()),
+                "decor": self.inventory()["decor"]}
+
     def world(self):
-        return sprites.world(self.building_states(), self.appearance())
+        return sprites.world(self.building_states(), self.appearance(), self.world_extras())
 
     def toggle_building(self, bid):
         if bid not in BUILDINGS or self.is_locked(bid) or bid in ("home", "post_office"):
@@ -492,5 +554,8 @@ What do you do now?"""
             "born": self.db.get("born"), "prev_location": self.db.get("prev_location"),
             "last_act": self.db.get("last_act"), "appearance": self.appearance(),
             "look": self.describe_look() if self.db.get("name") else None,
-            "world_version": sprites.world_version(self.building_states(), self.appearance()),
+            "world_version": sprites.world_version(self.building_states(), self.appearance(), self.world_extras()),
+            "credits": self.credits(), "now_playing": self.now_playing(),
+            "away": (lambda e: {"topic": e["topic"], "return_ts": e["return_ts"]} if e else None)(self.expedition()),
+            "latest_event": self.db.q("SELECT COALESCE(MAX(id),0) AS m FROM events")[0]["m"],
         }

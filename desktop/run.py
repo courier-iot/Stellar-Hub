@@ -46,7 +46,7 @@ def main():
         llm = MockLLM()
     else:
         o = cfg["ollama"]
-        llm = OllamaLLM(o["url"], o["model"], o.get("temperature", 0.8))
+        llm = OllamaLLM(o["url"], o["model"], o.get("temperature", 0.8), num_ctx=o.get("num_ctx", 8192))
     agent = Agent(cfg, db, llm, data_dir)
 
     log(f"Stellar Hub v{VERSION}")
