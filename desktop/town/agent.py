@@ -8,6 +8,8 @@ import traceback
 
 from . import prompts, sprites, web_tools
 from .colony import COLOUR_PRICE, FORM_PRICE, ColonyMixin
+from .backup import make_backup
+from .life import LifeMixin
 from .plants import SPECIES as PLANT_SPECIES
 from .buildings import BUILDINGS, NEED_GROWTH, SATISFIES
 from .llm import LLMError
@@ -18,7 +20,7 @@ class BudgetExceeded(Exception):
     pass
 
 
-class Agent(ColonyMixin):
+class Agent(ColonyMixin, LifeMixin):
     def __init__(self, cfg, db, llm, data_dir):
         self.cfg, self.db, self.llm = cfg, db, llm
         self.mem = Memory(db)
@@ -82,9 +84,15 @@ class Agent(ColonyMixin):
     def appearance(self):
         return self.db.get("appearance", dict(sprites.DEFAULT_LOOK))
 
+    def storm(self):
+        ev = self.db.get("space_event")
+        return bool(ev and ev["type"] == "solar_storm" and ev["end"] > time.time())
+
     def is_available(self, bid):
         b = BUILDINGS.get(bid)
-        if not b or self.is_locked(bid) or bid in self.closed_buildings():
+        if not b or self.is_locked(bid) or bid in self.closed_buildings() or not self.is_built(bid):
+            return False
+        if bid == "internet_cafe" and self.storm():
             return False
         if bid == "internet_cafe" and self._usage()["cafe"] >= self.cfg["limits"]["cafe_visits_per_day"]:
             return False
@@ -109,6 +117,15 @@ class Agent(ColonyMixin):
         self.mem.add("observation", f"I came into existence today and chose the name {name}.", "home", 9)
         if out.get("first_curiosity"):
             self.mem.add("plan", f"The first thing I want to understand: {out['first_curiosity']}", "home", 7)
+        try:
+            bed, wake = int(out.get("bed_hour", 23)) % 24, int(out.get("wake_hour", 7)) % 24
+        except (TypeError, ValueError):
+            bed, wake = 23, 7
+        if not 8 <= (wake - bed) % 24 <= 10:
+            wake = (bed + 9) % 24
+        self.db.set("sleep", {"bed": bed, "wake": wake})
+        self.mem.add("plan", f"I decided I'll sleep from {bed}:00 to {wake}:00.", "home", 4)
+        self.plan_colony("new")
 
     def grow_needs(self):
         needs = self.db.get("needs", {k: 30 for k in NEED_GROWTH})
@@ -157,6 +174,11 @@ class Agent(ColonyMixin):
         wilting = [p for p in self.db.q("SELECT * FROM plants WHERE alive=1 AND health < 50")]
         if wilting:
             news.append("Plants struggling in the greenhouse: " + ", ".join(p["nickname"] or p["species"] for p in wilting) + ".")
+        ev = self.space_event()
+        if ev:
+            news.append(f"EVENT: {ev['title']}. {ev['about']}")
+        if self.blueprints():
+            news.append("Blueprints ready to build: " + ", ".join(self.blueprints()) + ".")
         playing = self.now_playing()
         if playing:
             news.append(f"Music playing: \"{playing['title']}\".")
@@ -174,18 +196,27 @@ class Agent(ColonyMixin):
         for bid, b in BUILDINGS.items():
             if self.is_locked(bid):
                 bl.append(f"- {bid}: LOCKED. {b.get('locked_about', b['about'])}")
+            elif bid in self.constructions():
+                bl.append(f"- {bid}: being built on plot {self.constructions()[bid]['plot'] + 1}.")
+            elif not self.is_built(bid):
+                bl.append(f"- {bid}: BLUEPRINT, not built yet. Build it from home: build {{\"building\": \"{bid}\", \"plot\": <empty plot>}}")
+            elif bid == "internet_cafe" and self.storm():
+                bl.append(f"- {bid}: OFFLINE (solar storm).")
             elif not self.is_available(bid):
                 bl.append(f"- {bid}: CLOSED for now.")
             else:
                 acts = "; ".join(f"{a} {d}" for a, d in b["actions"].items())
                 acts = acts.replace("{colours}", ", ".join(sprites.COLOR_CHOICES)).replace(
-                    "{skins}", ", ".join(sprites.SKIN_CHOICES)).replace("{shop}", self.shop_text())
+                    "{skins}", ", ".join(sprites.SKIN_CHOICES)).replace("{shop}", self.shop_text()).replace(
+                    "{move_cost}", str(self.cfg.get("move_cost", 1500)))
                 about = b["about"].replace("{colour_price}", str(COLOUR_PRICE)).replace("{form_price}", str(FORM_PRICE))
                 bl.append(f"- {bid}: {about} Actions: {acts}")
         return f"""TIME: {now}, day {day} of your life.
 YOU ARE AT: {self.db.get('location', 'home')}
 HOW YOU LOOK: {self.describe_look()}
 YOUR THINGS: {stuff}
+YOUR SLEEP: {self.bedtime()['bed']}:00 to {self.bedtime()['wake']}:00
+COLONY MAP (plots along the walkway): {self.map_text()}
 
 WHO YOU ARE:
 {self.personality()}
@@ -219,16 +250,22 @@ What do you do now?"""
         self.busy = True
         try:
             self.ensure_identity()
+            self.finish_constructions()
+            self.chat_expire()
+            if self.chat_state():
+                return {"skipped": "chatting with the creator"}
+            if self.layout() is None:  # upgrading from before plots existed: lay out the colony
+                summary = self.plan_colony("upgrade")
+                return self._special_turn({"building": "home", "action": "plan_colony",
+                                           "thought": "Time to decide where everything goes.", "result": f"I laid out my colony: {summary}"})
             self.update_plants()
             e = self.expedition()
             if e:  # away on an expedition: the trip takes the turn
-                out = self.expedition_turn(e)
-                self.db.x("INSERT INTO turns(ts, building, action, thought, result) VALUES(?,?,?,?,?)",
-                          (time.time(), "spaceport", out["action"], out["thought"], out["result"]))
-                self.db.set("last_turn", time.time())
-                self.db.set("last_act", {"building": "spaceport", "action": out["action"], "thought": out["thought"]})
-                self.last_error = None
-                return out
+                return self._special_turn(self.expedition_turn(e))
+            if self.is_asleep():
+                return self._special_turn(self.sleep_turn())
+            self.space_event()          # ends an event that has run its course
+            self.maybe_space_event()
             self.plan_day_if_new()
             needs = self.grow_needs()
             decision = self.ask(prompts.DECIDE.format(name=self.name, creator=self.creator),
@@ -247,7 +284,13 @@ What do you do now?"""
             if bid not in BUILDINGS:
                 result = f"I looked for a place called '{bid}', but there's no such building in town."
             elif self.is_locked(bid):
-                result = f"I went to the {BUILDINGS[bid]['name']}, but it's locked. {BUILDINGS[bid].get('locked_about', BUILDINGS[bid]['about'])}"
+                result = f"I wanted to visit the {BUILDINGS[bid]['name']}, but it's locked. {BUILDINGS[bid].get('locked_about', BUILDINGS[bid]['about'])}"
+            elif bid in self.constructions():
+                result = f"The {BUILDINGS[bid]['name']} is still being built."
+            elif not self.is_built(bid):
+                result = f"There's no {BUILDINGS[bid]['name']} in the colony yet. I have its blueprint: I can build it from Home."
+            elif bid == "internet_cafe" and self.storm():
+                result = "The Uplink Café is dark: the solar storm knocked out the uplink."
                 self.set_location(bid)
             elif not self.is_available(bid):
                 result = f"The {BUILDINGS[bid]['name']} is closed right now."
@@ -272,6 +315,7 @@ What do you do now?"""
             self.db.x("INSERT INTO turns(ts, building, action, thought, result) VALUES(?,?,?,?,?)",
                       (time.time(), bid, action, thought, result[:2000]))
             self.maybe_reflect()
+            self.check_milestones()
             self.db.set("last_turn", time.time())
             self.db.set("last_act", {"building": bid, "action": action, "thought": thought})
             self.last_error = None
@@ -285,6 +329,21 @@ What do you do now?"""
         finally:
             self.busy = False
             self.turn_lock.release()
+
+    def backup_now(self):
+        b = self.cfg.get("backups", {})
+        path = make_backup(os.path.dirname(self.home_dir), b.get("dir", "~/StellarHub-backups"), b.get("keep", 14))
+        self.db.set("last_backup", {"ts": time.time(), "file": path})
+        return path
+
+    def _special_turn(self, out):
+        """Records a turn that didn't go through the normal choose-an-action step."""
+        self.db.x("INSERT INTO turns(ts, building, action, thought, result) VALUES(?,?,?,?,?)",
+                  (time.time(), out["building"], out["action"], out["thought"], out["result"]))
+        self.db.set("last_turn", time.time())
+        self.db.set("last_act", {"building": out["building"], "action": out["action"], "thought": out["thought"]})
+        self.last_error = None
+        return out
 
     def maybe_reflect(self):
         since = self.db.get("last_reflect_id", 0)
@@ -506,8 +565,13 @@ What do you do now?"""
 
     def building_states(self):
         out = {}
+        cons = self.constructions()
         for bid, b in BUILDINGS.items():
-            if self.is_locked(bid):
+            if bid in cons:
+                out[bid] = "construction"
+            elif bid == "internet_cafe" and self.storm():
+                out[bid] = "closed"
+            elif self.is_locked(bid):
                 out[bid] = "locked" if b.get("unlockable") else "construction"
             elif bid in self.closed_buildings():
                 out[bid] = "closed"
@@ -521,10 +585,16 @@ What do you do now?"""
             leaf, flower = PLANT_SPECIES[p["species"]]["colors"]
             plants.append([leaf, flower, "wilted" if p["alive"] == 0 else p["stage"]])
         return {"plants": plants, "playing": bool(self.now_playing()), "away": bool(self.expedition()),
-                "decor": self.inventory()["decor"]}
+                "decor": self.inventory()["decor"], "night": self.is_night()}
+
+    def draw_layout(self):
+        lay = dict(self.layout() or {sprites.HOME_PLOT: "home"})
+        for bid, c in self.constructions().items():
+            lay[c["plot"]] = bid
+        return lay
 
     def world(self):
-        return sprites.world(self.building_states(), self.appearance(), self.world_extras())
+        return sprites.world(self.draw_layout(), self.building_states(), self.appearance(), self.world_extras())
 
     def toggle_building(self, bid):
         if bid not in BUILDINGS or self.is_locked(bid) or bid in ("home", "post_office"):
@@ -554,7 +624,12 @@ What do you do now?"""
             "born": self.db.get("born"), "prev_location": self.db.get("prev_location"),
             "last_act": self.db.get("last_act"), "appearance": self.appearance(),
             "look": self.describe_look() if self.db.get("name") else None,
-            "world_version": sprites.world_version(self.building_states(), self.appearance(), self.world_extras()),
+            "world_version": sprites.world_version(self.draw_layout(), self.building_states(), self.appearance(), self.world_extras()),
+            "emote": self.emote() if self.db.get("name") else None, "asleep": self.is_asleep(),
+            "sleep": self.bedtime(), "night": self.is_night(), "daylight": self.daylight(),
+            "chat": bool(self.chat_state()), "event": self.space_event(),
+            "blueprints": self.blueprints(), "map": self.map_text(),
+            "last_backup": self.db.get("last_backup"),
             "credits": self.credits(), "now_playing": self.now_playing(),
             "away": (lambda e: {"topic": e["topic"], "return_ts": e["return_ts"]} if e else None)(self.expedition()),
             "latest_event": self.db.q("SELECT COALESCE(MAX(id),0) AS m FROM events")[0]["m"],

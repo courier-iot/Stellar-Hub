@@ -10,7 +10,8 @@ import json
 import math
 import random
 
-W, H = 600, 216            # scene size in pixels
+PLOTS, HOME_PLOT = 15, 7    # 15 building plots, Home Dome in the middle
+W, H = 812, 216            # scene size in pixels
 BW, BH = 44, 56            # building sprite size
 GROUND_Y = 138             # where the moon surface starts
 WALK_Y = 186               # top of the walkway
@@ -89,8 +90,15 @@ class Canvas:
 
 
 # ---------------------------------------------------------------- pieces
+_DAY = False   # daytime: windows reflect light instead of glowing
+
+
 def window(c, x, y, w, h, lit, glow="y"):
     c.rect(x, y, w, h, "k")
+    if lit and _DAY:
+        c.rect(x + 1, y + 1, w - 2, h - 2, "g")
+        c.px(x + 1, y + 1, "s"); c.px(x + w - 2, y + h - 2, "G")
+        return
     c.rect(x + 1, y + 1, w - 2, h - 2, glow if lit else "n")
     if lit:
         c.px(x + 1, y + 1, "w")
@@ -98,6 +106,10 @@ def window(c, x, y, w, h, lit, glow="y"):
 
 def porthole(c, cx, cy, r, lit, glow="c"):
     c.disc(cx, cy, r + 1, "k")
+    if lit and _DAY:
+        c.disc(cx, cy, r, "g")
+        c.px(int(cx - r / 2), int(cy - r / 2), "s")
+        return
     c.disc(cx, cy, r, glow if lit else "n")
     if lit:
         c.px(int(cx - r / 2), int(cy - r / 2), "w")
@@ -378,8 +390,10 @@ X0, STEP = 13, 53
 
 
 def building_sprite(bid, variant, extra=None):
+    global _DAY
     lit = variant == "open"
     extra = extra or {}
+    _DAY = not extra.get("night", True)
     if bid == "greenhouse":
         c, (dx, dy, dw, dh) = b_greenhouse(lit, extra.get("plants", ()))
     elif bid == "radio_tower":
@@ -421,13 +435,13 @@ def background():
             thresh = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]][y % 4][x % 4] / 16
             c.px(x, y, nxt if frac > 0.55 and thresh < (frac - 0.55) * 2.2 else bands[i])
     # nebula
-    for _ in range(1300):
+    for _ in range(1700):
         a = rnd.random() * math.tau
         r = abs(rnd.gauss(0, 1)) * 26
-        x, y = int(210 + math.cos(a) * r * 2.6), int(44 + math.sin(a) * r * 0.8)
+        x, y = int(300 + math.cos(a) * r * 3.2), int(44 + math.sin(a) * r * 0.8)
         c.px(x, y, rnd.choice("PPMVJ"))
     # stars
-    for _ in range(360):
+    for _ in range(480):
         x, y = rnd.randrange(W), rnd.randrange(GROUND_Y - 30)
         c.px(x, y, rnd.choice("wwtsSG"))
     for _ in range(9):                               # bigger cross stars
@@ -435,7 +449,7 @@ def background():
         for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
             c.px(x + dx, y + dy, "w" if dx == dy == 0 else "s")
     # ringed planet
-    cx, cy = 505, 42
+    cx, cy = 690, 42
     c.disc(cx, cy, 22, "C")
     c.disc(cx - 4, cy - 4, 18, "c")
     c.disc(cx + 6, cy + 6, 16, "C")
@@ -470,7 +484,7 @@ def background():
         for x in range(W):
             c.px(x, y, "K" if (x * 7 + y * 13) % 23 else "U")
     c.rect(0, GROUND_Y, W, 1, "L")
-    for _ in range(40):                              # craters
+    for _ in range(54):                              # craters
         cx2, cy2, r = rnd.randrange(W), rnd.randrange(GROUND_Y + 6, WALK_Y - 4), rnd.randint(3, 7)
         c.disc(cx2, cy2, r, "U", r * .45)
         c.disc(cx2 + 1, cy2 + 1, r - 1, "K", (r - 1) * .4)
@@ -491,7 +505,7 @@ def background():
         for x in range(W):
             c.px(x, y, "U" if (x + y * 3) % 17 else "h")
     # lamp posts between buildings
-    for i in range(len(ORDER) + 1):
+    for i in range(PLOTS + 1):
         lx = X0 - 4 + i * STEP
         c.rect(lx, WALK_Y - 26, 1, 26, "S")
         c.rect(lx - 1, WALK_Y - 28, 3, 2, "c")
@@ -500,7 +514,7 @@ def background():
 
 def stars_for_twinkle():
     rnd = random.Random(11)
-    return [[rnd.randrange(W), rnd.randrange(GROUND_Y - 30)] for _ in range(60)]
+    return [[rnd.randrange(W), rnd.randrange(GROUND_Y - 30)] for _ in range(80)]
 
 
 # ---------------------------------------------------------------- the resident
@@ -590,32 +604,99 @@ DECOR_PRICES = {"bench": 15, "lantern": 20, "flag": 10, "telescope": 40, "founta
                 "robot_pet": 80, "neon_sign": 35, "satellite_dish": 45}
 
 
-def world(building_states, look, extras=None):
-    """building_states: {id: 'open'|'closed'|'locked'|'construction'}
-    extras: {"plants": [(leaf, flower, stage)], "playing": bool, "away": bool, "decor": [names]}"""
+DIGITS = {"0": ["###", "#.#", "#.#", "#.#", "###"], "1": [".#.", "##.", ".#.", ".#.", "###"],
+          "2": ["###", "..#", "###", "#..", "###"], "3": ["###", "..#", ".##", "..#", "###"],
+          "4": ["#.#", "#.#", "###", "..#", "..#"], "5": ["###", "#..", "###", "..#", "###"],
+          "6": ["###", "#..", "###", "#.#", "###"], "7": ["###", "..#", ".#.", ".#.", ".#."],
+          "8": ["###", "#.#", "###", "#.#", "###"], "9": ["###", "#.#", "###", "..#", "###"]}
+
+
+def empty_lot(number):
+    """A bare plot: foundation pad, corner markers, a beacon and the plot number."""
+    c = Canvas(BW, BH)
+    c.rect(2, 50, 40, 5, "U"); c.rect(2, 50, 40, 1, "L")
+    for x in range(3, 41, 4):
+        c.px(x, 52, "Q")
+    for x in (2, 41):
+        c.rect(x, 46, 1, 4, "Y"); c.px(x, 45, "Y")
+    c.rect(36, 30, 1, 20, "S")                       # beacon pole
+    c.rect(35, 28, 3, 2, "c")
+    c.box(4, 36, 15, 9, "h")                         # plot number sign
+    text = str(number)
+    x = 6 if len(text) == 2 else 10
+    for ch in text:
+        for j, row in enumerate(DIGITS[ch]):
+            for i, v in enumerate(row):
+                if v == "#":
+                    c.px(x + i, 38 + j, "s")
+        x += 5
+    c.rect(11, 45, 1, 5, "S")
+    return c.rows()
+
+
+EMOTES = {
+    "!": ["kkkkkkkkk", "kwwwrwwwk", "kwwwrwwwk", "kwwwrwwwk", "kwwwwwwwk", "kwwwrwwwk", "kkkkkkkkk", "...kk....", "...k....."],
+    "?": ["kkkkkkkkk", "kwwPPPwwk", "kwwwwPwwk", "kwwwPPwwk", "kwwwwwwwk", "kwwwPwwwk", "kkkkkkkkk", "...kk....", "...k....."],
+    "note": ["kkkkkkkkk", "kwwwCCCwk", "kwwwCwCwk", "kwwwCwwwk", "kwwCCwwwk", "kwwCCwwwk", "kkkkkkkkk", "...kk....", "...k....."],
+    "z": ["kkkkkkkkk", "kwwCCCCwk", "kwwwwCwwk", "kwwwCwwwk", "kwwCwwwwk", "kwwCCCCwk", "kkkkkkkkk", "...kk....", "...k....."],
+    "heart": ["kkkkkkkkk", "kwmmwmmwk", "kwmmmmmwk", "kwmmmmmwk", "kwwmmmwwk", "kwwwmwwwk", "kkkkkkkkk", "...kk....", "...k....."],
+    "chat": ["kkkkkkkkk", "kwwwwwwwk", "kwwwwwwwk", "kwSwSwSwk", "kwwwwwwwk", "kwwwwwwwk", "kkkkkkkkk", "...kk....", "...k....."],
+    "idea": ["kkkkkkkkk", "kwwyyywwk", "kwyyyyywk", "kwwyyywwk", "kwwwSwwwk", "kwwwSwwwk", "kkkkkkkkk", "...kk....", "...k....."],
+}
+
+TRADER_SHIP = [
+    "........kkkkkk..........",
+    "......kkssssssk.........",
+    "....kkssccccsssk........",
+    "..kkssscwwccsssskkk.....",
+    ".kssssssccsssssssssk....",
+    "kssssssssssssssssssskkk.",
+    "kSSSSSSSSSSSSSSSSSSSSSSk",
+    ".kSSmmSSmmSSmmSSmmSSSSk.",
+    "..kkkkkkkkkkkkkkkkkkkk..",
+    "...kY.........kY........",
+    "...kYY........kYY.......",
+]
+
+
+def plot_x(i):
+    return X0 + i * STEP
+
+
+def world(layout, building_states, look, extras=None):
+    """layout: {plot index: building id}. building_states: {id: open|closed|construction}
+    extras: {"plants": [...], "playing": bool, "away": bool, "decor": [...], "night": bool}"""
     global _BG
     extras = extras or {}
     if _BG is None:
         _BG = background()
     buildings = []
-    for i, bid in enumerate(ORDER):
-        x = X0 + i * STEP
-        variant = building_states.get(bid, "open")
-        buildings.append({"id": bid, "x": x, "y": WALK_Y - BH + 1, "w": BW, "h": BH, "variant": variant,
-                          "door_x": x + BW // 2, "sprite": building_sprite(bid, variant, extras)})
+    for i in range(PLOTS):
+        x = plot_x(i)
+        bid = layout.get(i) if isinstance(layout, dict) else None
+        if bid:
+            variant = building_states.get(bid, "open")
+            buildings.append({"id": bid, "plot": i, "x": x, "y": WALK_Y - BH + 1, "w": BW, "h": BH, "variant": variant,
+                              "door_x": x + BW // 2, "sprite": building_sprite(bid, variant, extras)})
+        else:
+            buildings.append({"id": None, "plot": i, "x": x, "y": WALK_Y - BH + 1, "w": BW, "h": BH, "variant": "empty",
+                              "door_x": x + BW // 2, "sprite": empty_lot(i + 1)})
     decor = []
+    start = plot_x(HOME_PLOT) - 70
     for i, name in enumerate([d for d in extras.get("decor", []) if d in DECOR][:20]):
-        decor.append({"name": name, "x": 6 + i * 14, "y": WALK_Y + 12, "sprite": DECOR[name]})
+        decor.append({"name": name, "x": start + i * 14, "y": WALK_Y + 12, "sprite": DECOR[name]})
     pal = dict(PALETTE)
     pal.update(resident_palette(look))
     data = {"w": W, "h": H, "palette": pal, "background": _BG, "buildings": buildings, "decor": decor,
-            "away": bool(extras.get("away")),
+            "away": bool(extras.get("away")), "night": bool(extras.get("night", True)),
+            "emotes": EMOTES, "trader_ship": TRADER_SHIP, "home_plot": HOME_PLOT,
             "resident": {"frames": resident_frames(look), "form": look.get("form", "star_spirit"),
                          "feet_y": FEET_Y, "floats": look.get("form", "star_spirit") == "star_spirit"},
             "twinkle": stars_for_twinkle()}
-    data["version"] = world_version(building_states, look, extras)
+    data["version"] = world_version(layout, building_states, look, extras)
     return data
 
 
-def world_version(building_states, look, extras=None):
-    return hashlib.md5(json.dumps([building_states, look, extras or {}], sort_keys=True).encode()).hexdigest()[:10]
+def world_version(layout, building_states, look, extras=None):
+    key = [sorted((int(k), v) for k, v in (layout or {}).items()), building_states, look, extras or {}]
+    return hashlib.md5(json.dumps(key, sort_keys=True).encode()).hexdigest()[:10]

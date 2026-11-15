@@ -135,6 +135,10 @@ def make_server(agent, host, port, pair_code):
                         e["open"] = bool(r and r[0]["status"] in ("pending", "unread"))
                         e["request_kind"] = r[0]["kind"] if r else None
                 return self._json({"latest": latest, "events": ev})
+            if u.path == "/api/chat":
+                return self._json(agent.chat_state() or {"messages": []})
+            if u.path == "/api/milestones":
+                return self._json(db.q("SELECT * FROM milestones ORDER BY ts DESC"))
             if u.path == "/api/colony":
                 return self._json(agent.colony_overview())
             if u.path == "/api/letters":
@@ -174,6 +178,26 @@ def make_server(agent, host, port, pair_code):
                 agent.earn(amount, f"from {agent.creator}: {note}")
                 agent.send_letter(f"I gave you {amount} credits: {note}" if amount > 0 else f"I took {-amount} credits: {note}")
                 return self._json({"ok": True, "credits": agent.credits()})
+            if path == "/api/chat/start":
+                return self._json(agent.chat_start())
+            if path == "/api/chat/say":
+                text = str(body.get("text", "")).strip()
+                if not text:
+                    return self._json({"error": "say something"}, 400)
+                try:
+                    return self._json({"reply": agent.chat_say(text), "chat": agent.chat_state()})
+                except Exception as e:
+                    return self._json({"error": f"{agent.name} couldn't answer: {e}"}, 503)
+            if path == "/api/chat/end":
+                return self._json({"summary": agent.chat_end()})
+            if path == "/api/space_event":
+                ev = agent.start_space_event(str(body.get("type", "")))
+                return self._json({"ok": ev is not None, "event": ev})
+            if path == "/api/backup":
+                try:
+                    return self._json({"ok": True, "file": agent.backup_now()})
+                except Exception as e:
+                    return self._json({"ok": False, "error": str(e)}, 500)
             if path == "/api/radio/stop":
                 return self._json({"ok": True, "result": agent.act_stop_music({}, 0)})
             m = re.fullmatch(r"/api/buildings/(\w+)/lock", path)

@@ -88,6 +88,23 @@ class ColonyMixin:
             kind, name = "", kind
         inv = self.inventory()
         have = self.credits()
+        if kind == "trader":
+            ev = self.db.get("space_event") or {}
+            stock = ev.get("stock") if ev.get("type") == "trader" else None
+            key = next((k for k in (stock or {}) if k.split(":", 1)[1] == name), None)
+            if not key:
+                return "The trader doesn't have that (or has already left)."
+            price = stock[key]
+            if not self.spend(price, f"bought {name.replace('_', ' ')} from the trader"):
+                return f"I can't afford the trader's {name.replace('_', ' ')} ({have}/{price} credits)."
+            if key.startswith("seeds:"):
+                inv["seeds"][name] = inv["seeds"].get(name, 0) + 1
+            else:
+                inv["decor"].append(name)
+            self.db.set("inventory", inv)
+            del stock[key]
+            self.db.set("space_event", ev)
+            return f"I bought {name.replace('_', ' ')} from the travelling trader for {price} credits!"
         if kind == "decor" or (not kind and name in sprites.DECOR_PRICES):
             price = sprites.DECOR_PRICES.get(name)
             if price is None:
@@ -127,7 +144,7 @@ class ColonyMixin:
             if not self.spend(price, f"unlocked {b['name']}"):
                 return f"I can't afford the {b['name']} yet ({have}/{price} credits)."
             self.unlock(bid, by="credits")
-            return f"I paid {price} credits and unlocked the {b['name']}!"
+            return f"I paid {price} credits and got the blueprint for the {b['name']}! Now I need to choose a plot and build it."
         return f"The vault clerk didn't understand '{item}'."
 
     def daily_review(self):
@@ -179,7 +196,8 @@ class ColonyMixin:
         self.db.set("unlocked", sorted(unlocked))
         b = BUILDINGS[bid]
         if by == "creator":
-            self.send_letter(f"I've unlocked the {b['name']} for you. {b['about'].split('.')[0]}.")
+            self.send_letter(f"I've unlocked the {b['name']} for you. {b['about'].split('.')[0]}. "
+                             f"You have its blueprint now: pick a plot and build it from your Home Dome.")
         self.add_event("unlock", f"🔓 {b['name']} unlocked", f"Unlocked by {by}.")
 
     # ================================================================ greenhouse
@@ -207,7 +225,8 @@ class ColonyMixin:
             if water_over <= 0 and feed_over <= 0 and p["light"] == sp["light"]:
                 delta += dt * 2
             health = max(0.0, min(100.0, p["health"] + delta))
-            growth = p["growth"] + (dt / 24 / sp["days"]) * (health / 100 if health > 40 else 0)
+            paused = (self.db.get("space_event") or {}).get("type") == "eclipse"
+            growth = p["growth"] + (0 if paused else (dt / 24 / sp["days"]) * (health / 100 if health > 40 else 0))
             stage = P.stage_for(min(growth, 1.0))
             name = p["nickname"] or p["species"].replace("_", " ")
             bloomed = p["bloomed"]
@@ -472,7 +491,7 @@ class ColonyMixin:
 
     def web_study(self, topic, max_chars=7000):
         material, sources, links = [], [], []
-        if "internet_cafe" in self.closed_buildings():
+        if "internet_cafe" in self.closed_buildings() or self.storm():
             return None, None, [], []
         try:
             for title in web_tools.wiki_search(topic, 2):

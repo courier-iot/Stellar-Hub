@@ -317,7 +317,15 @@ def main():
     else:
         say(f"  ✗ music folder {music} not found. Set radio.music_dir in config.json", "y")
 
-    say("\nAll set. Start Stellar Hub with ./start.sh\n", "b")
+    unit = os.path.expanduser("~/.config/systemd/user/stellar-hub.service")
+    if os.path.exists(unit):
+        say("  ✓ starts automatically with your PC", "g")
+        say("\nAll set. Restart it after updates with:  systemctl --user restart stellar-hub\n", "b")
+        return 0
+    if shutil.which("systemctl") and ask("\nStart Stellar Hub automatically with your PC?"):
+        subprocess.run(["sh", os.path.join(ROOT, "install-service.sh")])
+        return 0
+    say("\nAll set. Start Stellar Hub with ./start.sh   (or make it start with your PC: sh install-service.sh)\n", "b")
     return 0
 
 

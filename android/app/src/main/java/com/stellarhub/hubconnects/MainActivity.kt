@@ -59,7 +59,9 @@ class MainActivity : Activity() {
         "broadcast_log" to "broadcasting a colony log", "archive_memories" to "writing its life story",
         "read_chapter" to "rereading its life story", "start_expedition" to "launching an expedition",
         "read_reports" to "reading old reports", "write_program" to "building a program",
-        "list_programs" to "checking its programs", "expedition_return" to "just back from an expedition"
+        "list_programs" to "checking its programs", "expedition_return" to "just back from an expedition",
+        "build" to "starting construction", "move_building" to "moving a building", "set_bedtime" to "changing its bedtime",
+        "stargaze" to "stargazing", "plan_colony" to "planning the colony", "sleep" to "sleeping", "expedition" to "exploring"
     )
 
     private val io = Executors.newSingleThreadExecutor()
@@ -110,7 +112,7 @@ class MainActivity : Activity() {
         root.addView(caption)
 
         tabRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(8), 0, dp(8), dp(4)) }
-        for ((id, title) in listOf("inbox" to "Inbox", "colony" to "Colony", "feed" to "Feed", "letter" to "Letter", "hub" to "Hub")) {
+        for ((id, title) in listOf("inbox" to "Inbox", "chat" to "Chat", "colony" to "Colony", "feed" to "Feed", "hub" to "Hub")) {
             tabRow.addView(Button(this).apply {
                 text = title
                 tag = id
@@ -257,6 +259,9 @@ class MainActivity : Activity() {
         val loc = s.optString("location", "home")
         val away = s.optJSONObject("away")
         town.setAway(away != null)
+        val ev = s.optJSONObject("event")
+        town.setLife(s.optString("emote").takeIf { it.isNotBlank() && it != "null" },
+            if (s.isNull("daylight")) null else s.optDouble("daylight"), ev?.optString("type"))
         val credits = s.optInt("credits", 0)
         header.text = if (s.optString("name").let { it.isBlank() || it == "null" }) "HUB CONNECT S" else "HUB CONNECT S   ◈ $credits"
         val prev = s.optString("prev_location").takeIf { it.isNotBlank() && it != "null" }
@@ -270,7 +275,11 @@ class MainActivity : Activity() {
         val action = act?.optString("action").orEmpty()
         val thought = act?.optString("thought").orEmpty()
         val sb = StringBuilder()
-        if (away != null) {
+        if (s.optBoolean("chat")) {
+            sb.append("$name is chatting with you.")
+        } else if (s.optBoolean("asleep") && away == null) {
+            sb.append("$name is asleep in the Home Dome (until ${s.optJSONObject("sleep")?.optInt("wake")}:00).")
+        } else if (away != null) {
             sb.append("$name is away on an expedition: ${away.optString("topic")}")
             sb.append(" (back around ${fmt(away.optDouble("return_ts", 0.0))}).")
         } else {
@@ -279,6 +288,7 @@ class MainActivity : Activity() {
             sb.append(".")
             if (thought.isNotBlank()) sb.append("\n\"").append(thought).append("\"")
         }
+        ev?.let { sb.append("\n").append(it.optString("title")).append(": ").append(it.optString("about").take(140)) }
         s.optJSONObject("now_playing")?.let { np ->
             sb.append("\n♪ ").append(np.optString("title")).append(" by ").append(np.optString("artist"))
         }
@@ -302,7 +312,7 @@ class MainActivity : Activity() {
             "inbox" -> loadInbox()
             "colony" -> loadColony()
             "feed" -> loadFeed()
-            "letter" -> showLetter()
+            "chat" -> loadChat()
             "hub" -> showHub()
         }
     }
@@ -374,7 +384,31 @@ class MainActivity : Activity() {
 
     private fun loadColony() {
         loading()
-        bgTask({ it.getObject("/api/colony") }) { col -> if (tab == "colony") renderColony(col) }
+        bgTask({ Pair(it.getObject("/api/colony"), it.getArray("/api/milestones")) }) { (col, ms) ->
+            if (tab == "colony") { renderColony(col); renderMilestones(ms) }
+        }
+    }
+
+    private fun renderMilestones(ms: JSONArray) {
+        val s = lastStatus
+        if (s != null) {
+            val plan = section("COLONY PLAN")
+            s.optString("map").split("; ").forEach { plan.addView(label(it, 13f, if (it.endsWith("empty")) dim else textCol)) }
+            val bp = s.optJSONArray("blueprints")
+            if (bp != null && bp.length() > 0) {
+                val names = (0 until bp.length()).joinToString(", ") { this.names[bp.optString(it)] ?: bp.optString(it) }
+                plan.addView(spaced(label("Blueprints waiting to be built: $names", 13f, warn)))
+            }
+            s.optJSONObject("sleep")?.let { plan.addView(spaced(label("Sleeps ${it.optInt("bed")}:00 to ${it.optInt("wake")}:00", 13f, dim))) }
+        }
+        val m = section("MILESTONES")
+        if (ms.length() == 0) m.addView(label("No milestones yet.", 13f, dim))
+        for (i in 0 until ms.length()) {
+            val o = ms.getJSONObject(i)
+            val r = o.optInt("reward")
+            m.addView(spaced(label("🏆 ${o.optString("title")}", 14f, textCol, true)))
+            m.addView(label(fmt(o.optDouble("ts", 0.0)) + if (r > 0) " · +$r credits" else "", 12f, dim))
+        }
     }
 
     private fun section(title: String): LinearLayout = card().also {
@@ -493,17 +527,51 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showLetter() {
+    private fun loadChat() {
+        loading()
+        bgTask({ it.getObject("/api/chat") }) { st -> if (tab == "chat") renderChat(st) }
+    }
+
+    private fun renderChat(st: JSONObject) {
+        content.removeAllViews()
         val c = card()
-        c.addView(label("Write to your resident. It reads letters when it visits the Relay Post.", 13f, dim))
-        val box = input("Say something…", 5)
+        c.addView(label("LIVE CHAT", 13f, dim, true))
+        c.addView(label("Your resident pauses what it's doing to talk with you, and remembers the conversation afterwards.", 12f, dim))
+        val msgs = st.optJSONArray("messages") ?: JSONArray()
+        for (i in 0 until msgs.length()) {
+            val m = msgs.getJSONObject(i)
+            val mine = m.optString("who") == "creator"
+            c.addView(spaced(label(if (mine) "You" else (lastStatus?.optString("name") ?: "Resident"), 12f, if (mine) warn else cyan, true)))
+            c.addView(label(m.optString("text"), 15f))
+        }
+        val box = input("Say something…", 2)
         c.addView(spaced(box))
-        c.addView(rowOf(button("Send letter", cyan) {
+        val sendBtn = button("Send", cyan) { }
+        sendBtn.setOnClickListener {
             val t = box.text.toString().trim()
-            if (t.isEmpty()) return@button
-            bgTask({ it.post("/api/letter", JSONObject().put("text", t)) }) { box.setText(""); toast("Letter sent") }
+            if (t.isEmpty()) return@setOnClickListener
+            sendBtn.isEnabled = false
+            sendBtn.text = "Thinking…"
+            bgTask({ it.post("/api/chat/say", JSONObject().put("text", t)) }) { r ->
+                if (tab == "chat") r.optJSONObject("chat")?.let { renderChat(it) }
+            }
+        }
+        c.addView(rowOf(sendBtn, button("End chat", dim) {
+            bgTask({ it.post("/api/chat/end") }) { toast("Chat saved to its memories"); loadChat() }
         }))
         content.addView(c)
+
+        val lc = card()
+        lc.addView(label("WRITE A LETTER", 13f, dim, true))
+        lc.addView(label("Letters wait at the Relay Post until your resident visits.", 12f, dim))
+        val lbox = input("Dear…", 4)
+        lc.addView(spaced(lbox))
+        lc.addView(rowOf(button("Send letter", cyan) {
+            val t = lbox.text.toString().trim()
+            if (t.isEmpty()) return@button
+            bgTask({ it.post("/api/letter", JSONObject().put("text", t)) }) { lbox.setText(""); toast("Letter sent") }
+        }))
+        content.addView(lc)
     }
 
     private fun showHub() {

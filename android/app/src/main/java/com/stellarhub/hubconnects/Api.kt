@@ -16,7 +16,7 @@ class Api(address: String, private val pairCode: String) {
         val conn = URL(base + path).openConnection() as HttpURLConnection
         conn.requestMethod = method
         conn.connectTimeout = 8000
-        conn.readTimeout = 20000
+        conn.readTimeout = 180000  // chat replies from a local model can take a while
         conn.setRequestProperty("X-Hub-Token", pairCode.trim().uppercase())
         return conn
     }

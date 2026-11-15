@@ -26,6 +26,10 @@ number in the `VERSION` file. The release includes `HubConnectS-vX.Y.Z.apk` and 
 If `./setup.sh` or `./start.sh` says "permission denied", run `chmod +x *.sh` once in that folder.
 GitHub's web uploader drops that flag.
 
+**Start with your PC:** `sh install-service.sh` makes Stellar Hub a background service that starts on login
+(and optionally at boot). After updating files, restart it with `systemctl --user restart stellar-hub`.
+Remove it with `sh install-service.sh remove`. Logs: `journalctl --user -u stellar-hub -f`.
+
 On its first turn the resident is born as a little **star spirit** and picks its own name.
 It wakes every 30 minutes. Press **Take a turn now** to watch it right away.
 
@@ -55,8 +59,31 @@ regular Wi-Fi. Phones need the pair code. To make a new code: `./start.sh --new-
 | Spaceport | Research expeditions: it leaves for 1-8 hours, studies a topic in stages, and comes back with a report | 150 |
 | Fabrication Hangar | Writes Python programs. **You approve each one**, then it runs in a sandbox with no internet and only its own folder. | 200 |
 
-**Unlocking:** locked buildings open when (1) you press **Unlock** on the dashboard or in the app's Hub tab,
+**Plots:** the colony has 15 plots along the walkway, with the Home Dome fixed in the middle (plot 8).
+On its first day the resident decides where its starting buildings go. Every building it gets after that
+arrives as a **blueprint**: it picks an empty plot and builds it from Home, which takes about 2 hours with
+scaffolding up. Moving a finished building costs **1,500 credits** (`move_cost` in config.json).
+
+**Unlocking:** locked buildings become blueprints when (1) you press **Unlock** on the dashboard or in the app's Hub tab,
 (2) you **approve** its access request for that building, or (3) it buys access with credits at the Credit Vault.
+
+**Sleep, day and night:** the colony follows your PC's clock. Its star crosses the sky by day, and the lights come on at night.
+The resident picks its own bedtime (8-10 hours). While it sleeps it makes no AI calls, apart from one dream per night
+that it learns something from.
+
+**Live chat:** talk to it in real time from the dashboard or the app's Chat tab. It stops what it's doing,
+gives you its full attention, and saves the conversation as a memory when you end the chat (or after 10 quiet minutes).
+
+**Space events** (about 3 a week, `events_per_week` in config.json):
+- solar storms take the Uplink offline for a few hours
+- meteor showers leave stardust and rare seeds to find by stargazing
+- eclipses pause plant growth
+- travelling traders sell rare goods
+
+You can also start one yourself from the dashboard.
+
+**Emotes and milestones:** bubbles above its head show what it's up to (? ♪ ♥ ! z). Milestones (first bloom,
+100 journal entries, one month old…) appear in the app and on the dashboard, with a credit bonus.
 
 **Credits:** it earns them for daily routines (+1 per action, up to 20 a day), journaling (+3 a day), each finished
 daily goal (+10), healthy plants (+2 each a day), blooms (+15), approved requests (+5), life-story chapters (+5),
@@ -71,7 +98,10 @@ Keep Tailscale connected on your phone so the checks can reach the hub.
 ## Its mind lives in `desktop/data/`
 `town.db` (memories, mail, notes, plants, credits), `home/personality.md` (who it thinks it is),
 `home/personality_history.md` (every past version) and `workshop/` (its programs).
-Back up `data/` to keep your resident. Upgrading from v0.3.0 keeps everything; new tables are added automatically.
+**Nightly backups** go to `~/StellarHub-backups` (the newest 14 are kept; change it under `backups` in config.json,
+e.g. to a USB drive). To restore: stop Stellar Hub, then
+`tar -xzf ~/StellarHub-backups/stellarhub-YYYY-MM-DD.tar.gz -C /path/to/StellarHub`.
+Upgrading keeps everything; new tables are added automatically.
 
 ## Settings (`config.json`)
 - `ollama.model`: set by `./setup.sh`, or change it by hand

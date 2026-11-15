@@ -118,6 +118,9 @@ class MockLLM:
             ("radio_tower", "list_music", {"search": ""}),
             ("radio_tower", "play_music", {"song_id": 1}),
             ("workshop", "write_program", {"name": "hello", "description": "prints primes", "code": "print([p for p in range(2,30) if all(p%d for d in range(2,p))])"}),
+            ("home", "build", {"building": "greenhouse", "plot": 4}),
+            ("home", "stargaze", {}),
+            ("home", "set_bedtime", {"bed_hour": 22, "wake_hour": 7}),
             ("spaceport", "start_expedition", {"topic": "black holes", "hours": 1}),
             ("home", "rest", {}),
         ]
@@ -128,11 +131,19 @@ class MockLLM:
     def chat_json(self, system, user, task=None):
         if task == "identity":
             return {"name": "Nova", "personality": "I am Nova. I'm curious, gentle, and a little dramatic about stars.",
-                    "first_curiosity": "why the sky changes colour"}
+                    "first_curiosity": "why the sky changes colour", "bed_hour": 23, "wake_hour": 7}
         if task == "plan":
             return {"goals": ["Learn something about space", "Write in my journal"]}
         if task == "reflect":
             return {"insights": [{"text": "I seem happiest when I'm learning about the sky.", "importance": 7}]}
+        if task == "layout":
+            return {"placements": {"library": 6, "post_office": 9, "internet_cafe": 5, "bank": 10}, "why": "Books and mail close to home."}
+        if task == "dream":
+            return {"dream": "I dreamed the greenhouse floated away.", "insight": "I worry about losing what I grow."}
+        if task == "chat":
+            return {"reply": "Hi! I was just thinking about you."}
+        if task == "chat_summary":
+            return {"summary": "My creator said hello and we talked about stars.", "importance": 6}
         if task == "review":
             return {"completed": [0], "note": "I did the first one."}
         if task == "chapter":

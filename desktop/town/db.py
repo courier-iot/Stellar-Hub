@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS chapters(
 CREATE TABLE IF NOT EXISTS expeditions(
     id INTEGER PRIMARY KEY, ts REAL, topic TEXT, hours REAL, return_ts REAL, legs TEXT,
     notes TEXT DEFAULT '', report TEXT, status TEXT DEFAULT 'away');
+CREATE TABLE IF NOT EXISTS milestones(key TEXT PRIMARY KEY, ts REAL, title TEXT, reward INTEGER);
 CREATE TABLE IF NOT EXISTS programs(
     id INTEGER PRIMARY KEY, ts REAL, name TEXT, description TEXT, code TEXT,
     status TEXT DEFAULT 'awaiting_approval', output TEXT, exit_code INTEGER, request_id INTEGER);

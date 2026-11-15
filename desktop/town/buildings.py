@@ -2,6 +2,7 @@
 
 locked + unlockable: starts locked. Unlocks when the creator unlocks it, approves an access
 request for it, or the resident buys it at the Credit Vault (price = unlock_price).
+An unlocked building becomes a blueprint: the resident picks an empty plot and builds it from Home.
 To add a building: add it here, add `act_<action>` methods (agent.py / colony.py),
 and add its art in sprites.py (BUILDERS + ORDER).
 """
@@ -14,6 +15,10 @@ BUILDINGS = {
             "journal": "{\"text\": \"...\"}  write a private journal entry",
             "update_personality": "{\"text\": \"...\"}  rewrite your self-description (keep what still feels true)",
             "rest": "{}  float quietly for a while",
+            "stargaze": "{}  go outside and watch the sky",
+            "build": "{\"building\": \"<blueprint id>\", \"plot\": <empty plot number>}  choose where a new building goes and start building it",
+            "move_building": "{\"building\": \"<id>\", \"plot\": <empty plot number>}  move a finished building ({move_cost} credits, rebuilds over a few hours)",
+            "set_bedtime": "{\"bed_hour\": 0-23, \"wake_hour\": 0-23}  change when you sleep (8-10 hours a night)",
         },
     },
     "library": {
@@ -124,7 +129,7 @@ SATISFIES = {
     "archive_memories": ("creativity", 25), "plant": ("creativity", 20),
     "read_mail": ("connection", 35), "send_request": ("connection", 35), "write_letter": ("connection", 45),
     "ask_question": ("connection", 40),
-    "rest": ("rest", 60), "play_music": ("rest", 45), "water": ("rest", 10), "check_plants": ("rest", 10),
+    "rest": ("rest", 60), "stargaze": ("rest", 40), "build": ("creativity", 40), "move_building": ("creativity", 30), "play_music": ("rest", 45), "water": ("rest", 10), "check_plants": ("rest", 10),
 }
 # How much each need grows per turn.
 NEED_GROWTH = {"curiosity": 9, "creativity": 7, "connection": 6, "rest": 4}

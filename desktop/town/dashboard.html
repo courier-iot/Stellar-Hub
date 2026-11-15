@@ -18,7 +18,7 @@
   section.wide { grid-column: 1 / -1; padding:10px; }
   h2 { margin:0 0 10px; font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); }
   h2.sub { margin-top:14px; }
-  #town { width:100%; aspect-ratio:600/216; display:block; image-rendering:pixelated; image-rendering:crisp-edges; background:#000; border-radius:8px; }
+  #town { width:100%; aspect-ratio:812/216; display:block; image-rendering:pixelated; image-rendering:crisp-edges; background:#000; border-radius:8px; }
   #caption { padding:8px 4px 2px; color:var(--dim); }
   #caption b { color:var(--text); }
   button { background:var(--accent); color:#05060d; border:0; border-radius:8px; padding:7px 12px; font-weight:600; cursor:pointer; }
@@ -59,8 +59,16 @@
 </header>
 <main>
   <section class="wide">
-    <canvas id="town" width="600" height="216"></canvas>
+    <canvas id="town" width="812" height="216"></canvas>
     <div id="caption">Loading the colony…</div>
+  </section>
+
+  <section>
+    <h2>Live chat</h2>
+    <div id="chatlog" class="scroll" style="max-height:340px"></div>
+    <textarea id="chatin" rows="2" placeholder="Talk to your resident… (Enter to send)"></textarea>
+    <div class="row"><button id="chatBtn" onclick="chatSend()">Send</button><button class="ghost" onclick="chatEnd()">End chat</button>
+      <span class="meta" id="chatnote"></span></div>
   </section>
 
   <section>
@@ -135,6 +143,27 @@
   </section>
 
   <section>
+    <h2>Colony plan</h2>
+    <div id="plan" class="meta"></div>
+    <h2 class="sub">Space events</h2>
+    <div id="eventnow" class="meta"></div>
+    <div class="row">
+      <button class="ghost" onclick="spaceEvent('meteor_shower')">☄️ Meteors</button>
+      <button class="ghost" onclick="spaceEvent('solar_storm')">☀️ Storm</button>
+      <button class="ghost" onclick="spaceEvent('eclipse')">🌑 Eclipse</button>
+      <button class="ghost" onclick="spaceEvent('trader')">🛸 Trader</button>
+    </div>
+    <h2 class="sub">Backups</h2>
+    <div id="backup" class="meta"></div>
+    <div class="row"><button class="ghost" onclick="backupNow()">Back up now</button></div>
+  </section>
+
+  <section>
+    <h2>Milestones</h2>
+    <div id="milestones" class="scroll"></div>
+  </section>
+
+  <section>
     <h2>Hub Connect S · phone pairing</h2>
     <div id="pairing" class="meta">Loading…</div>
   </section>
@@ -151,7 +180,9 @@ const VERBS = {journal:"writing in its journal", update_personality:"rethinking 
   set_light:"adjusting grow lamps", remove:"clearing a pot", list_music:"browsing music", play_music:"playing music",
   stop_music:"turning the music off", broadcast_log:"broadcasting a colony log", archive_memories:"writing its life story",
   read_chapter:"rereading its life story", start_expedition:"launching an expedition", read_reports:"reading old reports",
-  write_program:"building a program", list_programs:"checking its programs", expedition_return:"just back from an expedition"};
+  write_program:"building a program", list_programs:"checking its programs", expedition_return:"just back from an expedition",
+  build:"starting construction", move_building:"moving a building", set_bedtime:"changing its bedtime", stargaze:"stargazing",
+  plan_colony:"planning the colony", sleep:"sleeping", expedition:"exploring"};
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const when = ts => ts ? new Date(ts * 1000).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"}) : "—";
 const api = (p, body) => fetch(p, body === undefined ? {} : {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)}).then(r => r.json());
@@ -160,6 +191,7 @@ const api = (p, body) => fetch(p, body === undefined ? {} : {method:"POST", head
 const Town = {
   ctx: document.getElementById("town").getContext("2d"),
   world: null, sprites: {}, x: null, targetX: null, location: null, away: false,
+  emote: null, daylight: null, event: null, asleep: false,
   toRGBA(hex) { const n = parseInt(hex.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255, 255]; },
   bake(rows, pal) {
     const h = rows.length, w = rows[0].length, c = document.createElement("canvas");
@@ -180,6 +212,8 @@ const Town = {
     this.sprites.buildings = w.buildings.map(b => ({...b, img: this.bake(b.sprite, pal)}));
     this.sprites.decor = (w.decor || []).map(d => ({...d, img: this.bake(d.sprite, pal)}));
     this.sprites.frames = w.resident.frames.map(f => this.bake(f, pal));
+    this.sprites.emotes = {}; for (const k in (w.emotes || {})) this.sprites.emotes[k] = this.bake(w.emotes[k], pal);
+    this.sprites.ship = w.trader_ship ? this.bake(w.trader_ship, pal) : null;
     if (this.location) this.targetX = this.door(this.location);
   },
   door(id) { const b = this.world && this.world.buildings.find(b => b.id === id); return b ? b.door_x : this.world.w / 2; },
@@ -194,6 +228,31 @@ const Town = {
     c.imageSmoothingEnabled = false;
     if (w) {
       c.drawImage(this.sprites.bg, 0, 0);
+      const ev = this.event && this.event.type;
+      if (this.daylight !== null) {                     // the colony's star crossing the sky by day
+        const sx = 20 + this.daylight * (w.w - 40), sy = 70 - Math.sin(Math.PI * this.daylight) * 52;
+        c.fillStyle = "rgba(255,216,107,.10)"; c.beginPath(); c.arc(sx, sy, 22, 0, 7); c.fill();
+        c.fillStyle = "rgba(255,216,107,.25)"; c.beginPath(); c.arc(sx, sy, 13, 0, 7); c.fill();
+        c.fillStyle = ev === "eclipse" ? "#120f2b" : "#ffe9a8"; c.beginPath(); c.arc(sx, sy, 8, 0, 7); c.fill();
+        if (ev === "eclipse") { c.strokeStyle = "#ffd86b"; c.lineWidth = 1; c.beginPath(); c.arc(sx, sy, 8.5, 0, 7); c.stroke(); }
+        c.fillStyle = "rgba(120,90,200,.10)"; c.fillRect(0, 0, w.w, 138);
+      }
+      if (ev === "solar_storm") {                      // aurora curtains
+        for (let band = 0; band < 3; band++) {
+          c.fillStyle = band === 1 ? "rgba(255,79,216,.18)" : "rgba(79,224,165,.18)";
+          for (let x = 0; x < w.w; x += 2) {
+            const y = 30 + band * 14 + Math.sin(x / 37 + t / 900 + band) * 10;
+            c.fillRect(x, y, 2, 10 + Math.sin(x / 13 + t / 500) * 5);
+          }
+        }
+      }
+      if (ev === "meteor_shower") {                    // streaking meteors
+        for (let i = 0; i < 6; i++) {
+          const p = ((t / 1400) + i * 0.37) % 1, mx = ((i * 157) % w.w) + p * 120, my = 10 + p * 70 + (i * 13) % 30;
+          c.fillStyle = "#ffffff"; c.fillRect(mx, my, 2, 1);
+          c.fillStyle = "rgba(255,233,168,.6)"; c.fillRect(mx - 6, my - 3, 6, 1); c.fillRect(mx - 3, my - 1, 3, 1);
+        }
+      }
       w.twinkle.forEach(([x, y], i) => {
         const p = Math.sin(t / 600 + i * 1.7);
         if (p > .6) { c.fillStyle = "#ffffff"; c.fillRect(x, y, 1, 1); if (p > .93) { c.fillStyle = "#a7b0d3"; c.fillRect(x - 1, y, 3, 1); c.fillRect(x, y - 1, 1, 3); } }
@@ -205,6 +264,14 @@ const Town = {
         c.fillStyle = "#5ef2ff"; c.fillRect(4 + i * 48, 190, 3, 1);
       }
       c.globalAlpha = 1;
+      if (ev === "trader" && this.sprites.ship) {       // trader ship hovering over the walkway
+        const sp = w.buildings.find(b => b.id === "spaceport");
+        const free = w.buildings.find(b => !b.id);
+        const tx = (sp || free || w.buildings[0]).door_x - 12, ty = 152 + Math.round(Math.sin(t / 500) * 2);
+        c.drawImage(this.sprites.ship, tx, ty);
+        if (Math.floor(t / 300) % 2) { c.fillStyle = "#ff9f43"; c.fillRect(tx + 4, ty + 11, 1, 2); c.fillRect(tx + 15, ty + 11, 1, 2); }
+      }
+      if (w.night || ev === "eclipse") { c.fillStyle = ev === "eclipse" ? "rgba(5,6,20,.35)" : "rgba(5,6,20,.18)"; c.fillRect(0, 138, w.w, w.h - 138); }
       if (this.x !== null && !this.away) {
         const dx = this.targetX - this.x;
         const walking = Math.abs(dx) > 0.5;
@@ -217,6 +284,8 @@ const Town = {
         const img = this.sprites.frames[fi];
         if (walking && dx < 0) { c.save(); c.scale(-1, 1); c.drawImage(img, -fx - 16, fy); c.restore(); }
         else c.drawImage(img, fx, fy);
+        const em = this.emote && this.sprites.emotes[this.emote === "!" ? "!" : this.emote === "?" ? "?" : this.emote];
+        if (em && !walking) c.drawImage(em, fx + 9, fy - 10 + (this.emote === "z" ? Math.round(Math.sin(t / 600) * 1.5) : 0));
       }
     }
     requestAnimationFrame(tt => this.draw(tt));
@@ -230,17 +299,30 @@ async function refresh() {
   const [s, inbox, feed, lib, col] = await Promise.all([api("/api/status"), api("/api/inbox"), api("/api/feed?limit=80"),
                                                         api("/api/library?limit=40"), api("/api/colony")]);
   if (s.world_version !== worldVersion) { Town.setWorld(await api("/api/world")); worldVersion = s.world_version; }
-  Town.away = !!s.away;
+  Town.away = !!s.away; Town.emote = s.emote; Town.daylight = s.daylight; Town.event = s.event; Town.asleep = s.asleep;
   Town.setLocation(s.location, s.prev_location, s.last_turn);
   programs = {}; (col.programs || []).forEach(p => programs[p.id] = p);
 
   const act = s.last_act || {};
   let cap;
   if (!s.name) cap = "A star spirit is about to be born. Press <b>Take a turn now</b>.";
+  else if (s.chat) cap = `<b>${esc(s.name)}</b> is chatting with you.`;
+  else if (s.asleep && !s.away) cap = `<b>${esc(s.name)}</b> is asleep in the Home Dome (until ${s.sleep.wake}:00).`;
   else if (s.away) cap = `<b>${esc(s.name)}</b> is away on an expedition: <i>${esc(s.away.topic)}</i> (back around ${when(s.away.return_ts)}).`;
   else cap = `<b>${esc(s.name)}</b> is at the ${esc(NAMES[s.location] || s.location)}${act.action ? ", " + esc(VERBS[act.action] || act.action) : ""}.` +
              (act.thought ? `<br><i>"${esc(act.thought)}"</i>` : "");
   if (s.now_playing) cap += `<br>♪ Now playing: ${esc(s.now_playing.title)} by ${esc(s.now_playing.artist)}`;
+  if (s.event) cap += `<br>${esc(s.event.title)}: ${esc(s.event.about)}`;
+  document.getElementById("plan").innerHTML = s.map ? esc(s.map).replace(/; /g, "<br>") +
+    (s.blueprints && s.blueprints.length ? `<br><br>Blueprints waiting to be built: ${esc(s.blueprints.map(b => NAMES[b] || b).join(", "))}` : "") +
+    `<br><br>Sleeps ${s.sleep.bed}:00 to ${s.sleep.wake}:00` : "";
+  document.getElementById("eventnow").innerHTML = s.event ? `<b>${esc(s.event.title)}</b> until ${when(s.event.end)}<br>${esc(s.event.about)}<br><br>Start one yourself:` : "Clear skies. Start one yourself:";
+  const lb = s.last_backup;
+  document.getElementById("backup").innerHTML = lb ? (lb.error ? `Last backup failed: ${esc(lb.error)}` : `Last backup ${when(lb.ts)}<br>${esc(lb.file)}`) : "No backup yet (runs nightly after 4:00).";
+  if (!chatBusy) renderChat(await api("/api/chat"), s.chat);
+  document.getElementById("milestones").innerHTML = (await api("/api/milestones")).map(m =>
+    `<div class="item">🏆 <b>${esc(m.title)}</b> <span class="meta">${when(m.ts)}${m.reward ? " · +" + m.reward + " credits" : ""}</span></div>`).join("")
+    || `<div class="meta">No milestones yet.</div>`;
   document.getElementById("caption").innerHTML = cap;
   document.getElementById("sub").textContent = s.look || "";
   document.getElementById("credits").textContent = s.name ? `◈ ${s.credits} credits` : "";
@@ -341,6 +423,32 @@ function renderColony(col) {
     `<div class="item"><b>${esc(c.title)}</b> <span class="meta">${when(c.ts)}</span><pre class="meta">${esc(c.text)}</pre></div>`).join("")
     || `<div class="meta">No chapters yet.</div>`;
 }
+
+let chatBusy = false;
+function renderChat(st, active) {
+  const log = document.getElementById("chatlog");
+  const msgs = (st && st.messages) || [];
+  log.innerHTML = msgs.map(m => `<div class="item"><b style="color:${m.who === "creator" ? "var(--warn)" : "var(--accent)"}">${m.who === "creator" ? "You" : "Resident"}</b><div>${esc(m.text)}</div></div>`).join("")
+    || `<div class="meta">Say hi. Your resident pauses what it's doing to talk with you, and remembers the conversation afterwards.</div>`;
+  log.scrollTop = log.scrollHeight;
+  document.getElementById("chatnote").textContent = active ? "chat open (ends after 10 min quiet)" : "";
+}
+async function chatSend() {
+  const el = document.getElementById("chatin"), text = el.value.trim();
+  if (!text || chatBusy) return;
+  chatBusy = true; el.value = "";
+  document.getElementById("chatBtn").disabled = true; document.getElementById("chatnote").textContent = "thinking…";
+  const log = document.getElementById("chatlog");
+  log.innerHTML += `<div class="item"><b style="color:var(--warn)">You</b><div>${esc(text)}</div></div>`; log.scrollTop = log.scrollHeight;
+  try {
+    const r = await api("/api/chat/say", {text});
+    if (r.error) document.getElementById("chatnote").textContent = r.error; else renderChat(r.chat, true);
+  } finally { chatBusy = false; document.getElementById("chatBtn").disabled = false; }
+}
+document.getElementById("chatin").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); chatSend(); } });
+async function chatEnd() { await api("/api/chat/end", {}); refresh(); }
+async function spaceEvent(type) { const r = await api("/api/space_event", {type}); if (!r.ok) alert("Another event is already happening."); refresh(); }
+async function backupNow() { document.getElementById("backup").textContent = "Backing up…"; await api("/api/backup", {}); refresh(); }
 
 async function loadPairing() {
   const p = await api("/api/pairing");

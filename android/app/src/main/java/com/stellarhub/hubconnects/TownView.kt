@@ -32,6 +32,12 @@ class TownView(context: Context) : View(context) {
     private var floats = true
     private var decor: List<Building> = emptyList()
     private var away = false
+    private var night = false
+    private var emotes: Map<String, Bitmap> = emptyMap()
+    private var ship: Bitmap? = null
+    private var emote: String? = null
+    private var daylight: Double? = null
+    private var eventType: String? = null
 
     private val viewW get() = minOf(worldW, 320)
     private var camX = -1f
@@ -73,9 +79,18 @@ class TownView(context: Context) : View(context) {
         val bs = world.getJSONArray("buildings")
         buildings = (0 until bs.length()).map { i ->
             val b = bs.getJSONObject(i)
-            Building(b.getString("id"), b.getInt("x"), b.getInt("y"), b.getInt("door_x"),
-                bake(b.getJSONArray("sprite"), pal))
+            val id = b.optString("id").takeIf { it.isNotBlank() && it != "null" } ?: ""
+            Building(id, b.getInt("x"), b.getInt("y"), b.getInt("door_x"), bake(b.getJSONArray("sprite"), pal))
         }
+        night = world.optBoolean("night", false)
+        val ej = world.optJSONObject("emotes")
+        val em = HashMap<String, Bitmap>()
+        if (ej != null) {
+            val ek = ej.keys()
+            while (ek.hasNext()) { val k = ek.next(); em[k] = bake(ej.getJSONArray(k), pal) }
+        }
+        emotes = em
+        ship = world.optJSONArray("trader_ship")?.let { bake(it, pal) }
         val r = world.getJSONObject("resident")
         val fr = r.getJSONArray("frames")
         frames = (0 until fr.length()).map { bake(fr.getJSONArray(it), pal) }
@@ -97,8 +112,19 @@ class TownView(context: Context) : View(context) {
     private fun doorOf(id: String): Float =
         (buildings.firstOrNull { it.id == id }?.doorX ?: worldW / 2).toFloat()
 
+    private fun circle(c: Canvas, x: Float, y: Float, r: Float, color: Int) {
+        fill.color = color
+        c.drawCircle(x, y, r, fill)
+    }
+
     fun setAway(isAway: Boolean) {
         away = isAway
+    }
+
+    fun setLife(emoteName: String?, light: Double?, event: String?) {
+        emote = emoteName
+        daylight = light
+        eventType = event
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -146,6 +172,40 @@ class TownView(context: Context) : View(context) {
         canvas.scale(scale, scale)
         canvas.translate(-camX.roundToInt().toFloat(), 0f)
         canvas.drawBitmap(bg, 0f, 0f, pixelPaint)
+        val ev = eventType
+        daylight?.let { d ->                    // the colony's star crossing the sky by day
+            val sx = (20 + d * (worldW - 40)).toFloat()
+            val sy = (70 - sin(Math.PI * d) * 52).toFloat()
+            circle(canvas, sx, sy, 22f, Color.argb(26, 255, 216, 107))
+            circle(canvas, sx, sy, 13f, Color.argb(64, 255, 216, 107))
+            circle(canvas, sx, sy, 8f, if (ev == "eclipse") Color.parseColor("#120f2b") else Color.parseColor("#ffe9a8"))
+            fill.color = Color.argb(26, 120, 90, 200)
+            canvas.drawRect(0f, 0f, worldW.toFloat(), 138f, fill)
+        }
+        if (ev == "solar_storm") {               // aurora curtains
+            for (band in 0 until 3) {
+                fill.color = if (band == 1) Color.argb(46, 255, 79, 216) else Color.argb(46, 79, 224, 165)
+                var x = 0
+                while (x < worldW) {
+                    val y = (30 + band * 14 + sin(x / 37.0 + t / 900 + band) * 10).toFloat()
+                    val h = (10 + sin(x / 13.0 + t / 500) * 5).toFloat()
+                    canvas.drawRect(x.toFloat(), y, x + 2f, y + h, fill)
+                    x += 2
+                }
+            }
+        }
+        if (ev == "meteor_shower") {             // streaking meteors
+            for (i in 0 until 6) {
+                val p = ((t / 1400) + i * 0.37) % 1.0
+                val mx = ((i * 157) % worldW + p * 120).toFloat()
+                val my = (10 + p * 70 + (i * 13) % 30).toFloat()
+                fill.color = Color.WHITE
+                canvas.drawRect(mx, my, mx + 2, my + 1, fill)
+                fill.color = Color.argb(153, 255, 233, 168)
+                canvas.drawRect(mx - 6, my - 3, mx, my - 2, fill)
+                canvas.drawRect(mx - 3, my - 1, mx, my, fill)
+            }
+        }
 
         twinkle.forEachIndexed { i, (x, y) ->
             val p = sin(t / 600 + i * 1.7)
@@ -168,6 +228,19 @@ class TownView(context: Context) : View(context) {
             canvas.drawRect(4f + i * 48, 190f, 7f + i * 48, 191f, fill)
         }
 
+        val sh = ship
+        if (ev == "trader" && sh != null) {      // trader ship hovering over the walkway
+            val spot = buildings.firstOrNull { it.id == "spaceport" } ?: buildings.firstOrNull { it.id.isEmpty() } ?: buildings.firstOrNull()
+            if (spot != null) {
+                val tx = spot.doorX - 12f
+                val ty = 152f + (sin(t / 500) * 2).roundToInt()
+                canvas.drawBitmap(sh, tx, ty, pixelPaint)
+            }
+        }
+        if (night || ev == "eclipse") {
+            fill.color = if (ev == "eclipse") Color.argb(89, 5, 6, 20) else Color.argb(46, 5, 6, 20)
+            canvas.drawRect(0f, 138f, worldW.toFloat(), worldH.toFloat(), fill)
+        }
         if (residentX >= 0 && frames.isNotEmpty() && !away) {
             val dx = targetX - residentX
             val walking = abs(dx) > 0.5f
@@ -189,6 +262,11 @@ class TownView(context: Context) : View(context) {
                 canvas.restore()
             } else {
                 canvas.drawBitmap(frames[fi], fx, fy, pixelPaint)
+            }
+            val bubble = emote?.let { emotes[it] }
+            if (bubble != null && !walking) {
+                val wob = if (emote == "z") (sin(t / 600) * 1.5).roundToInt() else 0
+                canvas.drawBitmap(bubble, fx + 9, fy - 10 + wob, pixelPaint)
             }
         }
         canvas.restore()

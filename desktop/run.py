@@ -80,6 +80,16 @@ def main():
     log(f"The resident wakes every {cfg['tick_minutes']} minutes. Press Ctrl+C to stop.")
     try:
         while True:
+            # nightly backup, once a day after 04:00
+            if cfg.get("backups", {}).get("enabled", True) and time.localtime().tm_hour >= 4 \
+                    and (db.get("last_backup") or {}).get("day") != time.strftime("%Y-%m-%d"):
+                try:
+                    path = agent.backup_now()
+                    db.set("last_backup", {**db.get("last_backup"), "day": time.strftime("%Y-%m-%d")})
+                    log(f"Backed up to {path}")
+                except Exception as e:
+                    db.set("last_backup", {"ts": time.time(), "error": str(e), "day": time.strftime("%Y-%m-%d")})
+                    log(f"Backup failed: {e}")
             last = db.get("last_turn") or 0
             if time.time() - last >= tick:
                 log("Taking a turn…")
