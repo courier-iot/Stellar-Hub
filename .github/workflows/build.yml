@@ -58,8 +58,8 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk "out/HubConnectS-v${V}.apk"
           cp VERSION desktop/VERSION
           mv desktop StellarHub
-          zip -r "out/StellarHub-v${V}.zip" StellarHub -x '*/__pycache__/*' 'StellarHub/data/*'
-
+          zip -r "out/StellarHub-v${V}.zip" StellarHub -x '*/__pycache__/*' 'StellarHub/data/*' 'StellarHub/config.json'
+          cd out && for f in *; do sha256sum "$f" > "$f.sha256"; done
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -97,6 +97,11 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force out | Out-Null
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer\StellarHub.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem out\*.exe | ForEach-Object {
+            $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            Set-Content -Path "$($_.FullName).sha256" -Value "$h  $($_.Name)" -NoNewline
+          }
 
       - name: Add installer to the release
         shell: pwsh
@@ -106,4 +111,4 @@ jobs:
         run: |
           gh release view "v$env:V" *> $null
           if ($LASTEXITCODE -ne 0) { gh release create "v$env:V" --title "v$env:V" --notes "" --target "$env:GITHUB_SHA" }
-          gh release upload "v$env:V" (Get-ChildItem out\*.exe).FullName --clobber
+          gh release upload "v$env:V" (Get-ChildItem out\*.exe, out\*.sha256).FullName --clobber
