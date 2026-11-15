@@ -85,6 +85,9 @@ jobs:
           $py = "3.12.8"
           Invoke-WebRequest "https://www.python.org/ftp/python/$py/python-$py-embed-amd64.zip" -OutFile py.zip
           Expand-Archive py.zip -DestinationPath build/python
+          # Certificate bundle so the bundled Python can make secure connections (updates, web research)
+          python -m pip install --quiet certifi
+          Copy-Item (python -c "import certifi; print(certifi.where())") build/python/cacert.pem
 
       - name: Install Inno Setup
         shell: pwsh
