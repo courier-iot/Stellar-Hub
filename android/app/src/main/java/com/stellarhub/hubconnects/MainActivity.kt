@@ -257,14 +257,17 @@ class MainActivity : Activity() {
                 val r = work(a)
                 main.post { if (!isFinishing) done(r) }
             } catch (e: Exception) {
-                main.post { if (!isFinishing) toast(e.message ?: "Couldn't reach Stellar Hub") }
+                main.post { if (!isFinishing) { val m = explain(e); toast(m); caption.text = m } }
             }
         }
     }
 
     // ------------------------------------------------------------------ status + town
     private fun pollStatus() {
-        val a = api ?: return
+        val a = api ?: run {
+            caption.text = "Not paired yet. Open the Hub tab, enter the address and pair code from the dashboard, then tap Save & test."
+            return
+        }
         io.execute {
             try {
                 val s = a.getObject("/api/status")
@@ -275,9 +278,17 @@ class MainActivity : Activity() {
                     applyStatus(s)
                 }
             } catch (e: Exception) {
-                main.post { caption.text = "Can't reach Stellar Hub: ${e.message}\nIs the hub running and Tailscale on?" }
+                main.post { caption.text = explain(e) }
             }
         }
+    }
+
+    private fun explain(e: Exception): String = when {
+        e.message == "Wrong pair code" -> "Wrong pair code. Check it on the dashboard and tap Save & test again."
+        e is java.net.SocketTimeoutException || e is java.net.ConnectException || e is java.net.NoRouteToHostException ->
+            "Can't reach Stellar Hub at ${api?.base}.\nCheck: hub running · Tailscale on (phone and PC) · Windows Firewall rule (run Setup on the PC)."
+        e is java.net.UnknownHostException -> "That address doesn't exist. Use the 100.x.x.x address from the dashboard."
+        else -> "Can't reach Stellar Hub: ${e.message}"
     }
 
     private fun applyStatus(s: JSONObject) {
@@ -952,6 +963,7 @@ class MainActivity : Activity() {
             connectFromPrefs()
             Notifier.schedule(this)
             io.execute { try { Notifier.check(applicationContext) } catch (_: Exception) { } }
+            caption.text = "Testing the connection…"
             bgTask({ it.getObject("/api/ping") }) { r ->
                 val n = r.optString("name")
                 toast(if (n.isBlank() || n == "null") "Connected to Stellar Hub" else "Connected to $n's colony")

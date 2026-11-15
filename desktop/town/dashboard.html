@@ -714,7 +714,8 @@ async function backupNow() { document.getElementById("backup").textContent = "Ba
 async function loadPairing() {
   const p = await api("/api/pairing");
   document.getElementById("pairing").innerHTML = p.tailscale_ip
-    ? `In Hub Connect S, open the Hub tab and enter:<br>Address: <span class="code">${esc(p.tailscale_ip)}:${p.port}</span><br>Pair code: <span class="code">${esc(p.code)}</span>`
+    ? `In Hub Connect S, open the Hub tab, enter these and tap <b>Save &amp; test</b>:<br>Address: <span class="code">${esc(p.tailscale_ip)}:${p.port}</span><br>Pair code: <span class="code">${esc(p.code)}</span>` +
+      (p.windows ? `<br><br>On Windows, if the app can't connect, run <b>Setup and model check</b> and let it add the firewall rule.` : "")
     : `Tailscale isn't running on this computer, so the phone can't connect yet. Install Tailscale on this PC and your phone, sign in to both, then restart Stellar Hub.<br><br>Pair code: <span class="code">${esc(p.code)}</span>`;
 }
 

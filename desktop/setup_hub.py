@@ -465,7 +465,7 @@ def main():
         if code == 0 and ip:
             say(f"  ✓ tailscale: phone access at {ip.splitlines()[0]}:8080", "g")
             if IS_WIN:
-                say("    If Windows Firewall asks about Python, allow it so your phone can connect.", "d")
+                windows_firewall()
         else:
             say("  ✗ tailscale is installed but not connected. " +
                 ("Open Tailscale and sign in." if IS_WIN else "Run: sudo tailscale up"), "y")
@@ -492,6 +492,31 @@ def main():
         return 0
     say("\nAll set. Start Stellar Hub with ./start.sh   (or make it start with your PC: sh install-service.sh)\n", "b")
     return 0
+
+
+FW_RULE = "Stellar Hub (Tailscale phone access)"
+
+
+def windows_firewall():
+    """Lets Hub Connect S reach the hub through Windows Firewall, but only from Tailscale addresses
+    (100.64.0.0/10), never from the rest of your network or the internet."""
+    code, out = run(["netsh", "advfirewall", "firewall", "show", "rule", f"name={FW_RULE}"])
+    if code == 0 and FW_RULE in out:
+        say("  ✓ Windows Firewall lets your phone in over Tailscale", "g")
+        return
+    say("  ✗ Windows Firewall may block your phone (that's the usual cause of the app saying 'Connecting…')", "y")
+    if not ask("  Add a firewall rule for Stellar Hub, allowing Tailscale addresses only? (Windows will ask for permission)"):
+        say("    You can add it later by running setup again.", "d")
+        return
+    from town.config import load_config
+    port = int(load_config(ROOT).get("port", 8080))
+    args = (f'advfirewall firewall add rule name="{FW_RULE}" dir=in action=allow protocol=TCP '
+            f'localport={port} remoteip=100.64.0.0/10 profile=any')
+    ps = f"Start-Process netsh -ArgumentList '{args}' -Verb RunAs -Wait"
+    subprocess.run(["powershell", "-NoProfile", "-Command", ps])
+    code, out = run(["netsh", "advfirewall", "firewall", "show", "rule", f"name={FW_RULE}"])
+    say("  ✓ Firewall rule added" if code == 0 and FW_RULE in out else "  ✗ The rule wasn't added (permission declined?)",
+        "g" if code == 0 and FW_RULE in out else "y")
 
 
 def windows_autostart():

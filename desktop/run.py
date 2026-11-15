@@ -14,6 +14,7 @@ import webbrowser
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # needed by the bundled Python on Windows
 
+import town.osutil  # noqa: F401  (sets up certificates before any network use)
 from town.agent import Agent
 from town.db import DB
 from town.llm import MockLLM, OllamaLLM

@@ -2,6 +2,11 @@
 
 Stellar Hub's update manager shows the entries newer than the version you have.
 
+## v0.8.3
+- Fixed: on Windows, update checks and the resident's web research failed with a certificate error. The installer now includes a certificate bundle.
+- Added: Windows setup offers a firewall rule that lets your phone in over Tailscale only (the usual reason the app says "Connecting…").
+- Fixed: the app says when it isn't paired yet, and explains connection problems (wrong code, can't reach the hub, bad address) instead of "Connecting…" forever.
+
 ## v0.8.2
 - Added: update manager. The hub checks GitHub twice a day, the dashboard shows what's new, and Update now installs it (Windows: quiet installer; Linux: in-place update). Downloads are checked against SHA-256 checksums, and your resident is backed up first.
 - Added: security hardening. Websites open in your browser can't control the hub, wrong pair codes are rate-limited, the resident can't be tricked into opening pages on your home network, and backups are private to your user.

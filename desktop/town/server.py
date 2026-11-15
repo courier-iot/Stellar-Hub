@@ -162,7 +162,7 @@ def make_server(agent, host, port, pair_code):
             if u.path == "/api/pairing":
                 if not self._local():
                     return self._json({"error": "only available on the hub computer"}, 403)
-                return self._json({"code": pair_code, "tailscale_ip": tailscale_ip(), "port": port})
+                return self._json({"code": pair_code, "tailscale_ip": tailscale_ip(), "port": port, "windows": os.name == "nt"})
             if u.path == "/api/feed":
                 return self._json(db.q("SELECT * FROM memories ORDER BY id DESC LIMIT ?", (limit,)))
             if u.path == "/api/inbox":

@@ -4,6 +4,23 @@ import shutil
 import subprocess
 
 IS_WIN = os.name == "nt"
+
+
+def use_bundled_certificates():
+    """The Python bundled with the Windows installer can't always find the trusted root certificates
+    (Windows downloads some of them on demand, and Python can't trigger that). The installer ships a
+    standard certificate bundle (cacert.pem); point every secure connection at it. Windows' own
+    certificates are still used too."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for p in (os.path.join(here, "..", "python", "cacert.pem"), os.path.join(here, "..", "cacert.pem")):
+        p = os.path.abspath(p)
+        if os.path.isfile(p) and not os.environ.get("SSL_CERT_FILE"):
+            os.environ["SSL_CERT_FILE"] = p
+            return p
+    return None
+
+
+use_bundled_certificates()
 # On Windows, keep helper programs (players, tailscale, docker) from flashing console windows.
 NO_WINDOW = 0x08000000 if IS_WIN else 0
 
