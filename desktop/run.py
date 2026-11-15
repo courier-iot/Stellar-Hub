@@ -34,8 +34,8 @@ VERSION = read_version()
 
 
 def load_config():
-    with open(os.path.join(ROOT, "config.json"), encoding="utf-8") as f:
-        return json.load(f)
+    from town.config import load_config as _load
+    return _load(ROOT)
 
 
 LOG_FILE = None
@@ -73,11 +73,16 @@ def main():
         o = cfg["ollama"]
         llm = OllamaLLM(o["url"], o["model"], o.get("temperature", 0.8), num_ctx=o.get("num_ctx", 8192))
     agent = Agent(cfg, db, llm, data_dir)
+    from town.updater import Updater
+    agent.updater = Updater(ROOT, cfg, db, agent)
 
     log(f"Stellar Hub v{VERSION}")
-    ok, msg = llm.check()
-    if not ok:
-        log("WARNING: " + msg)
+    agent.ensure_model(force=True)
+    st = agent.model_status
+    if st and st.get("note"):
+        log("WARNING: " + st["note"])
+    elif st:
+        log(f"AI model: {st['model']}")
 
     if "--once" in sys.argv:
         log(json.dumps(agent.take_turn(), indent=2))
@@ -87,7 +92,16 @@ def main():
         port = cfg.get("port", 8080)
         code = load_pair_code(data_dir, reset="--new-pair-code" in sys.argv)
         try:
-            srv = make_server(agent, "127.0.0.1", port, code)
+            srv = None
+            for attempt in range(15 if os.environ.get("STELLAR_RESTARTING") else 1):
+                try:
+                    srv = make_server(agent, "127.0.0.1", port, code)
+                    break
+                except OSError:
+                    if attempt < 14 and os.environ.get("STELLAR_RESTARTING"):
+                        time.sleep(1)   # the old copy is still shutting down after an update
+                    else:
+                        raise
         except OSError:
             # Port already taken: most likely Stellar Hub is already running in the background.
             log(f"Stellar Hub is already running. Opening the dashboard: http://localhost:{port}")
@@ -113,7 +127,10 @@ def main():
     tick = cfg["tick_minutes"] * 60
     log(f"The resident wakes every {cfg['tick_minutes']} minutes. Press Ctrl+C to stop.")
     try:
+        threading.Thread(target=lambda: agent.updater.check(), daemon=True).start()
         while True:
+            if time.time() - (db.get("update") or {}).get("checked", 0) > 12 * 3600:
+                threading.Thread(target=lambda: agent.updater.check(), daemon=True).start()
             # nightly backup, once a day after 04:00
             if cfg.get("backups", {}).get("enabled", True) and time.localtime().tm_hour >= 4 \
                     and (db.get("last_backup") or {}).get("day") != time.strftime("%Y-%m-%d"):

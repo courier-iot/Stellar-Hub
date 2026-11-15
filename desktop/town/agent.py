@@ -32,6 +32,7 @@ class Agent(ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
         self.turn_lock = threading.Lock()
         self.busy = False
         self.last_error = None
+        self.model_status = None
 
     # ---------- small helpers ----------
     @property
@@ -259,6 +260,9 @@ What do you do now?"""
             return {"skipped": "a turn is already running"}
         self.busy = True
         try:
+            self.ensure_model()
+            if self.model_status and not self.model_status["ok"]:
+                raise LLMError(self.model_status["note"])
             self.ensure_identity()
             self.finish_constructions()
             self.chat_expire()
@@ -367,6 +371,42 @@ What do you do now?"""
         if bloomed:
             parts.append("bloomed plants (can give cuttings) " + ", ".join(f"#{b['id']} {b['nickname'] or b['species']}" for b in bloomed))
         return "; ".join(parts) or "nothing yet"
+
+    def ensure_model(self, force=False):
+        """Makes sure the AI model exists. Re-reads config.json (so running setup takes effect without a
+        restart), and falls back to another downloaded model if the chosen one is missing."""
+        if not hasattr(self.llm, "installed"):
+            return
+        now = time.time()
+        want = self.cfg.get("ollama", {}).get("model")
+        path = self.cfg.get("_config_path")
+        if path:
+            try:
+                with open(path, encoding="utf-8") as f:
+                    want = json.load(f).get("ollama", {}).get("model") or want
+            except (OSError, ValueError):
+                pass
+        st = self.model_status
+        if not force and st and st.get("wanted") == want and now - st.get("checked", 0) < (600 if st.get("ok") else 20):
+            return
+        self.llm.model = want
+        ok, msg = self.llm.check()
+        if ok:
+            self.model_status = {"ok": True, "model": want, "wanted": want, "note": "", "checked": now}
+            return
+        try:
+            have = self.llm.installed()
+        except Exception:
+            have = None
+        if have:
+            self.llm.model = have[0]
+            note = (f"'{want}' isn't downloaded, so your resident is using '{have[0]}' for now. "
+                    f"Run 'Setup and model check' to download the recommended model.")
+            self.model_status = {"ok": True, "model": have[0], "wanted": want, "note": note, "checked": now}
+        else:
+            hint = ("Ollama isn't running. Start the Ollama app." if have is None else
+                    "No AI model is downloaded yet. Run 'Setup and model check' (or ./setup.sh) to download one.")
+            self.model_status = {"ok": False, "model": None, "wanted": want, "note": hint, "checked": now}
 
     def _special_turn(self, out):
         """Records a turn that didn't go through the normal choose-an-action step."""
@@ -692,6 +732,7 @@ What do you do now?"""
         return bid not in closed
 
     def status(self):
+        self.ensure_model()
         u = self._usage()
         last = self.db.get("last_turn")
         tick = self.cfg["tick_minutes"] * 60
@@ -716,7 +757,7 @@ What do you do now?"""
             "sleep": self.bedtime(), "night": self.is_night(), "daylight": self.daylight(),
             "chat": bool(self.chat_state()), "event": self.space_event(),
             "blueprints": self.blueprints(), "map": self.map_text(),
-            "last_backup": self.db.get("last_backup"),
+            "last_backup": self.db.get("last_backup"), "model": self.model_status,
             "in_orbit": self.db.get("location") == "station" and bool((self.db.get("last_turn") or 0) > time.time() - 30 * 60),
             "traits": self.traits(), "floors": self.floors(),
             "hobbies": {k: {"xp": v["xp"], "level": level_for(v["xp"])}

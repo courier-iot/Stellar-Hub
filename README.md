@@ -177,7 +177,26 @@ e.g. to a USB drive). To restore: stop Stellar Hub, then
 `tar -xzf ~/StellarHub-backups/stellarhub-YYYY-MM-DD.tar.gz -C /path/to/StellarHub`.
 Upgrading keeps everything; new tables are added automatically.
 
+## Updates
+Stellar Hub checks this repo's releases twice a day. When there's a new version, the dashboard shows a banner with
+what's new and an **Update now** button (it only works from the hub computer itself), and your phone gets a notification.
+- **Windows (installed with Setup):** it downloads the new installer, runs it quietly, and Stellar Hub restarts in the background.
+- **Linux / zip installs:** it replaces the program files in place and restarts (a systemd service restarts automatically).
+
+Before installing, it backs up your resident and checks the download's SHA-256 checksum against the release.
+`data/` and `config.json` are never touched. Turn off the twice-daily check with `"update": {"check": false}`.
+
+## Security
+- The dashboard has no password, but it only answers to `localhost`. Changes need the dashboard's own header,
+  so a website open in your browser can't control the hub.
+- The phone connection needs the pair code. Ten wrong codes from one address block it for 5 minutes.
+- When the resident reads web pages, it can only open public internet addresses, never your home network or this computer.
+- Programs from the Fabrication Hangar only run after you approve them, in a sandbox with no internet.
+- Backups contain the pair code and are readable only by your user. Make a new pair code with `--new-pair-code` if one leaks.
+
 ## Settings (`config.json`)
+Your settings live in `config.json`, which is created from `config.default.json` the first time Stellar Hub runs.
+Updates replace `config.default.json` but never your `config.json`, and new settings from an update are filled in automatically.
 - `ollama.model`: set by `./setup.sh`, or change it by hand
 - `radio.music_dir`: your music folder (default `~/Music`). `radio.quiet_hours`: no music between these hours (default 23-8)
 - `limits`: daily AI calls, café visits, and how many requests can wait at once

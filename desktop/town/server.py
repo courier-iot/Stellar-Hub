@@ -1,8 +1,10 @@
 """Stellar Hub dashboard + JSON API. Hub Connect S (the phone app) uses this same API.
 
-Requests from this computer (localhost) are always allowed.
-Requests from anywhere else (your phone over Tailscale) need the pair code,
-sent as the X-Hub-Token header or ?token=... in the URL.
+Requests from this computer (localhost) are allowed without the pair code, with two safety checks so that
+websites open in your browser can't control the hub: the Host header must be localhost (stops "DNS
+rebinding"), and changes (POST) must carry the dashboard's own header, which other sites can't send.
+Requests from anywhere else (your phone over Tailscale) need the pair code, sent as the X-Hub-Token header
+or ?token=... in the URL. Too many wrong pair codes from one address get it blocked for 5 minutes.
 """
 import hmac
 import json
@@ -12,6 +14,7 @@ import secrets
 import shutil
 import subprocess
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -47,8 +50,26 @@ def tailscale_ip():
     return out.splitlines()[0] if code == 0 and out else None
 
 
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1"}
+_FAILS = {}            # ip -> recent failed pair-code attempts
+_FAILS_LOCK = threading.Lock()
+
+
+def _blocked(ip):
+    with _FAILS_LOCK:
+        recent = [t for t in _FAILS.get(ip, []) if time.time() - t < 300]
+        _FAILS[ip] = recent
+        return len(recent) >= 10
+
+
+def _failed(ip):
+    with _FAILS_LOCK:
+        _FAILS.setdefault(ip, []).append(time.time())
+
+
 def make_server(agent, host, port, pair_code):
     db = agent.db
+    local_server = host in ("127.0.0.1", "localhost")
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "StellarHub"
@@ -59,11 +80,31 @@ def make_server(agent, host, port, pair_code):
         def _local(self):
             return self.client_address[0] in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
 
+        def _host_ok(self):
+            """On the localhost server, only accept requests addressed to localhost (blocks DNS rebinding)."""
+            if not local_server:
+                return True
+            h = (self.headers.get("Host") or "").strip().lower()
+            name = h.rsplit(":", 1)[0] if not h.startswith("[") else h.split("]")[0] + "]"
+            return name in LOCAL_HOSTS
+
+        def _origin_ok(self):
+            origin = (self.headers.get("Origin") or "").lower()
+            if not origin:
+                return True
+            return origin in (f"http://localhost:{port}", f"http://127.0.0.1:{port}") or not self._local()
+
         def _authed(self, qs):
+            ip = self.client_address[0]
             if self._local():
                 return True
+            if _blocked(ip):
+                return False
             given = self.headers.get("X-Hub-Token") or (qs.get("token") or [""])[0]
-            return hmac.compare_digest(given.strip().upper(), pair_code)
+            ok = hmac.compare_digest(given.strip().upper().encode(), pair_code.encode())
+            if not ok:
+                _failed(ip)
+            return ok
 
         def _send(self, body, ctype="application/json", code=200):
             data = body if isinstance(body, bytes) else body.encode("utf-8")
@@ -71,6 +112,10 @@ def make_server(agent, host, port, pair_code):
             self.send_header("Content-Type", ctype + "; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+            self.send_header("Referrer-Policy", "no-referrer")
             self.end_headers()
             self.wfile.write(data)
 
@@ -78,7 +123,10 @@ def make_server(agent, host, port, pair_code):
             self._send(json.dumps(obj), code=code)
 
         def _body(self):
-            n = int(self.headers.get("Content-Length") or 0)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                return {}
             if not n or n > 100_000:
                 return {}
             try:
@@ -87,6 +135,8 @@ def make_server(agent, host, port, pair_code):
                 return {}
 
         def do_GET(self):
+            if not self._host_ok():
+                return self._json({"error": "bad host"}, 403)
             u = urlparse(self.path)
             qs = parse_qs(u.query)
             if u.path in ("/", "/index.html"):
@@ -96,6 +146,8 @@ def make_server(agent, host, port, pair_code):
                 with open(os.path.join(HERE, "dashboard.html"), encoding="utf-8") as f:
                     return self._send(f.read(), "text/html")
             if not self._authed(qs):
+                if _blocked(self.client_address[0]):
+                    return self._json({"error": "too many wrong pair codes, try again in 5 minutes"}, 429)
                 return self._json({"error": "wrong or missing pair code"}, 401)
             try:
                 limit = max(1, min(500, int((qs.get("limit") or ["60"])[0])))
@@ -147,6 +199,9 @@ def make_server(agent, host, port, pair_code):
                 self.end_headers()
                 self.wfile.write(data)
                 return None
+            if u.path == "/api/update":
+                up = getattr(agent, "updater", None)
+                return self._json(up.state() if up else {"available": False})
             if u.path == "/api/exchange":
                 return self._json(agent.exchange_overview())
             if u.path == "/api/gallery":
@@ -164,6 +219,11 @@ def make_server(agent, host, port, pair_code):
             return self._json({"error": "not found"}, 404)
 
         def do_POST(self):
+            if not self._host_ok() or not self._origin_ok():
+                return self._json({"error": "not allowed"}, 403)
+            # Browsers won't let other websites add custom headers, so this stops cross-site requests.
+            if self._local() and not (self.headers.get("X-Stellar-Hub") or self.headers.get("X-Hub-Token")):
+                return self._json({"error": "missing X-Stellar-Hub header"}, 403)
             u = urlparse(self.path)
             if not self._authed(parse_qs(u.query)):
                 return self._json({"error": "wrong or missing pair code"}, 401)
@@ -230,6 +290,15 @@ def make_server(agent, host, port, pair_code):
                     return self._json({"ok": True, "file": agent.backup_now()})
                 except Exception as e:
                     return self._json({"ok": False, "error": str(e)}, 500)
+            if path in ("/api/update/check", "/api/update/apply"):
+                up = getattr(agent, "updater", None)
+                if not up:
+                    return self._json({"error": "updates unavailable"}, 404)
+                if path.endswith("check"):
+                    return self._json(up.check(force=True))
+                if not self._local():
+                    return self._json({"error": "updates can only be installed from the hub computer"}, 403)
+                return self._json(up.apply())
             if path == "/api/shutdown":
                 if not self._local():
                     return self._json({"error": "only from the hub computer"}, 403)

@@ -45,6 +45,14 @@ class OllamaLLM:
         except Exception as e:
             raise LLMError(f"Could not reach Ollama at {self.url}: {e}") from e
 
+    def installed(self):
+        """Names of downloaded chat models (embedding models skipped), biggest first. Raises if Ollama is down."""
+        with urllib.request.urlopen(self.url + "/api/tags", timeout=10) as r:
+            tags = json.loads(r.read().decode())
+        models = [m for m in tags.get("models", []) if "embed" not in m.get("name", "").lower()]
+        models.sort(key=lambda m: -m.get("size", 0))
+        return [m.get("name", "") for m in models]
+
     def check(self):
         """Returns (ok, message)."""
         try:

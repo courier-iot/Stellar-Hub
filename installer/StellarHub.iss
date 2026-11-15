@@ -37,8 +37,9 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 
 [Files]
 Source: "..\build\python\*"; DestDir: "{app}\python"; Flags: ignoreversion recursesubdirs createallsubdirs
+; config.json is never installed: Stellar Hub creates it from config.default.json on first start,
+; so updates can't overwrite your settings.
 Source: "..\desktop\*"; DestDir: "{app}"; Excludes: "*.sh,config.json,\data\*,__pycache__,*.pyc"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\desktop\config.json"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall
 Source: "..\VERSION"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
@@ -54,6 +55,8 @@ Filename: "{group}\Stellar Hub dashboard.url"; Section: "InternetShortcut"; Key:
 [Run]
 Filename: "{app}\python\python.exe"; Parameters: """{app}\setup_hub.py"" --pause"; WorkingDir: "{app}"; Description: "Check my hardware and choose an AI model (recommended)"; Flags: postinstall skipifsilent
 Filename: "{app}\python\python.exe"; Parameters: """{app}\run.py"" --open"; WorkingDir: "{app}"; Description: "Start Stellar Hub now"; Flags: postinstall skipifsilent nowait unchecked
+; After a quiet update started from the dashboard, start Stellar Hub again in the background.
+Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\run.py"""; WorkingDir: "{app}"; Flags: nowait; Check: WizardSilent
 
 [UninstallRun]
 Filename: "{app}\python\python.exe"; Parameters: """{app}\stop.py"""; WorkingDir: "{app}"; Flags: runhidden waituntilterminated; RunOnceId: "StopHub"

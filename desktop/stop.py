@@ -12,7 +12,7 @@ except (OSError, ValueError):
     port = 8080
 try:
     req = urllib.request.Request(f"http://127.0.0.1:{port}/api/shutdown", data=b"{}", method="POST",
-                                 headers={"Content-Type": "application/json"})
+                                 headers={"Content-Type": "application/json", "X-Stellar-Hub": "1"})
     urllib.request.urlopen(req, timeout=5)
     print("Stellar Hub stopped. Everything is saved.")
 except Exception:

@@ -74,6 +74,9 @@
   <button id="turnBtn" onclick="takeTurn()">Take a turn now</button>
 </header>
 <main>
+  <section class="wide" id="modelwarn" style="display:none; border-color:var(--warn)"></section>
+  <section class="wide" id="updatebar" style="display:none; border-color:var(--accent)"></section>
+
   <section class="wide">
     <canvas id="town" width="812" height="216"></canvas>
     <div id="caption">Loading the colony…</div>
@@ -169,6 +172,9 @@
       <button class="ghost" onclick="spaceEvent('eclipse')">🌑 Eclipse</button>
       <button class="ghost" onclick="spaceEvent('trader')">🛸 Trader</button>
     </div>
+    <h2 class="sub">Updates</h2>
+    <div id="updateinfo" class="meta"></div>
+    <div class="row"><button class="ghost" onclick="updateCheck()">Check for updates</button></div>
     <h2 class="sub">Backups</h2>
     <div id="backup" class="meta"></div>
     <div class="row"><button class="ghost" onclick="backupNow()">Back up now</button></div>
@@ -264,7 +270,7 @@ const VERBS = {journal:"writing in its journal", update_personality:"rethinking 
   plan_colony:"planning the colony", sleep:"sleeping", expedition:"exploring"};
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const when = ts => ts ? new Date(ts * 1000).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"}) : "—";
-const api = (p, body) => fetch(p, body === undefined ? {} : {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)}).then(r => r.json());
+const api = (p, body) => fetch(p, body === undefined ? {} : {method:"POST", headers:{"Content-Type":"application/json", "X-Stellar-Hub": "1"}, body:JSON.stringify(body)}).then(r => r.json());
 
 /* ------------------------------------------------------------ pixel colony viewer */
 const Town = {
@@ -407,6 +413,21 @@ async function refresh() {
     (s.blueprints && s.blueprints.length ? `<br><br>Blueprints waiting to be built: ${esc(s.blueprints.map(b => NAMES[b] || b).join(", "))}` : "") +
     `<br><br>Sleeps ${s.sleep.bed}:00 to ${s.sleep.wake}:00` : "";
   document.getElementById("eventnow").innerHTML = s.event ? `<b>${esc(s.event.title)}</b> until ${when(s.event.end)}<br>${esc(s.event.about)}<br><br>Start one yourself:` : "Clear skies. Start one yourself:";
+  const up = await api("/api/update");
+  const upd = document.getElementById("updatebar");
+  const prog = up.progress && (Date.now() / 1000 - up.progress.ts) < 600 ? up.progress : null;
+  if (up.available || prog) {
+    upd.style.display = "";
+    upd.innerHTML = prog
+      ? `<b>${esc(prog.stage)}</b>${prog.error ? `<div class="err">${esc(prog.error)}</div>` : ""}`
+      : `<b>⬆️ Stellar Hub v${esc(up.latest)} is available</b> <span class="meta">(you have v${esc(up.current)})</span>
+         ${up.changelog ? `<pre class="meta" style="margin-top:6px">${esc(up.changelog)}</pre>` : ""}
+         <div class="row"><button onclick="updateNow()">Update now</button>
+         <span class="meta">Backs up your resident first${up.kind === "installer" ? ", then runs the new installer quietly and restarts" : ", then replaces the program files and restarts"}. Your settings and data are kept.</span></div>`;
+  } else upd.style.display = "none";
+  document.getElementById("updateinfo").innerHTML = `You have v${esc(up.current || "?")}` +
+    (up.checked ? ` · last checked ${when(up.checked)}` : "") + (up.error ? `<div class="err">${esc(up.error)}</div>` : "") +
+    (!up.available && up.latest ? " · up to date ✓" : "");
   const lb = s.last_backup;
   document.getElementById("backup").innerHTML = lb ? (lb.error ? `Last backup failed: ${esc(lb.error)}` : `Last backup ${when(lb.ts)}<br>${esc(lb.file)}`) : "No backup yet (runs nightly after 4:00).";
   if (!chatBusy) renderChat(await api("/api/chat"), s.chat);
@@ -433,6 +454,11 @@ async function refresh() {
     || `<div class="meta">No milestones yet.</div>`;
   document.getElementById("caption").innerHTML = cap;
   document.getElementById("sub").textContent = s.look || "";
+  const mw = document.getElementById("modelwarn");
+  if (s.model && s.model.note) {
+    mw.style.display = "";
+    mw.innerHTML = `<div class="warnbox" style="margin:0">⚠ ${esc(s.model.note)}</div>`;
+  } else mw.style.display = "none";
   document.getElementById("credits").textContent = s.name ? `◈ ${s.credits} credits` : "";
   document.getElementById("turnBtn").disabled = s.busy;
   document.getElementById("turnBtn").textContent = s.busy ? "Thinking…" : "Take a turn now";
@@ -676,6 +702,13 @@ async function chatSend() {
 document.getElementById("chatin").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); chatSend(); } });
 async function chatEnd() { await api("/api/chat/end", {}); refresh(); }
 async function spaceEvent(type) { const r = await api("/api/space_event", {type}); if (!r.ok) alert("Another event is already happening."); refresh(); }
+async function updateCheck() { document.getElementById("updateinfo").textContent = "Checking…"; await api("/api/update/check", {}); refresh(); }
+async function updateNow() {
+  if (!confirm("Update Stellar Hub now? Your resident is backed up first, and the hub restarts by itself.")) return;
+  const r = await api("/api/update/apply", {});
+  document.getElementById("updatebar").innerHTML = `<b>${esc(r.message || r.error || "")}</b>`;
+  setTimeout(() => location.reload(), 60000);
+}
 async function backupNow() { document.getElementById("backup").textContent = "Backing up…"; await api("/api/backup", {}); refresh(); }
 
 async function loadPairing() {

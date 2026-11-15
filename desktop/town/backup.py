@@ -32,6 +32,10 @@ def make_backup(data_dir, dest_dir, keep=14):
                 if os.path.exists(path):
                     tar.add(path, arcname=f"data/{name}")
         os.replace(partial, out)
+        try:
+            os.chmod(out, 0o600)   # backups contain the pair code: keep them private to you
+        except OSError:
+            pass
     backups = sorted(glob.glob(os.path.join(dest_dir, "stellarhub-*.tar.gz")))
     for old in backups[:-keep] if keep > 0 else []:
         os.remove(old)

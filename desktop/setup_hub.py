@@ -308,13 +308,43 @@ def ollama_up():
         return None
 
 
+def wait_for_ollama(seconds=90):
+    """Ollama can take a while to start, especially right after installing. Wait for it, and on
+    Windows start the Ollama app ourselves if it hasn't started on its own."""
+    have = ollama_up()
+    if have is not None:
+        return have
+    say("\nWaiting for Ollama to start…", "c")
+    started = False
+    for i in range(seconds // 3):
+        if i == 3 and not started:
+            started = True
+            try:
+                app = os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama app.exe") if IS_WIN else ""
+                if IS_WIN and os.path.exists(app):
+                    subprocess.Popen([app], close_fds=True)
+                elif find_exe("ollama"):
+                    subprocess.Popen([find_exe("ollama"), "serve"], stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL, close_fds=True,
+                                     creationflags=0x08000000 if IS_WIN else 0)
+            except OSError:
+                pass
+        time.sleep(3)
+        have = ollama_up()
+        if have is not None:
+            return have
+    return None
+
+
 def pull(model):
     say(f"\nDownloading {model} (this can take a while)…", "c")
     return subprocess.run([find_exe("ollama") or "ollama", "pull", model]).returncode == 0
 
 
 def set_model(model):
-    with open(CONFIG) as f:
+    from town.config import load_config
+    load_config(ROOT)                     # makes sure config.json exists
+    with open(CONFIG, encoding="utf-8") as f:
         cfg = json.load(f)
     cfg.setdefault("ollama", {})["model"] = model
     with open(CONFIG, "w") as f:
@@ -378,16 +408,17 @@ def main():
             if not find_exe("ollama"):
                 say("Install it from ollama.com/download, then run setup again.", "d")
                 return 0
-            time.sleep(5)   # the Ollama app starts itself after installing
+            if IS_WIN:
+                say("Ollama may open its own chat window. You can close it: it keeps running in the background.", "d")
         else:
             if ask("Install Ollama now? (runs the official installer from ollama.com, needs your password)"):
                 subprocess.run("curl -fsSL https://ollama.com/install.sh | sh", shell=True)
             if not find_exe("ollama"):
                 say("Install it later with:  curl -fsSL https://ollama.com/install.sh | sh", "d")
                 return 0
-    have = ollama_up()
+    have = wait_for_ollama()
     if have is None:
-        say("\nOllama is installed but not running. " + ("Open Ollama from the Start menu, then run setup again."
+        say("\nOllama is installed but didn't start. " + ("Open Ollama from the Start menu, then run setup again."
             if IS_WIN else "Start it with:  sudo systemctl start ollama   (or: ollama serve)"), "y")
         if not CHECK_ONLY:
             return 0
@@ -442,8 +473,8 @@ def main():
         say("  ✗ tailscale: needed for Hub Connect S. Install: " +
             ("winget install -e --id tailscale.tailscale" if IS_WIN else "curl -fsSL https://tailscale.com/install.sh | sh"), "y")
 
-    with open(CONFIG) as f:
-        music = os.path.expanduser(json.load(f).get("radio", {}).get("music_dir", "~/Music"))
+    from town.config import load_config
+    music = os.path.expanduser(load_config(ROOT).get("radio", {}).get("music_dir", "~/Music"))
     if os.path.isdir(music):
         say(f"  ✓ music folder: {music}", "g")
     else:
