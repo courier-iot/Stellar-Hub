@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stellar Hub</title>
+<style>
+  :root { --bg:#05060d; --panel:#0f1226; --line:#232a52; --text:#eef1ff; --dim:#8a90ad;
+          --accent:#5ef2ff; --pink:#ff4fd8; --good:#4fe0a5; --bad:#ff5d73; --warn:#ffd86b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui, sans-serif; }
+  header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:20px; letter-spacing:.06em; }
+  header h1 span { color:var(--accent); }
+  main { display:grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap:14px; padding:14px; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; min-width:0; }
+  section.wide { grid-column: 1 / -1; padding:10px; }
+  h2 { margin:0 0 10px; font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); }
+  #town { width:100%; max-height:70vh; aspect-ratio:16/9; object-fit:contain; display:block; image-rendering:pixelated; image-rendering:crisp-edges; background:#000; border-radius:8px; }
+  #caption { padding:8px 4px 2px; color:var(--dim); }
+  #caption b { color:var(--text); }
+  button { background:var(--accent); color:#05060d; border:0; border-radius:8px; padding:7px 12px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  button.ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
+  button.deny { background:var(--bad); }
+  button.ok { background:var(--good); }
+  textarea { width:100%; background:#080a18; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px; font:inherit; }
+  .bar { height:8px; background:#080a18; border-radius:4px; overflow:hidden; margin:3px 0 8px; }
+  .bar > div { height:100%; background:linear-gradient(90deg, var(--accent), var(--pink)); }
+  .item { border-top:1px solid var(--line); padding:9px 0; }
+  .item:first-child { border-top:0; }
+  .meta { color:var(--dim); font-size:12px; }
+  .tag { display:inline-block; font-size:11px; padding:1px 7px; border-radius:10px; border:1px solid var(--line); color:var(--dim); margin-right:4px; }
+  .pending, .unread { border-color:var(--warn); color:var(--warn); }
+  .approved, .open { border-color:var(--good); color:var(--good); }
+  .denied, .closed { border-color:var(--bad); color:var(--bad); }
+  .reflection { color:var(--accent); }
+  .row { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; align-items:center; }
+  .scroll { max-height:520px; overflow-y:auto; }
+  .err { color:var(--bad); white-space:pre-wrap; font-size:12px; }
+  .code { font:600 20px/1.2 ui-monospace, monospace; color:var(--warn); letter-spacing:.1em; }
+  pre { white-space:pre-wrap; margin:0; font:inherit; }
+</style>
+</head>
+<body>
+<header>
+  <h1>STELLAR <span>HUB</span></h1>
+  <span class="meta" id="sub"></span>
+  <span style="flex:1"></span>
+  <button id="turnBtn" onclick="takeTurn()">Take a turn now</button>
+</header>
+<main>
+  <section class="wide">
+    <canvas id="town" width="384" height="216"></canvas>
+    <div id="caption">Loading the colony…</div>
+  </section>
+
+  <section>
+    <h2>Resident</h2>
+    <div id="status" class="meta">Loading…</div>
+    <div id="needs" style="margin-top:10px"></div>
+    <h2 style="margin-top:14px">Today's goals</h2>
+    <div id="goals" class="meta"></div>
+    <h2 style="margin-top:14px">Buildings</h2>
+    <div id="buildings"></div>
+    <div id="error" class="err"></div>
+  </section>
+
+  <section>
+    <h2>Relay Post · your inbox</h2>
+    <div id="inbox" class="scroll"></div>
+    <h2 style="margin-top:14px">Write a letter</h2>
+    <textarea id="letter" rows="3" placeholder="Say something to your resident…"></textarea>
+    <div class="row"><button onclick="sendLetter()">Send letter</button></div>
+  </section>
+
+  <section>
+    <h2>Life feed</h2>
+    <div id="feed" class="scroll"></div>
+  </section>
+
+  <section>
+    <h2>Who it is</h2>
+    <pre id="personality" class="meta"></pre>
+    <h2 style="margin-top:14px">Library</h2>
+    <div id="library" class="scroll"></div>
+  </section>
+
+  <section>
+    <h2>Hub Connect S · phone pairing</h2>
+    <div id="pairing" class="meta">Loading…</div>
+  </section>
+</main>
+<script>
+const NAMES = {home:"Home Dome", library:"Observatory Library", internet_cafe:"Uplink Café", post_office:"Relay Post",
+               salon:"Nova Salon", bank:"Credit Vault", workshop:"Fabrication Hangar"};
+const VERBS = {journal:"writing in its journal", update_personality:"rethinking who it is", rest:"resting",
+  recall:"looking through its notes", write_note:"writing a note", research:"researching", read_page:"reading a web page",
+  read_mail:"reading mail", send_request:"sending you a request", write_letter:"writing you a letter", change_look:"trying a new look"};
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const when = ts => ts ? new Date(ts * 1000).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"}) : "—";
+const api = (p, body) => fetch(p, body === undefined ? {} : {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)}).then(r => r.json());
+
+/* ------------------------------------------------------------ pixel town viewer */
+const Town = {
+  ctx: document.getElementById("town").getContext("2d"),
+  world: null, sprites: {}, x: null, targetX: null, walking: false, location: null,
+
+  toRGBA(hex) { const n = parseInt(hex.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255, 255]; },
+  bake(rows, pal) {
+    const h = rows.length, w = rows[0].length, c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const g = c.getContext("2d"), img = g.createImageData(w, h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const ch = rows[y][x]; if (ch === ".") continue;
+      img.data.set(pal[ch] || [255, 0, 255, 255], (y * w + x) * 4);
+    }
+    g.putImageData(img, 0, 0); return c;
+  },
+  setWorld(w) {
+    const pal = {}; for (const k in w.palette) pal[k] = this.toRGBA(w.palette[k]);
+    this.world = w;
+    this.sprites.bg = this.bake(w.background, pal);
+    this.sprites.buildings = w.buildings.map(b => ({...b, img: this.bake(b.sprite, pal)}));
+    this.sprites.frames = w.resident.frames.map(f => this.bake(f, pal));
+  },
+  door(id) { const b = this.world && this.world.buildings.find(b => b.id === id); return b ? b.door_x : 192; },
+  setLocation(loc, prev, lastTurn) {
+    if (!this.world || loc === this.location) return;
+    const fresh = lastTurn && (Date.now() / 1000 - lastTurn) < 120;
+    if (this.x === null) this.x = this.door(fresh && prev ? prev : loc);
+    this.location = loc; this.targetX = this.door(loc);
+  },
+  draw(t) {
+    const c = this.ctx, w = this.world;
+    c.imageSmoothingEnabled = false;
+    if (!w) { requestAnimationFrame(tt => this.draw(tt)); return; }
+    c.drawImage(this.sprites.bg, 0, 0);
+    w.twinkle.forEach(([x, y], i) => {          // twinkling stars
+      const p = Math.sin(t / 600 + i * 1.7);
+      if (p > .6) { c.fillStyle = "#ffffff"; c.fillRect(x, y, 1, 1); if (p > .93) { c.fillStyle = "#a7b0d3"; c.fillRect(x - 1, y, 3, 1); c.fillRect(x, y - 1, 1, 3); } }
+    });
+    for (const b of this.sprites.buildings) c.drawImage(b.img, b.x, b.y);
+    for (let i = 0; i < 8; i++) {                // walkway guide lights pulse
+      c.globalAlpha = .25 + .25 * Math.sin(t / 400 - i);
+      c.fillStyle = "#5ef2ff"; c.fillRect(4 + i * 48, 190, 3, 1);
+    }
+    c.globalAlpha = 1;
+    if (this.x !== null) {
+      const dx = this.targetX - this.x, step = 0.7;
+      this.walking = Math.abs(dx) > 0.5;
+      if (this.walking) this.x += Math.sign(dx) * Math.min(step, Math.abs(dx));
+      const r = w.resident, floats = r.floats;
+      const bob = floats ? Math.round(Math.sin(t / 380) * 2) - 3 : 0;
+      const fi = floats ? Math.floor(t / 450) % 2 : (this.walking ? Math.floor(t / 160) % 2 : 0);
+      const fx = Math.round(this.x) - 8, fy = r.feet_y - 16 + bob;
+      c.fillStyle = "rgba(0,0,0,.45)";
+      c.fillRect(fx + 4, r.feet_y - 1, 8, 2);
+      const img = this.sprites.frames[fi];
+      if (this.walking && dx < 0) { c.save(); c.scale(-1, 1); c.drawImage(img, -fx - 16, fy); c.restore(); }
+      else c.drawImage(img, fx, fy);
+    }
+    requestAnimationFrame(tt => this.draw(tt));
+  },
+};
+requestAnimationFrame(t => Town.draw(t));
+let worldVersion = null;
+
+/* ------------------------------------------------------------ panels */
+async function refresh() {
+  const [s, inbox, feed, lib] = await Promise.all([api("/api/status"), api("/api/inbox"), api("/api/feed?limit=80"), api("/api/library?limit=40")]);
+  if (s.world_version !== worldVersion) { Town.setWorld(await api("/api/world")); worldVersion = s.world_version; }
+  Town.setLocation(s.location, s.prev_location, s.last_turn);
+
+  const act = s.last_act || {};
+  document.getElementById("caption").innerHTML = s.name
+    ? `<b>${esc(s.name)}</b> is at the ${esc(NAMES[s.location] || s.location)}${act.action ? ", " + esc(VERBS[act.action] || act.action) : ""}.` +
+      (act.thought ? `<br><i>"${esc(act.thought)}"</i>` : "")
+    : "A star spirit is about to be born. Press <b>Take a turn now</b>.";
+  document.getElementById("sub").textContent = s.look ? s.look : "";
+  document.getElementById("turnBtn").disabled = s.busy;
+  document.getElementById("turnBtn").textContent = s.busy ? "Thinking…" : "Take a turn now";
+  document.getElementById("status").innerHTML =
+    `Last turn: ${when(s.last_turn)} · Next: ${when(s.next_turn)}<br>` +
+    `AI calls today: ${s.usage.llm_calls}/${s.limits.llm_calls_per_day} · Café visits: ${s.usage.cafe}/${s.limits.cafe_visits_per_day}`;
+  document.getElementById("needs").innerHTML = Object.entries(s.needs || {}).map(([k, v]) =>
+    `<div class="meta">${esc(k)}</div><div class="bar"><div style="width:${v}%"></div></div>`).join("");
+  document.getElementById("goals").innerHTML = (s.goals || []).map(g => "• " + esc(g)).join("<br>") || "None yet";
+  document.getElementById("buildings").innerHTML = s.buildings.map(b => {
+    const state = b.locked ? (b.unlockable ? "locked" : "under construction") : b.closed ? "closed" : "open";
+    let btn = "";
+    if (b.unlockable) btn = `<button class="ghost" onclick="lockB('${b.id}')">${b.locked ? "Unlock" : "Lock"}</button>`;
+    else if (b.toggleable) btn = `<button class="ghost" onclick="toggleB('${b.id}')">${b.closed ? "Open" : "Close"}</button>`;
+    return `<div class="item row">${esc(b.name)} <span class="tag ${state === "open" ? "open" : state === "closed" ? "closed" : ""}">${state}</span>${btn}</div>`;
+  }).join("");
+  document.getElementById("error").textContent = s.last_error ? "Last problem: " + s.last_error : "";
+  document.getElementById("personality").textContent = s.personality || "";
+
+  document.getElementById("inbox").innerHTML = inbox.map(r => {
+    const open = r.status === "pending" || r.status === "unread";
+    const label = r.kind === "letter" ? "letter" : r.kind + " request";
+    return `<div class="item"><span class="tag ${r.status}">${esc(r.status)}</span><span class="tag">#${r.id} ${esc(label)}</span>
+      <div>${esc(r.content)}</div>
+      ${r.reason ? `<div class="meta">Why: ${esc(r.reason)}</div>` : ""}
+      ${r.reply ? `<div class="meta">You replied: ${esc(r.reply)}</div>` : ""}
+      <div class="meta">${when(r.ts)}</div>
+      ${open ? `<textarea id="reply-${r.id}" rows="2" placeholder="Your reply (optional)"></textarea>
+        <div class="row">${r.kind === "letter"
+          ? `<button onclick="reply(${r.id}, 'read')">Mark read / reply</button>`
+          : `<button class="ok" onclick="reply(${r.id}, 'approved')">Approve</button>
+             <button class="deny" onclick="reply(${r.id}, 'denied')">Deny</button>
+             <button class="ghost" onclick="reply(${r.id}, 'noted')">Just reply</button>`}</div>` : ""}
+    </div>`;
+  }).join("") || `<div class="meta">No mail yet.</div>`;
+
+  document.getElementById("feed").innerHTML = feed.map(m =>
+    `<div class="item ${m.kind === "reflection" ? "reflection" : ""}"><span class="tag">${esc(m.kind)}</span><span class="meta">${when(m.ts)} · ${esc(NAMES[m.building] || m.building)} · importance ${m.importance}</span>
+     <div>${esc(m.content)}</div></div>`).join("") || `<div class="meta">Nothing has happened yet.</div>`;
+
+  document.getElementById("library").innerHTML = lib.map(n =>
+    `<div class="item"><b>${esc(n.topic)}</b> <span class="meta">${when(n.ts)}</span><div>${esc(n.summary)}</div>
+     <div class="meta">${esc(n.source)}</div></div>`).join("") || `<div class="meta">No notes yet.</div>`;
+}
+
+async function loadPairing() {
+  const p = await api("/api/pairing");
+  document.getElementById("pairing").innerHTML = p.tailscale_ip
+    ? `In Hub Connect S, open Settings and enter:<br>Address: <span class="code">${esc(p.tailscale_ip)}:${p.port}</span><br>Pair code: <span class="code">${esc(p.code)}</span>`
+    : `Tailscale isn't running on this computer, so the phone can't connect yet. Install Tailscale on this PC and your phone, sign in to both, then restart Stellar Hub.<br><br>Pair code: <span class="code">${esc(p.code)}</span>`;
+}
+
+async function takeTurn() { await api("/api/turn", {}); setTimeout(refresh, 600); }
+async function reply(id, decision) {
+  const el = document.getElementById("reply-" + id);
+  await api(`/api/requests/${id}/reply`, {decision, reply: el ? el.value : ""});
+  refresh();
+}
+async function sendLetter() {
+  const el = document.getElementById("letter");
+  if (!el.value.trim()) return;
+  await api("/api/letter", {text: el.value});
+  el.value = ""; refresh();
+}
+async function toggleB(id) { await api(`/api/buildings/${id}/toggle`, {}); refresh(); }
+async function lockB(id) { await api(`/api/buildings/${id}/lock`, {}); refresh(); }
+
+refresh(); loadPairing();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
