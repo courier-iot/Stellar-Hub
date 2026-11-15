@@ -46,10 +46,4 @@ regular Wi-Fi. Phones need the pair code. To make a new code: `./start.sh --new-
 `town.db` (memories, mail, notes), `home/personality.md` (who it thinks it is), and
 `home/personality_history.md` (every past version). Back up `data/` to keep your resident.
 
-## One-time GitHub setup: signing key
-So phone updates install over the previous version, every APK must be signed with the same key.
-In the repo, go to **Settings → Secrets and variables → Actions → New repository secret** and add:
-- `KEYSTORE_BASE64`
-- `KEYSTORE_PASSWORD`
 
-(The values come in the separate `SIGNING-SECRETS.txt`. Never upload that file to the repo.)
