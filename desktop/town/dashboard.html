@@ -402,7 +402,7 @@ function renderColony(col) {
 
   let radio = col.now_playing ? `♪ <b>${esc(col.now_playing.title)}</b> by ${esc(col.now_playing.artist)} <button class="ghost" onclick="stopRadio()">Stop</button>` : "Nothing playing.";
   radio += `<div class="meta">${col.music_count} songs found · player: ${esc(col.player || "none")}${col.quiet_now ? " · quiet hours now" : ""}</div>`;
-  if (!col.player) radio += `<div class="warnbox">No audio player found. Install one: <code>sudo apt install mpv</code></div>`;
+  if (!col.player) radio += `<div class="warnbox">No audio player found. ${esc(col.player_hint)}</div>`;
   if (!col.music_count) radio += `<div class="warnbox">No music found. Put songs in ~/Music (or set radio.music_dir in config.json).</div>`;
   document.getElementById("radio").innerHTML = radio;
   document.getElementById("logs").innerHTML = col.broadcasts.map(b =>
@@ -415,7 +415,7 @@ function renderColony(col) {
      || (e ? "" : `<div class="meta">No expeditions yet.</div>`));
 
   document.getElementById("programs").innerHTML =
-    (col.sandbox ? "" : `<div class="warnbox">Sandbox not installed, so approved programs can't run yet. Install it: <code>sudo apt install bubblewrap</code></div>`) +
+    (col.sandbox ? "" : `<div class="warnbox">Sandbox not installed, so approved programs can't run yet. ${esc(col.sandbox_hint)}</div>`) +
     (col.programs.map(p => `<div class="item"><b>${esc(p.name)}</b> <span class="tag ${p.status}">${esc(p.status.replace(/_/g, " "))}</span>
       <div class="meta">${esc(p.description)}</div>${p.output ? `<pre class="src">${esc(p.output)}</pre>` : ""}</div>`).join("") || `<div class="meta">No programs yet.</div>`);
 

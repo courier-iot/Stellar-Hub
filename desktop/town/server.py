@@ -15,6 +15,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from .osutil import find_exe, run_quiet
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
@@ -38,14 +40,11 @@ def load_pair_code(data_dir, reset=False):
 
 
 def tailscale_ip():
-    exe = shutil.which("tailscale")
+    exe = find_exe("tailscale")
     if not exe:
         return None
-    try:
-        out = subprocess.run([exe, "ip", "-4"], capture_output=True, text=True, timeout=5).stdout.strip()
-        return out.splitlines()[0] if out else None
-    except Exception:
-        return None
+    code, out = run_quiet([exe, "ip", "-4"], timeout=5)
+    return out.splitlines()[0] if code == 0 and out else None
 
 
 def make_server(agent, host, port, pair_code):
@@ -198,6 +197,13 @@ def make_server(agent, host, port, pair_code):
                     return self._json({"ok": True, "file": agent.backup_now()})
                 except Exception as e:
                     return self._json({"ok": False, "error": str(e)}, 500)
+            if path == "/api/shutdown":
+                if not self._local():
+                    return self._json({"error": "only from the hub computer"}, 403)
+                agent.act_stop_music({}, 0)
+                self._json({"ok": True})
+                threading.Timer(0.5, lambda: os._exit(0)).start()
+                return None
             if path == "/api/radio/stop":
                 return self._json({"ok": True, "result": agent.act_stop_music({}, 0)})
             m = re.fullmatch(r"/api/buildings/(\w+)/lock", path)

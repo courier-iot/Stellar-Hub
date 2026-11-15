@@ -1,20 +1,29 @@
 """Stellar Hub setup: checks your hardware and drivers, picks a model that fits, and gets everything ready.
 
-Run it with ./setup.sh   (options: --yes to accept every suggestion, --check to only report)
-Nothing that needs your password happens without asking first.
+Run it with ./setup.sh on Linux, or "Setup and model check" in the Start menu on Windows.
+Options: --yes to accept every suggestion, --check to only report.
+Nothing that needs your password (or admin rights) happens without asking first.
 """
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, ROOT)
+from town.osutil import IS_WIN, find_exe, run_quiet  # noqa: E402
+
 CONFIG = os.path.join(ROOT, "config.json")
 YES = "--yes" in sys.argv
 CHECK_ONLY = "--check" in sys.argv
+PAUSE = "--pause" in sys.argv
+if IS_WIN:
+    os.system("")   # turns on colours in the Windows console
 
 # Model picks per memory size, best first. If a download fails (renamed or retired model),
 # the next one is tried. The last entries in each list are long-established models.
@@ -39,11 +48,7 @@ def say(msg, color="x"):
 
 
 def run(cmd, timeout=15):
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        return r.returncode, r.stdout.strip()
-    except Exception:
-        return 1, ""
+    return run_quiet(cmd, timeout)
 
 
 def ask(question):
@@ -60,6 +65,8 @@ def ask(question):
 
 # ------------------------------------------------------------------ detection
 def distro():
+    if IS_WIN:
+        return f"Windows {platform.release()} ({platform.version()})", "windows"
     info = {}
     try:
         with open("/etc/os-release") as f:
@@ -73,6 +80,8 @@ def distro():
 
 
 def pkg_manager():
+    if IS_WIN:
+        return "winget" if shutil.which("winget") else None
     for pm in ("apt", "dnf", "pacman", "zypper"):
         if shutil.which(pm):
             return pm
@@ -80,11 +89,27 @@ def pkg_manager():
 
 
 def install_cmd(pm, pkgs):
+    if pm == "winget":
+        return " && ".join(f"winget install -e --id {p} --accept-source-agreements --accept-package-agreements"
+                           for p in pkgs.split())
     return {"apt": f"sudo apt install -y {pkgs}", "dnf": f"sudo dnf install -y {pkgs}",
             "pacman": f"sudo pacman -S --needed {pkgs}", "zypper": f"sudo zypper install -y {pkgs}"}.get(pm)
 
 
 def ram_gb():
+    if IS_WIN:
+        import ctypes
+
+        class MemStatus(ctypes.Structure):
+            _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                        ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                        ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                        ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                        ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+        m = MemStatus()
+        m.dwLength = ctypes.sizeof(MemStatus)
+        ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+        return m.ullTotalPhys / 1024 ** 3
     try:
         with open("/proc/meminfo") as f:
             for line in f:
@@ -96,6 +121,13 @@ def ram_gb():
 
 
 def cpu_name():
+    if IS_WIN:
+        try:
+            import winreg
+            k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
+            return winreg.QueryValueEx(k, "ProcessorNameString")[0].strip()
+        except OSError:
+            return platform.processor() or "unknown CPU"
     try:
         with open("/proc/cpuinfo") as f:
             for line in f:
@@ -106,8 +138,80 @@ def cpu_name():
     return "unknown CPU"
 
 
+def gpus_windows():
+    """Reads graphics cards from the Windows registry (accurate memory sizes, unlike most tools)."""
+    import winreg
+    found = []
+    base = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
+    try:
+        root = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, base)
+    except OSError:
+        return found
+    i = 0
+    while True:
+        try:
+            sub = winreg.EnumKey(root, i)
+        except OSError:
+            break
+        i += 1
+        if not sub.isdigit():
+            continue
+        try:
+            k = winreg.OpenKey(root, sub)
+        except OSError:
+            continue
+
+        def val(name):
+            try:
+                return winreg.QueryValueEx(k, name)[0]
+            except OSError:
+                return None
+        desc = val("DriverDesc") or ""
+        dev = (val("MatchingDeviceId") or "").lower()
+        provider = (val("ProviderName") or "").lower()
+        mem = val("HardwareInformation.qwMemorySize")
+        if mem is None:
+            mem = val("HardwareInformation.MemorySize")
+            if isinstance(mem, bytes):
+                mem = int.from_bytes(mem[:8], "little")
+        low = desc.lower()
+        if "ven_10de" in dev or "nvidia" in low:
+            vendor = "nvidia"
+        elif "ven_1002" in dev or "radeon" in low or "amd" in low:
+            vendor = "amd"
+        elif "ven_8086" in dev or "intel" in low:
+            vendor = "intel"
+        elif "basic display" in low or "basic render" in low:
+            vendor = "basic"
+        else:
+            continue
+        g = {"vendor": vendor, "name": desc, "vram_gb": (mem or 0) / 1024 ** 3, "driver_ok": False, "note": "", "slot": sub}
+        if vendor == "nvidia":
+            smi = find_exe("nvidia-smi")
+            code, out = run([smi, "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"]) if smi else (1, "")
+            if code == 0 and out:
+                name, m = out.splitlines()[0].rsplit(",", 1)
+                g.update(name=name.strip(), vram_gb=int(m) / 1024, driver_ok=True)
+            else:
+                g["note"] = "NVIDIA driver missing or not working"
+        elif vendor == "amd":
+            g["driver_ok"] = "advanced micro devices" in provider and g["vram_gb"] >= 2
+            if g["vram_gb"] < 2:
+                g["note"] = "integrated graphics (uses system RAM)"
+            elif not g["driver_ok"]:
+                g["note"] = "AMD driver missing"
+        elif vendor == "intel":
+            g["note"] = "Intel graphics: the model will run on the CPU"
+        else:
+            g["note"] = "Windows is using its basic display driver (no graphics driver installed)"
+        found.append(g)
+    return found
+
+
 def gpus():
     """Returns a list of {vendor, name, vram_gb, driver_ok, note}."""
+    if IS_WIN:
+        return gpus_windows()
     found = []
     vendors = {"0x10de": "nvidia", "0x1002": "amd", "0x8086": "intel"}
     seen = set()
@@ -167,6 +271,14 @@ def gpus():
 
 
 def driver_help(g, ids, pm):
+    if IS_WIN:
+        return {
+            "nvidia": "Install the latest driver from nvidia.com/drivers (or the NVIDIA App), then restart.",
+            "amd": ("Install AMD Software: Adrenalin Edition from amd.com/support, then restart. "
+                    "Older Radeon cards may not be supported for AI and will use the CPU instead."),
+            "basic": ("Install your graphics card's driver: NVIDIA (nvidia.com/drivers), AMD (amd.com/support) "
+                      "or Intel (intel.com/support), then restart and run setup again."),
+        }.get(g["vendor"], ""), False
     if g["vendor"] == "nvidia":
         if "ubuntu" in ids or "pop" in ids or "mint" in ids:
             return "sudo ubuntu-drivers install", True
@@ -198,7 +310,7 @@ def ollama_up():
 
 def pull(model):
     say(f"\nDownloading {model} (this can take a while)…", "c")
-    return subprocess.run(["ollama", "pull", model]).returncode == 0
+    return subprocess.run([find_exe("ollama") or "ollama", "pull", model]).returncode == 0
 
 
 def set_model(model):
@@ -242,7 +354,7 @@ def main():
                 say(f"  Fix: {fix}", "d")
                 if can_run and ask("  Run the driver installer now? (needs your password, reboot after)"):
                     subprocess.run(fix, shell=True)
-                    say("  Reboot, then run ./setup.sh again.", "y")
+                    say("  Reboot, then run setup again.", "y")
                     return 0
 
     # ---- pick a model tier
@@ -258,16 +370,25 @@ def main():
         say("  Running on the CPU is slower, but fine here: your resident only thinks every 30 minutes.", "d")
 
     # ---- ollama
-    if not shutil.which("ollama"):
+    if not find_exe("ollama"):
         say("\nOllama isn't installed.", "y")
-        if ask("Install Ollama now? (runs the official installer from ollama.com, needs your password)"):
-            subprocess.run("curl -fsSL https://ollama.com/install.sh | sh", shell=True)
-        if not shutil.which("ollama"):
-            say("Install it later with:  curl -fsSL https://ollama.com/install.sh | sh", "d")
-            return 0
+        if IS_WIN:
+            if pm and ask("Install Ollama now? (uses winget, Windows' official installer)"):
+                subprocess.run(install_cmd("winget", "Ollama.Ollama"), shell=True)
+            if not find_exe("ollama"):
+                say("Install it from ollama.com/download, then run setup again.", "d")
+                return 0
+            time.sleep(5)   # the Ollama app starts itself after installing
+        else:
+            if ask("Install Ollama now? (runs the official installer from ollama.com, needs your password)"):
+                subprocess.run("curl -fsSL https://ollama.com/install.sh | sh", shell=True)
+            if not find_exe("ollama"):
+                say("Install it later with:  curl -fsSL https://ollama.com/install.sh | sh", "d")
+                return 0
     have = ollama_up()
     if have is None:
-        say("\nOllama is installed but not running. Start it with:  sudo systemctl start ollama   (or: ollama serve)", "y")
+        say("\nOllama is installed but not running. " + ("Open Ollama from the Start menu, then run setup again."
+            if IS_WIN else "Start it with:  sudo systemctl start ollama   (or: ollama serve)"), "y")
         if not CHECK_ONLY:
             return 0
     else:
@@ -287,28 +408,39 @@ def main():
 
     # ---- optional tools
     say("\nOptional extras:", "b")
-    extras = [
-        ("bwrap", "bubblewrap", "the Fabrication Hangar's safe sandbox for running its programs"),
-        ("mpv", "mpv", "the Radio Tower, to play music out loud"),
-    ]
+    if IS_WIN:
+        extras = [("docker", "Docker.DockerDesktop", "the Fabrication Hangar's safe sandbox for running its programs")]
+        say("  ✓ music: Windows' own media player (VLC or mpv also work if installed)", "g")
+    else:
+        extras = [("bwrap", "bubblewrap", "the Fabrication Hangar's safe sandbox for running its programs"),
+                  ("mpv", "mpv", "the Radio Tower, to play music out loud")]
     missing = []
     for exe, pkg, why in extras:
-        if shutil.which(exe):
+        if find_exe(exe):
             say(f"  ✓ {exe}: {why}", "g")
+            if exe == "docker" and ask("  Download the sandbox's Python image now (about 50 MB)?"):
+                subprocess.run([find_exe("docker"), "pull", "python:3.12-slim"])
         else:
             say(f"  ✗ {exe}: needed for {why}", "y")
             missing.append(pkg)
     if missing and pm:
         cmd = install_cmd(pm, " ".join(missing))
         say(f"  Install with: {cmd}", "d")
-        if ask("  Install them now? (needs your password)"):
+        if ask("  Install now?" + ("" if IS_WIN else " (needs your password)")):
             subprocess.run(cmd, shell=True)
-    if shutil.which("tailscale"):
-        code, ip = run(["tailscale", "ip", "-4"])
-        say(f"  ✓ tailscale: phone access at {ip.splitlines()[0]}:8080" if code == 0 and ip
-            else "  ✗ tailscale is installed but not connected. Run: sudo tailscale up", "g" if code == 0 and ip else "y")
+    ts = find_exe("tailscale")
+    if ts:
+        code, ip = run([ts, "ip", "-4"])
+        if code == 0 and ip:
+            say(f"  ✓ tailscale: phone access at {ip.splitlines()[0]}:8080", "g")
+            if IS_WIN:
+                say("    If Windows Firewall asks about Python, allow it so your phone can connect.", "d")
+        else:
+            say("  ✗ tailscale is installed but not connected. " +
+                ("Open Tailscale and sign in." if IS_WIN else "Run: sudo tailscale up"), "y")
     else:
-        say("  ✗ tailscale: needed for Hub Connect S. Install: curl -fsSL https://tailscale.com/install.sh | sh", "y")
+        say("  ✗ tailscale: needed for Hub Connect S. Install: " +
+            ("winget install -e --id tailscale.tailscale" if IS_WIN else "curl -fsSL https://tailscale.com/install.sh | sh"), "y")
 
     with open(CONFIG) as f:
         music = os.path.expanduser(json.load(f).get("radio", {}).get("music_dir", "~/Music"))
@@ -317,6 +449,8 @@ def main():
     else:
         say(f"  ✗ music folder {music} not found. Set radio.music_dir in config.json", "y")
 
+    if IS_WIN:
+        return windows_autostart()
     unit = os.path.expanduser("~/.config/systemd/user/stellar-hub.service")
     if os.path.exists(unit):
         say("  ✓ starts automatically with your PC", "g")
@@ -329,9 +463,37 @@ def main():
     return 0
 
 
+def windows_autostart():
+    startup = os.path.join(os.environ.get("APPDATA", ""), r"Microsoft\Windows\Start Menu\Programs\Startup")
+    vbs = os.path.join(startup, "Stellar Hub.vbs")
+    if os.path.exists(vbs):
+        say("  ✓ starts automatically when you sign in to Windows", "g")
+        say("\nAll set. Open Stellar Hub from the Start menu.\n", "b")
+        return 0
+    if os.path.isdir(startup) and ask("\nStart Stellar Hub automatically (in the background) when you sign in?"):
+        pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+        if not os.path.exists(pyw):
+            pyw = sys.executable
+        run_py = os.path.join(ROOT, "run.py")
+        with open(vbs, "w", encoding="utf-8") as f:
+            f.write('Set sh = CreateObject("WScript.Shell")\r\n'
+                    f'sh.CurrentDirectory = "{ROOT}"\r\n'
+                    f'sh.Run """{pyw}"" ""{run_py}""", 0, False\r\n')
+        say("  ✓ It will start in the background each time you sign in. Dashboard: http://localhost:8080", "g")
+        say("    (To turn this off, delete 'Stellar Hub.vbs' from your Startup folder: Win+R → shell:startup)", "d")
+    say("\nAll set. Open Stellar Hub from the Start menu.\n", "b")
+    return 0
+
+
 if __name__ == "__main__":
+    code = 1
     try:
-        sys.exit(main())
+        code = main()
     except KeyboardInterrupt:
         print()
-        sys.exit(1)
+    if PAUSE:
+        try:
+            input("Press Enter to close…")
+        except EOFError:
+            pass
+    sys.exit(code)

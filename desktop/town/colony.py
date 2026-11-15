@@ -4,7 +4,6 @@ import datetime
 import json
 import os
 import re
-import resource
 import shutil
 import subprocess
 import threading
@@ -14,6 +13,12 @@ from . import plants as P
 from . import prompts, sprites, web_tools
 from .buildings import BUILDINGS
 from .memory import words
+from .osutil import IS_WIN, NO_WINDOW, WIN_PLAYER_PS, find_exe, run_quiet
+
+try:
+    import resource          # Linux/macOS only: CPU and file-size limits for sandboxed programs
+except ImportError:
+    resource = None
 
 AUDIO_EXT = {".mp3", ".flac", ".ogg", ".opus", ".wav", ".m4a", ".aac"}
 PLAYERS = [
@@ -367,8 +372,11 @@ class ColonyMixin:
     def player_cmd(self):
         vol = str(self.cfg.get("radio", {}).get("volume", 60))
         for exe, cmd in PLAYERS:
-            if shutil.which(exe):
-                return [c.replace("{volume}", vol) for c in cmd]
+            path = find_exe(exe)
+            if path:
+                return [path] + [c.replace("{volume}", vol) for c in cmd[1:]]
+        if IS_WIN:   # Windows always has its own media player, reached through PowerShell
+            return ["powershell", "-NoProfile", "-NonInteractive", "-Command", WIN_PLAYER_PS]
         return None
 
     def quiet_now(self):
@@ -413,9 +421,16 @@ class ColonyMixin:
         if not cmd:
             return f"I wanted to play {label}, but the radio has no player installed (my creator could install mpv)."
         self.act_stop_music({}, 0)
+        env = dict(os.environ)
+        if cmd[0] == "powershell":
+            env["STELLAR_SONG"] = song["path"]
+            env["STELLAR_VOLUME"] = str(self.cfg.get("radio", {}).get("volume", 60) / 100)
+            full = cmd
+        else:
+            full = cmd + [song["path"]]
         try:
-            self._proc = subprocess.Popen(cmd + [song["path"]], stdin=subprocess.DEVNULL,
-                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self._proc = subprocess.Popen(full, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                          stderr=subprocess.DEVNULL, env=env, creationflags=NO_WINDOW)
         except OSError as e:
             return f"The radio crackled and failed: {e}"
         self._now = {"title": song["title"], "artist": song["artist"], "started": time.time()}
@@ -614,23 +629,19 @@ class ColonyMixin:
         return " | ".join(f"#{r['id']} {r['name']}: {r['status']}" + (f", output: {(r['output'] or '')[:200]}" if r["output"] else "")
                           for r in rows)
 
-    def sandbox_available(self):
-        return bool(shutil.which("bwrap"))
+    def sandbox_kind(self):
+        """bubblewrap on Linux; Docker on Windows (or on Linux without bubblewrap)."""
+        if not IS_WIN and shutil.which("bwrap"):
+            return "bwrap"
+        if find_exe("docker"):
+            return "docker"
+        return None
 
-    def run_program(self, pid):
-        rows = self.db.q("SELECT * FROM programs WHERE id=?", (pid,))
-        if not rows:
-            return
-        prog = rows[0]
+    def sandbox_available(self):
+        return self.sandbox_kind() is not None
+
+    def _bwrap_cmd(self, work):
         bw = shutil.which("bwrap")
-        if not bw:
-            self.db.x("UPDATE programs SET status='needs_sandbox' WHERE id=?", (pid,))
-            self.send_letter(f"I approved '{prog['name']}', but the sandbox (bubblewrap) isn't installed on the hub yet, so it can't run. I'll install it.")
-            return
-        self.db.x("UPDATE programs SET status='running' WHERE id=?", (pid,))
-        work = os.path.join(self.workshop_dir, "sandbox")
-        with open(os.path.join(work, "program.py"), "w", encoding="utf-8") as f:
-            f.write(prog["code"])
         py = "/usr/bin/python3" if os.path.exists("/usr/bin/python3") else (shutil.which("python3") or "python3")
         cmd = [bw, "--unshare-all", "--die-with-parent", "--new-session", "--ro-bind", "/usr", "/usr"]
         for d in ("/bin", "/lib", "/lib64", "/lib32", "/sbin"):
@@ -640,18 +651,42 @@ class ColonyMixin:
                 cmd += ["--ro-bind", d, d]
         for d in ("/etc/alternatives", "/etc/ssl", "/etc/localtime"):
             cmd += ["--ro-bind-try", d, d]
-        cmd += ["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--bind", work, "/work", "--chdir", "/work",
-                "--setenv", "HOME", "/work", py, "-I", "/work/program.py"]
+        return cmd + ["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--bind", work, "/work", "--chdir", "/work",
+                      "--setenv", "HOME", "/work", py, "-I", "/work/program.py"]
+
+    def _docker_cmd(self, work):
+        return [find_exe("docker"), "run", "--rm", "--network", "none", "--memory", "512m", "--cpus", "1",
+                "--pids-limit", "64", "--read-only", "--tmpfs", "/tmp", "-v", f"{os.path.abspath(work)}:/work",
+                "-w", "/work", "-e", "HOME=/work", "python:3.12-slim", "python", "-I", "/work/program.py"]
+
+    def run_program(self, pid):
+        rows = self.db.q("SELECT * FROM programs WHERE id=?", (pid,))
+        if not rows:
+            return
+        prog = rows[0]
+        kind = self.sandbox_kind()
+        if not kind:
+            self.db.x("UPDATE programs SET status='needs_sandbox' WHERE id=?", (pid,))
+            how = "Docker Desktop" if IS_WIN else "bubblewrap"
+            self.send_letter(f"I approved '{prog['name']}', but the safe sandbox ({how}) isn't installed on the hub yet, "
+                             f"so it can't run. I'll install it.")
+            return
+        self.db.x("UPDATE programs SET status='running' WHERE id=?", (pid,))
+        work = os.path.join(self.workshop_dir, "sandbox")
+        with open(os.path.join(work, "program.py"), "w", encoding="utf-8") as f:
+            f.write(prog["code"])
+        cmd = self._bwrap_cmd(work) if kind == "bwrap" else self._docker_cmd(work)
 
         def limits():
             resource.setrlimit(resource.RLIMIT_CPU, (20, 20))
             resource.setrlimit(resource.RLIMIT_FSIZE, (20_000_000, 20_000_000))
 
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=45, preexec_fn=limits)
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=45 if kind == "bwrap" else 120,
+                               preexec_fn=limits if (kind == "bwrap" and resource) else None, creationflags=NO_WINDOW)
             output, code = (r.stdout + ("\n[errors]\n" + r.stderr if r.stderr.strip() else "")).strip(), r.returncode
         except subprocess.TimeoutExpired:
-            output, code = "(stopped: took longer than 45 seconds)", -1
+            output, code = "(stopped: took too long)", -1
         except Exception as e:
             output, code = f"(sandbox error: {e})", -1
         output = output[-4000:] or "(no output)"
@@ -696,7 +731,11 @@ class ColonyMixin:
             "ledger": self.db.q("SELECT * FROM ledger ORDER BY id DESC LIMIT 25"),
             "inventory": inv, "plants": plants,
             "now_playing": self.now_playing(), "music_count": len(self.music_library()),
-            "player": (self.player_cmd() or [None])[0], "quiet_now": self.quiet_now(),
+            "player": ("Windows media player" if (self.player_cmd() or [""])[0] == "powershell"
+                       else os.path.basename((self.player_cmd() or [""])[0]) or None), "quiet_now": self.quiet_now(),
+            "player_hint": "Install VLC or mpv" if IS_WIN else "sudo apt install mpv",
+            "sandbox_hint": ("Install Docker Desktop (winget install Docker.DockerDesktop) and start it"
+                             if IS_WIN else "sudo apt install bubblewrap"),
             "broadcasts": self.db.q("SELECT * FROM broadcasts ORDER BY id DESC LIMIT 10"),
             "chapters": self.db.q("SELECT id, ts, title, text FROM chapters ORDER BY id DESC LIMIT 20"),
             "expedition": ({"topic": e["topic"], "return_ts": e["return_ts"], "legs": legs,

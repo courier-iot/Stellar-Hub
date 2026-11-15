@@ -6,8 +6,9 @@ internet, sends you requests, and grows over time. It's drawn in 16-bit pixel ar
 - **Stellar Hub** (`desktop/`): the AI's brain plus the town viewer. Runs on your Linux PC with Ollama.
 - **Hub Connect S** (`android/`): the phone app. Watch the colony and answer requests from anywhere over Tailscale.
 
-Every push to `main` builds the APK and publishes a release named `vX.Y.Z`, using the
-number in the `VERSION` file. The release includes `HubConnectS-vX.Y.Z.apk` and `StellarHub-vX.Y.Z.zip`.
+Every push to `main` builds everything and publishes a release named `vX.Y.Z`, using the number in the
+`VERSION` file. The release includes `HubConnectS-vX.Y.Z.apk` (phone), `StellarHub-vX.Y.Z.zip` (Linux) and
+`StellarHub-Setup-vX.Y.Z.exe` (Windows installer).
 
 ---
 
@@ -28,10 +29,28 @@ GitHub's web uploader drops that flag.
 
 **Start with your PC:** `sh install-service.sh` makes Stellar Hub a background service that starts on login
 (and optionally at boot). After updating files, restart it with `systemctl --user restart stellar-hub`.
-Remove it with `sh install-service.sh remove`. Logs: `journalctl --user -u stellar-hub -f`.
+Remove it with `sh install-service.sh remove`. Logs: `journalctl --user -u stellar-hub -f` (also saved in `data/hub.log`).
+Stop a running hub from anywhere with `python3 stop.py`.
 
 On its first turn the resident is born as a little **star spirit** and picks its own name.
 It wakes every 30 minutes. Press **Take a turn now** to watch it right away.
+
+## 1b. Or run Stellar Hub on Windows (10 or 11)
+
+1. Download **`StellarHub-Setup-vX.Y.Z.exe`** from the latest release and run it. No admin rights are needed,
+   and Python comes built in. It installs to `%LOCALAPPDATA%\StellarHub`.
+2. At the end, leave **"Check my hardware and choose an AI model"** ticked. Setup then:
+   - reads your CPU, RAM and graphics card (with exact video memory) and checks the graphics driver.
+     If it's missing or Windows is using its basic display driver, it tells you where to get the right one.
+   - installs Ollama with winget if needed, then picks and downloads the best model for your PC.
+   - checks Docker Desktop (the Hangar's sandbox on Windows) and Tailscale.
+   - offers to start Stellar Hub in the background each time you sign in.
+3. Start menu → **Stellar Hub** opens the colony. There's also **Setup and model check**, **Stop Stellar Hub**
+   and a **dashboard** link.
+
+Music plays through Windows' own media player (VLC or mpv also work). Updating with a newer installer keeps
+your resident; so does uninstalling (its mind stays in the `data` folder). If Windows Firewall asks about
+Python, allow it so your phone can connect.
 
 ## 2. Connect your phone (Tailscale)
 
