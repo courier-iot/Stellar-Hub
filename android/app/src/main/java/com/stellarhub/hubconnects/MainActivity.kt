@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.SearchManager
 import android.content.ContentValues
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaPlayer
 import android.net.Uri
 import android.provider.MediaStore
@@ -199,6 +200,8 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         resumed = true
+        ListenQueue.appVisible = true
+        side.execute { ListenQueue.flush(this, foreground = true) }
         main.removeCallbacks(poller)
         main.post(poller)
         if (prefs.getBoolean("share_music", false) && api != null &&
@@ -209,6 +212,7 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         resumed = false
+        ListenQueue.appVisible = false
         main.removeCallbacks(poller)
     }
 
@@ -415,6 +419,7 @@ class MainActivity : Activity() {
             updateViewButtons()
         }
         s.optJSONObject("phone_play")?.let { playOnPhone(it) }
+        town.setListening(room?.optJSONObject("listening") != null)
         val name = s.optString("name")
         if (name.isBlank() || name == "null") {
             caption.text = "A star spirit is about to be born. Tap Hub → Take a turn now."
@@ -477,9 +482,45 @@ class MainActivity : Activity() {
 
     private fun loadInbox() {
         loading()
-        bgTask({ Pair(it.getArray("/api/inbox?limit=60"), it.getObject("/api/colony")) }) { (arr, col) ->
-            if (tab == "inbox") renderInbox(arr, col)
+        bgTask({ Triple(it.getArray("/api/inbox?limit=60"), it.getObject("/api/colony"), it.getObject("/api/gifts")) }) { (arr, col, gifts) ->
+            if (tab == "inbox") { renderInbox(arr, col); renderGifts(gifts) }
         }
+    }
+
+    private fun renderGifts(g: JSONObject) {
+        val gifts = g.optJSONArray("gifts") ?: return
+        if (gifts.length() == 0) return
+        val c = card()
+        c.addView(label("GIFTS FOR YOU", 13f, dim, true))
+        for (i in 0 until minOf(10, gifts.length())) {
+            val it = gifts.getJSONObject(i)
+            val id = it.optInt("id")
+            val kind = it.optString("kind")
+            val title = it.optString("title")
+            c.addView(spaced(label("🎁 $title · $kind · ${fmt(it.optDouble("ts", 0.0))}", 14f, warn, true)))
+            it.optString("note").takeIf { n -> n.isNotBlank() && n != "null" }?.let { n -> c.addView(label("\"$n\"", 13f, textCol)) }
+            when (kind) {
+                "poem" -> {
+                    val text = it.optString("text")
+                    c.addView(label(text, 14f, cyan))
+                    c.addView(rowOf(button("Keep / share", cyan) { shareText(title, text) }))
+                }
+                "song" -> {
+                    val ref = it.optString("ref")
+                    c.addView(rowOf(button("▶ Play", cyan) { playAudio("/api/compositions/$ref.wav") },
+                        button("Save", dim) { bgTask({ a -> a.getBytes("/api/compositions/$ref.wav") }) { b -> saveAudio(b, "stellar-hub-song-$ref.wav") } }))
+                }
+                "painting", "curio" -> {
+                    c.addView(remoteImage("/api/gifts/$id.png", 96))
+                    c.addView(rowOf(button("Save to photos", cyan) {
+                        bgTask({ a -> a.getBytes("/api/gifts/$id.png") }) { b ->
+                            BitmapFactory.decodeByteArray(b, 0, b.size)?.let { bmp -> saveBitmap(bmp, "stellar-hub-gift-$id.png") }
+                        }
+                    }))
+                }
+            }
+        }
+        content.addView(c, 1)
     }
 
     private fun renderInbox(arr: JSONArray, col: JSONObject) {
@@ -537,8 +578,24 @@ class MainActivity : Activity() {
 
     private fun loadColony() {
         loading()
-        bgTask({ Triple(it.getObject("/api/colony"), it.getArray("/api/milestones"), it.getObject("/api/gallery")) }) { (col, ms, gal) ->
-            if (tab == "colony") { renderDigests(gal); renderColony(col, false); renderMilestones(ms); renderStudies(gal) }
+        bgTask({ Pair(Triple(it.getObject("/api/colony"), it.getArray("/api/milestones"), it.getObject("/api/gallery")), it.getObject("/api/visitors")) }) { (t, vis) ->
+            val (col, ms, gal) = t
+            if (tab == "colony") { renderDigests(gal); renderVisitors(vis); renderColony(col, false); renderMilestones(ms); renderStudies(gal) }
+        }
+    }
+
+    private fun renderVisitors(vis: JSONObject) {
+        val now = vis.optJSONObject("now")
+        val visits = vis.optJSONArray("visits") ?: JSONArray()
+        if (now == null && visits.length() == 0) return
+        val c = section("VISITORS")
+        if (now != null) c.addView(label("🧳 ${now.optString("name")}, ${now.optString("who")}, is at the " +
+            "${names[now.optString("building")] ?: now.optString("building")} until ${fmt(now.optDouble("until", 0.0))}", 14f, warn))
+        for (i in 0 until minOf(4, visits.length())) {
+            val v = visits.getJSONObject(i)
+            c.addView(spaced(label("${v.optString("visitor")} · ${fmt(v.optDouble("ts", 0.0))}", 13f, textCol, true)))
+            c.addView(label(v.optString("talk"), 13f, dim))
+            v.optString("learned").takeIf { it.isNotBlank() }?.let { c.addView(label(it, 13f, cyan)) }
         }
     }
 
@@ -729,8 +786,9 @@ class MainActivity : Activity() {
 
     private fun loadGallery() {
         loading()
-        bgTask({ Triple(it.getObject("/api/gallery"), it.getObject("/api/chess"), it.getObject("/api/exchange")) }) { (gal, ch, ex) ->
-            if (tab == "gallery") { renderGallery(gal, ch); renderExchange(ex) }
+        bgTask({ Pair(Triple(it.getObject("/api/gallery"), it.getObject("/api/chess"), it.getObject("/api/exchange")), it.getObject("/api/album")) }) { (t, album) ->
+            val (gal, ch, ex) = t
+            if (tab == "gallery") { renderGallery(gal, ch); renderAlbum(album); renderExchange(ex) }
         }
     }
 
@@ -749,6 +807,23 @@ class MainActivity : Activity() {
                 parent.addView(row)
             }
             row?.addView(v)
+        }
+    }
+
+    private fun renderAlbum(album: JSONObject) {
+        val photos = album.optJSONArray("album") ?: return
+        val c = section("PHOTO ALBUM")
+        if (photos.length() == 0) { c.addView(label("Its first snapshots will show up here.", 13f, dim)); return }
+        for (i in 0 until minOf(12, photos.length())) {
+            val p = photos.getJSONObject(i)
+            val id = p.optInt("id")
+            c.addView(spaced(remoteImage("/api/album/$id.png", 140)))
+            c.addView(label("${p.optString("title")} · ${fmt(p.optDouble("ts", 0.0))}", 12f, dim))
+            c.addView(rowOf(button("Save", dim) {
+                bgTask({ a -> a.getBytes("/api/album/$id.png") }) { b ->
+                    BitmapFactory.decodeByteArray(b, 0, b.size)?.let { bmp -> saveBitmap(bmp, "stellar-hub-album-$id.png") }
+                }
+            }.apply { textSize = 12f }))
         }
     }
 
@@ -875,18 +950,21 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun playSong(id: Int) {
+    private fun playSong(id: Int) = playAudio("/api/compositions/$id.wav")
+
+    /** Streams a WAV from the hub (songs, spoken logs, radio shows, chat voice). */
+    private fun playAudio(path: String) {
         val a = api ?: return
         player?.release()
         player = MediaPlayer().apply {
             try {
-                setDataSource(this@MainActivity, Uri.parse("${a.base}/api/compositions/$id.wav"),
+                setDataSource(this@MainActivity, Uri.parse(a.base + path),
                     mapOf("X-Hub-Token" to (prefs.getString("code", "") ?: "").trim().uppercase()))
                 setOnPreparedListener { it.start() }
-                setOnErrorListener { _, _, _ -> toast("Couldn't play that song"); true }
+                setOnErrorListener { _, _, _ -> toast("Couldn't play that"); true }
                 prepareAsync()
             } catch (e: Exception) {
-                toast("Couldn't play that song")
+                toast("Couldn't play that")
             }
         }
     }
@@ -971,7 +1049,10 @@ class MainActivity : Activity() {
 
     private fun savePhoto() {
         val bmp: Bitmap = town.snapshot() ?: run { toast("The colony hasn't loaded yet"); return }
-        val name = "stellar-hub-${System.currentTimeMillis()}.png"
+        saveBitmap(bmp, "stellar-hub-${System.currentTimeMillis()}.png")
+    }
+
+    private fun saveBitmap(bmp: Bitmap, name: String) {
         try {
             if (Build.VERSION.SDK_INT >= 29) {
                 val values = ContentValues().apply {
@@ -993,14 +1074,70 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun loadFeed() {
-        loading()
-        bgTask({ it.getArray("/api/feed?limit=60") }) { arr -> if (tab == "feed") renderFeed(arr) }
+    private fun saveAudio(bytes: ByteArray, name: String) {
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "audio/wav")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "Music/Stellar Hub")
+                }
+                val uri = contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
+                    ?: throw IllegalStateException("no storage")
+                contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                toast("Saved to Music/Stellar Hub")
+            } else {
+                val dir = getExternalFilesDir("Music") ?: filesDir
+                java.io.File(dir, name).writeBytes(bytes)
+                toast("Saved to ${dir.absolutePath}")
+            }
+        } catch (e: Exception) {
+            toast("Couldn't save it: ${e.message}")
+        }
     }
 
-    private fun renderFeed(arr: JSONArray) {
+    private fun shareText(title: String, text: String) {
+        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
+            .putExtra(Intent.EXTRA_SUBJECT, title).putExtra(Intent.EXTRA_TEXT, "$title\n\n$text"), "Keep this poem"))
+    }
+
+    /** A PNG from the hub, shown in an ImageView once it arrives. */
+    private fun remoteImage(path: String, heightDp: Int): ImageView = ImageView(this).apply {
+        adjustViewBounds = true
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        minimumHeight = dp(heightDp)
+        val a = api ?: return@apply
+        side.execute {
+            try {
+                val b = a.getBytes(path)
+                val bmp = BitmapFactory.decodeByteArray(b, 0, b.size)
+                main.post { setImageBitmap(bmp); (drawable as? android.graphics.drawable.BitmapDrawable)?.isFilterBitmap = false }
+            } catch (e: Exception) { }
+        }
+    }
+
+    private fun loadFeed() {
+        loading()
+        bgTask({ Pair(it.getArray("/api/feed?limit=60"), it.getObject("/api/audio")) }) { (arr, aud) -> if (tab == "feed") renderFeed(arr, aud) }
+    }
+
+    private fun renderFeed(arr: JSONArray, aud: JSONObject) {
         content.removeAllViews()
         content.addView(button("Refresh", panel) { loadFeed() }.apply { setTextColor(textCol) })
+        val clips = aud.optJSONArray("audio") ?: JSONArray()
+        if (clips.length() > 0) {
+            val rc = section("RADIO · SHOWS & SPOKEN LOGS")
+            for (i in 0 until minOf(8, clips.length())) {
+                val a = clips.getJSONObject(i)
+                rc.addView(spaced(label("${a.optString("title")} · ${fmt(a.optDouble("ts", 0.0))}", 13f, textCol, true)))
+                rc.addView(label(a.optString("text").take(200), 12f, dim))
+                if (a.optString("status") == "ready") {
+                    val id = a.optInt("id")
+                    rc.addView(rowOf(button("▶ Play", cyan) { playAudio("/api/audio/$id.wav") },
+                        button("Save", dim) { bgTask({ it.getBytes("/api/audio/$id.wav") }) { b -> saveAudio(b, "stellar-hub-log-$id.wav") } }))
+                }
+            }
+        }
         if (arr.length() == 0) content.addView(label("Nothing has happened yet.", 14f, dim))
         for (i in 0 until arr.length()) {
             val m = arr.getJSONObject(i)
@@ -1029,6 +1166,10 @@ class MainActivity : Activity() {
             val mine = m.optString("who") == "creator"
             c.addView(spaced(label(if (mine) "You" else (lastStatus?.optString("name") ?: "Resident"), 12f, if (mine) warn else cyan, true)))
             c.addView(label(m.optString("text"), 15f))
+            if (!mine) {
+                val n = i
+                c.addView(button("🔊 Hear it", dim) { toast("Getting its voice…"); playAudio("/api/chat/voice/$n.wav") }.apply { textSize = 12f })
+            }
         }
         val box = input("Say something…", 2)
         c.addView(spaced(box))
@@ -1132,6 +1273,7 @@ class MainActivity : Activity() {
         ))
         content.addView(nc)
         content.addView(phoneMusicCard())
+        content.addView(listeningCard())
 
         val s = lastStatus ?: return
         // Resident
@@ -1228,6 +1370,21 @@ class MainActivity : Activity() {
                 shareMusic(true)
             }))
         }
+        return c
+    }
+
+    private fun listeningCard(): LinearLayout {
+        val c = card()
+        c.addView(label("Listening · Stellar Disc", 13f, dim, true))
+        c.addView(label("Let your resident learn your music taste from what you play, finish and skip in Stellar Disc, " +
+            "and listen along while this app is open. Turn on \"Share listening with Hub Connect S\" in Stellar Disc's " +
+            "Settings too. Only song titles and artists are shared.", 13f, dim))
+        val on = prefs.getBoolean("share_listening", false)
+        c.addView(rowOf(button(if (on) "Listening sharing: ON" else "Listening sharing: OFF", if (on) good else cyan) {
+            prefs.edit().putBoolean("share_listening", !on).apply()
+            if (on) prefs.edit().putString("listen_queue", "[]").apply()
+            showTab("hub")
+        }))
         return c
     }
 

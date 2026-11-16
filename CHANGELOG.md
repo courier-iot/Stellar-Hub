@@ -2,6 +2,17 @@
 
 Stellar Hub's update manager shows the entries newer than the version you have.
 
+## v0.10.0
+- Added: building manuals. The resident gets a manual when a blueprint unlocks, reads it when the building opens, and can reread any of them (read_manual). Greenhouse care guide and a care card for each new species (read_plant_guide).
+- Added: a voice. Colony logs and a new daily radio show (host_show) are spoken and sent to your phone. Every chat reply has a 🔊 Hear it button. It uses Windows' built-in voice out of the box, or install the natural Piper voice from the dashboard's Hub tab.
+- Added: decorate every building. 19 pieces of furniture (posters, neon signs, lamps, a robot buddy, an arcade cabinet, mobiles, rugs…) bought at the Credit Vault and placed in each building's own wall, floor, ceiling and rug spots (decorate).
+- Added: visitors. Travellers like Captain Orla and Old Tamsin stop by a few times a week; the resident can talk with them (talk_to_visitor), and they sometimes leave a curio. They show up in the colony and inside rooms.
+- Added: room moods: rooms glow warm when it's happy, pink when it's listening with you, and blue when it's low. Neglected plants droop.
+- Added: a photo album. It snapshots big moments (milestones, blooms, new buildings, visitors, gifts) automatically.
+- Added: gifts for you: paintings, songs, poems and spare curios (make_gift), with Save buttons in the app and dashboard.
+- Added: your music taste. With "Share listening" on in Stellar Disc (v3.5.0+) and Hub Connect S, it learns what you finish and skip, knows your favourites, and listens along while the app is open.
+- Changed: the dashboard is organised into tabs: Today, Colony, Creations, Mind, Pets and Hub.
+
 ## v0.9.1
 - Fixed: Check for updates could miss new versions, because it trusted GitHub's "Latest" label, which was stuck on an old release. The hub now looks through all releases and picks the newest one that has a file for your install. The dashboard also shows the newest version it found on GitHub.
 - Added: Stop event, in the dashboard and in the app's Colony tab. The app can now start space events too.

@@ -27,7 +27,7 @@ class TownView(context: Context) : View(context) {
     private class Light(val x: Int, val y: Int, val w: Int, val h: Int, val color: Int, val period: Int)
     private class Room(val id: String, val name: String, val version: String, val w: Int, val h: Int, val bitmap: Bitmap,
                        val feetY: Int, val doorX: Int, val spots: Map<String, Spot>, val actions: Map<String, String>,
-                       val idle: List<String>, val lights: List<Light>)
+                       val idle: List<String>, val lights: List<Light>, val tint: Int)
     private class Particle(var x: Float, var y: Float, val vx: Float, val vy: Float, val born: Long, val life: Long,
                            val color: Int, val kind: Int)
 
@@ -42,6 +42,8 @@ class TownView(context: Context) : View(context) {
     private var feetY = 192
     private var floats = true
     private var decor: List<Building> = emptyList()
+    private var visitors: List<Building> = emptyList()
+    private var listening = false
     private var away = false
     private var night = false
     private var emotes: Map<String, Bitmap> = emptyMap()
@@ -171,6 +173,11 @@ class TownView(context: Context) : View(context) {
             val d = dj.getJSONObject(i)
             Building(d.getString("name"), d.getInt("x"), d.getInt("y"), 0, bake(d.getJSONArray("sprite"), pal), null)
         }
+        val vj = world.optJSONArray("visitors")
+        visitors = if (vj == null) emptyList() else (0 until vj.length()).map { i ->
+            val v = vj.getJSONObject(i)
+            Building(v.optString("name"), v.getInt("x"), v.getInt("y"), 0, bake(v.getJSONArray("sprite"), pal), null)
+        }
         away = world.optBoolean("away", false)
         val tw = world.getJSONArray("twinkle")
         twinkle = (0 until tw.length()).map { tw.getJSONArray(it).let { p -> p.getInt(0) to p.getInt(1) } }
@@ -197,8 +204,10 @@ class TownView(context: Context) : View(context) {
             }
         } ?: emptyList()
         val id = j.getString("id")
+        val tj = j.optJSONArray("tint")
+        val tint = if (tj != null && tj.length() == 4) Color.argb(tj.optInt(3), tj.optInt(0), tj.optInt(1), tj.optInt(2)) else Color.TRANSPARENT
         val room = Room(id, j.optString("name", id), j.optString("version"), j.getInt("w"), j.getInt("h"),
-            bake(j.getJSONArray("background"), pal), j.optInt("feet_y", 142), j.optInt("door_x", 13), sp, acts, idle, lights)
+            bake(j.getJSONArray("background"), pal), j.optInt("feet_y", 142), j.optInt("door_x", 13), sp, acts, idle, lights, tint)
         rooms[id] = room
         asked.remove(id)
         if (id == roomId) {
@@ -242,6 +251,11 @@ class TownView(context: Context) : View(context) {
 
     fun setOrbit(orbit: Boolean) {
         inOrbit = orbit
+    }
+
+    /** Your phone is playing music in Stellar Disc and the resident is listening along. */
+    fun setListening(on: Boolean) {
+        listening = on
     }
 
     fun setLife(emoteName: String?, light: Double?, event: String?) {
@@ -489,13 +503,18 @@ class TownView(context: Context) : View(context) {
             fill.color = Color.argb(30, 5, 6, 20)
             canvas.drawRect(0f, 0f, r.w.toFloat(), r.h.toFloat(), fill)
         }
+        if (r.tint != Color.TRANSPARENT) {        // the room's mood
+            fill.color = r.tint
+            canvas.drawRect(0f, 0f, r.w.toFloat(), r.h.toFloat(), fill)
+        }
         val nearDoor = abs(ix - r.doorX) < 9
         val justIn = phase == Phase.INSIDE && now - phaseStart < 600
         if (nearDoor && (justIn || phase == Phase.LEAVE)) drawDoorGap(canvas, 4, 89, 19, 31, 1f)
         val walking = abs(itarget - ix) > 0.5f
         val alpha = if (justIn) ((now - phaseStart) / 600f * 255).roundToInt().coerceIn(40, 255) else 255
         if (ix >= 0 && !away) {
-            drawResident(canvas, ix, r.feetY, walking, alpha, t)
+            val dance = if (listening && !walking) (sin(t / 220) * 1.5).roundToInt() else 0
+            drawResident(canvas, ix, r.feetY + dance, walking, alpha, t)
             if (!walking) spawnFx(r, now)
         }
         drawParticles(canvas, now)
@@ -509,6 +528,13 @@ class TownView(context: Context) : View(context) {
     }
 
     private fun spawnFx(r: Room, now: Long) {
+        if (listening && now - lastFx > 500) {     // notes float up while it listens along with you
+            lastFx = now
+            particles.add(Particle(ix + rnd.nextInt(11) - 5f, r.feetY - 20f, (rnd.nextFloat() - 0.5f) * 0.2f, -0.2f, now, 2000,
+                if (rnd.nextBoolean()) Color.parseColor("#5EF2FF") else Color.parseColor("#FF4FD8"), 3))
+            if (particles.size > 40) particles.removeAt(0)
+            return
+        }
         val s = activeSpot?.let { r.spots[it] } ?: return
         val doing = activeSpot == action?.let { r.actions[it] }
         val every = if (doing) 450L else 1400L
@@ -635,6 +661,7 @@ class TownView(context: Context) : View(context) {
             drawDoorGap(canvas, doorB.x + dr[0], doorB.y + dr[1], dr[2], dr[3], doorOpenness(now, if (phase == Phase.ENTER) 750 else 650))
         }
         for (d in decor) canvas.drawBitmap(d.bitmap, d.x.toFloat(), d.y.toFloat(), pixelPaint)
+        for (v in visitors) canvas.drawBitmap(v.bitmap, v.x - 8f, v.y + (sin(t / 700)).roundToInt().toFloat(), pixelPaint)
 
         for (i in 0 until (worldW / 48 + 1)) {
             val a = (0.25 + 0.25 * sin(t / 400 - i)).coerceIn(0.0, 1.0)

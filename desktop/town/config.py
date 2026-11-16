@@ -31,3 +31,19 @@ def load_config(root):
     cfg = _merge(defaults, mine)
     cfg["_config_path"] = path
     return cfg
+
+
+def save_setting(cfg, section, key, value):
+    """Changes one setting in config.json (and in the running config)."""
+    cfg.setdefault(section, {})[key] = value
+    path = cfg.get("_config_path")
+    if not path:
+        return
+    mine = {}
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            mine = json.load(f)
+    mine.setdefault(section, {})[key] = value
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(mine, f, indent=2)
+    os.replace(path + ".tmp", path)

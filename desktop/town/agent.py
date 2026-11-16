@@ -10,6 +10,7 @@ from . import interiors, prompts, sprites, web_tools
 from .colony import COLOUR_PRICE, FORM_PRICE, ColonyMixin
 from .backup import make_backup
 from .exchange import ExchangeMixin
+from .extras import ExtrasMixin
 from .hobbies import HobbiesMixin, level_for
 from .life import LifeMixin
 from .plants import SPECIES as PLANT_SPECIES
@@ -22,7 +23,7 @@ class BudgetExceeded(Exception):
     pass
 
 
-class Agent(ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
+class Agent(ExtrasMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
     def __init__(self, cfg, db, llm, data_dir):
         self.cfg, self.db, self.llm = cfg, db, llm
         self.mem = Memory(db)
@@ -162,7 +163,7 @@ class Agent(ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
     def offered_actions(self, bid):
         """The actions shown to the model for a building (phone music only once the phone has shared its songs)."""
         out = []
-        for a, d in BUILDINGS[bid]["actions"].items():
+        for a, d in list(BUILDINGS[bid]["actions"].items()) + self.extra_actions(bid):
             if a in ("list_phone_music", "play_phone_music"):
                 if not self.phone_songs():
                     continue
@@ -197,6 +198,7 @@ class Agent(ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
         playing = self.now_playing()
         if playing:
             news.append(f"Music playing: \"{playing['title']}\".")
+        news.extend(self.extra_news())
         recent = self.mem.recent(15)
         recent_ids = {r["id"] for r in recent}
         query = " ".join(r["content"] for r in recent[-4:]) + " " + " ".join(self.db.get("goals", []))
@@ -295,6 +297,7 @@ What do you do now?"""
             self.maybe_digest()
             self.resolve_auctions()
             self.plan_day_if_new()
+            self.daily_extras()
             needs = self.grow_needs()
             decision = self.ask(prompts.DECIDE.format(name=self.name, creator=self.creator),
                                 self.build_context(needs), "decide")
@@ -322,7 +325,7 @@ What do you do now?"""
                 self.set_location(bid)
             elif not self.is_available(bid):
                 result = f"The {BUILDINGS[bid]['name']} is closed right now."
-            elif action not in BUILDINGS[bid]["actions"]:
+            elif action not in dict(self.offered_actions(bid)):
                 result = f"I tried to '{action}' at the {BUILDINGS[bid]['name']}, but that isn't something I can do there."
             else:
                 self.set_location(bid)
@@ -752,7 +755,9 @@ What do you do now?"""
             return {"hung": hung, "latest": latest(
                 "SELECT rows FROM paintings ORDER BY (hung IS NULL) DESC, id DESC LIMIT 1")}
         if bid == "greenhouse":
-            plants = self.world_extras()["plants"]
+            from .plants import SPECIES as _SP
+            plants = [list(_SP[p["species"]]["colors"]) + ["wilted" if p["alive"] == 0 else p["stage"], round(p["health"])]
+                      for p in self.pot_plants() if p["species"] in _SP]
             lights = [p["light"] for p in self.pot_plants() if p.get("light")]
             return {"plants": plants, "light": max(set(lights), key=lights.count) if lights else "normal"}
         if bid == "radio_tower":
@@ -779,10 +784,23 @@ What do you do now?"""
             return {"storm": self.storm()}
         return {}
 
+    def room_data(self, bid):
+        """Everything that shapes a room: its live contents, the decor placed in it, a visitor, and the mood."""
+        from .extras import VISITORS, visitor_sprite
+        d = self.interior_data(bid)
+        placed = self.decor_placed().get(bid)
+        if placed:
+            d["decor"] = placed
+        v = self.visitor_now()
+        if v and v["building"] == bid:
+            d["visitor"] = {"id": v["id"], "sprite": visitor_sprite(VISITORS[v["id"]]["colors"])}
+        d["mood"] = self.mood_word()
+        return d
+
     def interior(self, bid):
         if bid not in interiors.ROOMS:
             return None
-        return interiors.interior(bid, self.interior_data(bid), sprites.resident_palette(self.appearance()))
+        return interiors.interior(bid, self.room_data(bid), sprites.resident_palette(self.appearance()))
 
     def interior_status(self):
         """Which room the resident is in, what it's doing there, and the room's version for the app's cache."""
@@ -793,8 +811,10 @@ What do you do now?"""
         action = act.get("action") if act.get("building") == loc else None
         if self.is_asleep() and loc == "home":
             action = "sleep"
-        return {"id": loc, "action": action,
-                "version": interiors.interior_version(loc, self.interior_data(loc))}
+        ln = self.listening_now()
+        return {"id": loc, "action": action, "mood": self.mood_word(),
+                "listening": {"title": ln["title"], "artist": ln["artist"]} if ln else None,
+                "version": interiors.interior_version(loc, self.room_data(loc))}
 
     def featured_painting(self):
         r = self.db.q("SELECT rows FROM paintings WHERE hung='gallery' ORDER BY hung_ts DESC LIMIT 1")
@@ -807,7 +827,9 @@ What do you do now?"""
         return lay
 
     def world(self):
-        return sprites.world(self.draw_layout(), self.building_states(), self.appearance(), self.world_extras())
+        w = sprites.world(self.draw_layout(), self.building_states(), self.appearance(), self.world_extras())
+        w["visitors"] = self.world_visitors(w["buildings"])
+        return w
 
     def toggle_building(self, bid):
         if bid not in BUILDINGS or self.is_locked(bid) or bid in ("home", "post_office"):
@@ -838,7 +860,8 @@ What do you do now?"""
             "born": self.db.get("born"), "prev_location": self.db.get("prev_location"),
             "last_act": self.db.get("last_act"), "appearance": self.appearance(),
             "look": self.describe_look() if self.db.get("name") else None,
-            "world_version": sprites.world_version(self.draw_layout(), self.building_states(), self.appearance(), self.world_extras()),
+            "world_version": sprites.world_version(self.draw_layout(), self.building_states(), self.appearance(), self.world_extras())
+                             + ((self.visitor_now() or {}).get("id") or ""),
             "emote": self.emote() if self.db.get("name") else None, "asleep": self.is_asleep(),
             "sleep": self.bedtime(), "night": self.is_night(), "daylight": self.daylight(),
             "chat": bool(self.chat_state()), "event": self.space_event(),

@@ -74,6 +74,7 @@ object Notifier {
             p.edit().putInt("last_event", r.getInt("latest")).apply()
             return
         }
+        ListenQueue.flush(ctx)
         if (quietNow(p)) return   // try again after quiet hours, nothing is lost
         val r = api.getObject("/api/events?after=$last")
         val events = r.getJSONArray("events")

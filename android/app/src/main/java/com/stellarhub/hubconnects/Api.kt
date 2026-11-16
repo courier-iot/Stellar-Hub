@@ -39,6 +39,18 @@ class Api(address: String, private val pairCode: String, private val foreground:
 
     fun getArray(path: String): JSONArray = JSONArray(read(open(path, "GET")))
 
+    fun getBytes(path: String): ByteArray {
+        val conn = open(path, "GET")
+        try {
+            val code = conn.responseCode
+            if (code == 401) throw ApiException("Wrong pair code")
+            if (code !in 200..299) throw ApiException("Hub answered with error $code")
+            return conn.inputStream.use { it.readBytes() }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     fun post(path: String, body: JSONObject = JSONObject()): JSONObject {
         val conn = open(path, "POST")
         conn.doOutput = true

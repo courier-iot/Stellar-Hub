@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS plants(
     light TEXT, health REAL DEFAULT 100, growth REAL DEFAULT 0, stage TEXT DEFAULT 'seed',
     alive INTEGER DEFAULT 1, updated_ts REAL, bloomed INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS broadcasts(id INTEGER PRIMARY KEY, ts REAL, text TEXT);
+CREATE TABLE IF NOT EXISTS audio(id INTEGER PRIMARY KEY, ts REAL, kind TEXT, title TEXT, text TEXT, ref INTEGER, file TEXT, status TEXT);
+CREATE TABLE IF NOT EXISTS album(id INTEGER PRIMARY KEY, ts REAL, day TEXT, title TEXT, caption TEXT, place TEXT);
+CREATE TABLE IF NOT EXISTS gifts(id INTEGER PRIMARY KEY, ts REAL, kind TEXT, ref TEXT, title TEXT, note TEXT, text TEXT);
+CREATE TABLE IF NOT EXISTS visits(id INTEGER PRIMARY KEY, ts REAL, visitor TEXT, building TEXT, talk TEXT, learned TEXT);
 CREATE TABLE IF NOT EXISTS chapters(
     id INTEGER PRIMARY KEY, ts REAL, title TEXT, text TEXT, from_ts REAL, to_ts REAL);
 CREATE TABLE IF NOT EXISTS expeditions(

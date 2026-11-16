@@ -13,7 +13,17 @@
   header h1 { margin:0; font-size:20px; letter-spacing:.06em; }
   header h1 span { color:var(--accent); }
   .credits { color:var(--warn); font-weight:700; }
-  main { display:grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap:14px; padding:14px; }
+  main { padding:0 14px 14px; }
+  main.pane { display:none; } main.pane.on { display:block; columns:360px; column-gap:14px; }
+  main.pane > section { break-inside:avoid; margin-bottom:14px; display:block; }
+  main.pane > section.wide { column-span:all; }
+  #top { display:grid; gap:14px; padding:14px 14px 0; }
+  nav#tabs { display:flex; gap:4px; padding:8px 14px 0; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; background:var(--bg); overflow-x:auto; }
+  nav#tabs button { background:transparent; color:var(--dim); border:1px solid transparent; border-bottom:0; border-radius:10px 10px 0 0; padding:8px 14px; white-space:nowrap; }
+  nav#tabs button.on { color:var(--text); background:var(--panel); border-color:var(--line); }
+  nav#tabs .badge { background:var(--warn); color:#05060d; border-radius:8px; padding:0 6px; font-size:11px; margin-left:4px; }
+  #top + main.pane { margin-top:14px; }
+  main.pane.on { margin-top:14px; }
   section { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; min-width:0; }
   section.wide { grid-column: 1 / -1; padding:10px; }
   h2 { margin:0 0 10px; font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); }
@@ -74,15 +84,32 @@
   <button class="ghost" onclick="photo()">📷 Photo</button>
   <button id="turnBtn" onclick="takeTurn()">Take a turn now</button>
 </header>
-<main>
+<nav id="tabs">
+  <button data-tab="today">🏠 Today</button>
+  <button data-tab="colony">🌌 Colony</button>
+  <button data-tab="creations">🎨 Creations</button>
+  <button data-tab="mind">🧠 Mind</button>
+  <button data-tab="pets">🐾 Pets</button>
+  <button data-tab="hub">⚙️ Hub</button>
+</nav>
+<div id="top">
   <section class="wide" id="modelwarn" style="display:none; border-color:var(--warn)"></section>
   <section class="wide" id="updatebar" style="display:none; border-color:var(--accent)"></section>
-
   <section class="wide">
     <canvas id="town" width="812" height="216"></canvas>
     <div id="caption">Loading the colony…</div>
   </section>
+</div>
 
+<main class="pane" data-pane="today">
+  <section>
+    <h2>Resident</h2>
+    <div id="status" class="meta">Loading…</div>
+    <div id="needs" style="margin-top:10px"></div>
+    <h2 class="sub">Today's goals</h2>
+    <div id="goals" class="meta"></div>
+    <div id="error" class="err"></div>
+  </section>
   <section>
     <h2>Live chat</h2>
     <div id="chatlog" class="scroll" style="max-height:340px"></div>
@@ -90,7 +117,6 @@
     <div class="row"><button id="chatBtn" onclick="chatSend()">Send</button><button class="ghost" onclick="chatEnd()">End chat</button>
       <span class="meta" id="chatnote"></span></div>
   </section>
-
   <section>
     <h2>Relay Post · your inbox</h2>
     <div id="inbox" class="scroll"></div>
@@ -98,23 +124,23 @@
     <textarea id="letter" rows="3" placeholder="Say something to your resident…"></textarea>
     <div class="row"><button onclick="sendLetter()">Send letter</button></div>
   </section>
-
-  <section>
-    <h2>Resident</h2>
-    <div id="status" class="meta">Loading…</div>
-    <div id="needs" style="margin-top:10px"></div>
-    <h2 class="sub">Today's goals</h2>
-    <div id="goals" class="meta"></div>
-    <h2 class="sub">Buildings</h2>
-    <div id="buildings"></div>
-    <div id="error" class="err"></div>
-  </section>
-
   <section>
     <h2>Life feed</h2>
     <div id="feed" class="scroll"></div>
   </section>
+  <section>
+    <h2>Gifts for you</h2>
+    <div id="gifts" class="scroll" style="max-height:360px"><div class="meta">Nothing yet. Now and then it makes you something.</div></div>
+  </section>
+</main>
 
+<main class="pane" data-pane="colony">
+  <section>
+    <h2>Buildings</h2>
+    <div id="buildings"></div>
+    <h2 class="sub">Colony plan</h2>
+    <div id="plan" class="meta"></div>
+  </section>
   <section>
     <h2>Credit Vault</h2>
     <div><span class="credits" id="balance">0</span> credits</div>
@@ -127,68 +153,88 @@
     <h2 class="sub">Its things</h2>
     <div id="inv" class="meta"></div>
   </section>
-
   <section>
     <h2>Hydro Greenhouse</h2>
     <div id="plants"></div>
   </section>
-
   <section>
     <h2>Radio Tower</h2>
     <div id="radio"></div>
+    <h2 class="sub">Radio shows &amp; spoken logs</h2>
+    <div id="voicelogs" class="scroll" style="max-height:260px"></div>
     <h2 class="sub">Colony logs</h2>
-    <div id="logs" class="scroll" style="max-height:260px"></div>
+    <div id="logs" class="scroll" style="max-height:220px"></div>
   </section>
-
+  <section>
+    <h2>Visitors</h2>
+    <div id="visitors" class="meta">No visitors right now.</div>
+  </section>
   <section>
     <h2>Spaceport</h2>
     <div id="spaceport"></div>
   </section>
-
   <section>
     <h2>Fabrication Hangar</h2>
     <div id="programs" class="scroll"></div>
   </section>
-
   <section>
     <h2>Archive Vault · life story</h2>
     <div id="chapters" class="scroll"></div>
   </section>
+  <section>
+    <h2>Curio Exchange</h2>
+    <div id="exchange"></div>
+  </section>
+</main>
 
+<main class="pane" data-pane="creations">
+  <section class="wide" style="padding:14px">
+    <h2>Home Dome showcase</h2>
+    <div id="showcase"></div>
+    <h2 class="sub">Its room</h2>
+    <div id="furniture" class="meta"></div>
+  </section>
+  <section>
+    <h2>Photo album</h2>
+    <div id="album" class="grid scroll" style="grid-template-columns:repeat(auto-fill, minmax(150px, 1fr))"><div class="meta">Its first snapshots will show up here.</div></div>
+  </section>
+  <section>
+    <h2>Starlight Gallery · paintings</h2>
+    <div id="paintings" class="grid"></div>
+  </section>
+  <section>
+    <h2>Low-G Park · writings</h2>
+    <div id="writings" class="scroll"></div>
+  </section>
+  <section>
+    <h2>Radio Studio · its songs</h2>
+    <div id="songs" class="scroll"></div>
+    <h2 class="sub">Orbital Station · studies</h2>
+    <div id="quizzes" class="scroll" style="max-height:220px"></div>
+  </section>
+  <section>
+    <h2>Curio collection</h2>
+    <div id="curiocount" class="meta"></div>
+    <div id="curioinfo"><div class="meta">Click a curio to read about it.</div></div>
+    <div id="curios" class="grid scroll" style="margin-top:8px"></div>
+  </section>
+</main>
+
+<main class="pane" data-pane="mind">
   <section>
     <h2>Who it is</h2>
     <pre id="personality" class="meta"></pre>
-    <h2 class="sub">Library</h2>
-    <div id="library" class="scroll"></div>
-  </section>
-
-  <section>
-    <h2>Colony plan</h2>
-    <div id="plan" class="meta"></div>
-    <h2 class="sub">Space events</h2>
-    <div id="eventnow" class="meta"></div>
-    <div class="row">
-      <button class="ghost" onclick="spaceEvent('meteor_shower')">☄️ Meteors</button>
-      <button class="ghost" onclick="spaceEvent('solar_storm')">☀️ Storm</button>
-      <button class="ghost" onclick="spaceEvent('eclipse')">🌑 Eclipse</button>
-      <button class="ghost" onclick="spaceEvent('trader')">🛸 Trader</button>
-      <button class="ghost" id="stopevent" style="display:none" onclick="stopEvent()">⏹ Stop event</button>
-    </div>
-    <h2 class="sub">Updates</h2>
-    <div id="updateinfo" class="meta"></div>
-    <div class="row"><button class="ghost" onclick="updateCheck()">Check for updates</button></div>
-    <h2 class="sub">Backups</h2>
-    <div id="backup" class="meta"></div>
-    <div class="row"><button class="ghost" onclick="backupNow()">Back up now</button></div>
-  </section>
-
-  <section>
-    <h2>Hobbies &amp; skills</h2>
-    <div id="hobbies"></div>
     <h2 class="sub">Personality traits</h2>
     <div id="traits"></div>
   </section>
-
+  <section>
+    <h2>Hobbies &amp; skills</h2>
+    <div id="hobbies"></div>
+  </section>
+  <section>
+    <h2>Your music, its taste</h2>
+    <div id="taste" class="meta">Share your listening from Stellar Disc in the Hub Connect S app, and it learns what you love.</div>
+  </section>
   <section>
     <h2>Ask what it remembers</h2>
     <div class="row"><input id="searchq" placeholder="e.g. What do you remember about the trader?" style="flex:1">
@@ -197,41 +243,14 @@
     <h2 class="sub">Weekly digests</h2>
     <div id="digests" class="scroll" style="max-height:260px"></div>
   </section>
-
-  <section class="wide" style="padding:14px">
-    <h2>Home Dome showcase</h2>
-    <div id="showcase"></div>
-  </section>
-
   <section>
-    <h2>Starlight Gallery · paintings</h2>
-    <div id="paintings" class="grid"></div>
+    <h2>Library</h2>
+    <div id="library" class="scroll"></div>
   </section>
-
   <section>
-    <h2>Low-G Park · writings</h2>
-    <div id="writings" class="scroll"></div>
+    <h2>Milestones</h2>
+    <div id="milestones" class="scroll"></div>
   </section>
-
-  <section>
-    <h2>Radio Studio · its songs</h2>
-    <div id="songs" class="scroll"></div>
-    <h2 class="sub">Orbital Station · studies</h2>
-    <div id="quizzes" class="scroll" style="max-height:220px"></div>
-  </section>
-
-  <section>
-    <h2>Curio collection</h2>
-    <div id="curiocount" class="meta"></div>
-    <div id="curioinfo"><div class="meta">Click a curio to read about it.</div></div>
-    <div id="curios" class="grid scroll" style="margin-top:8px"></div>
-  </section>
-
-  <section>
-    <h2>Curio Exchange</h2>
-    <div id="exchange"></div>
-  </section>
-
   <section>
     <h2>Chess at the park</h2>
     <div id="chessinfo" class="meta"></div>
@@ -239,18 +258,52 @@
     <div class="row"><button onclick="chessNew('white')">New game (you're white)</button>
       <button class="ghost" onclick="chessNew('black')">New game (you're black)</button></div>
   </section>
+</main>
 
-  <section>
-    <h2>Milestones</h2>
-    <div id="milestones" class="scroll"></div>
+<main class="pane" data-pane="pets">
+  <section class="wide" style="padding:14px">
+    <h2>Pets</h2>
+    <div id="pets" class="meta">Pets arrive with the Pet Shop.</div>
   </section>
+</main>
 
+<main class="pane" data-pane="hub">
+  <section>
+    <h2>Space events</h2>
+    <div id="eventnow" class="meta"></div>
+    <div class="row">
+      <button class="ghost" onclick="spaceEvent('meteor_shower')">☄️ Meteors</button>
+      <button class="ghost" onclick="spaceEvent('solar_storm')">☀️ Storm</button>
+      <button class="ghost" onclick="spaceEvent('eclipse')">🌑 Eclipse</button>
+      <button class="ghost" onclick="spaceEvent('trader')">🛸 Trader</button>
+      <button class="ghost" id="stopevent" style="display:none" onclick="stopEvent()">⏹ Stop event</button>
+    </div>
+  </section>
+  <section>
+    <h2>Voice</h2>
+    <div id="voice" class="meta">Loading…</div>
+  </section>
+  <section>
+    <h2>Updates</h2>
+    <div id="updateinfo" class="meta"></div>
+    <div class="row"><button class="ghost" onclick="updateCheck()">Check for updates</button></div>
+    <h2 class="sub">Backups</h2>
+    <div id="backup" class="meta"></div>
+    <div class="row"><button class="ghost" onclick="backupNow()">Back up now</button></div>
+  </section>
   <section>
     <h2>Hub Connect S · phone pairing</h2>
     <div id="pairing" class="meta">Loading…</div>
   </section>
 </main>
 <script>
+function showTab(t) {
+  document.querySelectorAll("nav#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  document.querySelectorAll("main.pane").forEach(m => m.classList.toggle("on", m.dataset.pane === t));
+  try { localStorage.setItem("tab", t); } catch (e) {}
+}
+document.querySelectorAll("nav#tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+showTab((() => { try { return localStorage.getItem("tab") || "today"; } catch (e) { return "today"; } })());
 const NAMES = {home:"Home Dome", library:"Observatory Library", internet_cafe:"Uplink Café", post_office:"Relay Post",
   greenhouse:"Hydro Greenhouse", radio_tower:"Radio Tower", archive:"Archive Vault", salon:"Nova Salon",
   gallery:"Starlight Gallery", park:"Low-G Park", studio:"Radio Studio", station:"Orbital Station", exchange:"Curio Exchange",
@@ -298,6 +351,7 @@ const Town = {
     this.sprites.bg = this.bake(w.background, pal);
     this.sprites.buildings = w.buildings.map(b => ({...b, img: this.bake(b.sprite, pal)}));
     this.sprites.decor = (w.decor || []).map(d => ({...d, img: this.bake(d.sprite, pal)}));
+    this.sprites.visitors = (w.visitors || []).map(d => ({...d, img: this.bake(d.sprite, pal)}));
     this.sprites.frames = w.resident.frames.map(f => this.bake(f, pal));
     this.sprites.emotes = {}; for (const k in (w.emotes || {})) this.sprites.emotes[k] = this.bake(w.emotes[k], pal);
     this.sprites.ship = w.trader_ship ? this.bake(w.trader_ship, pal) : null;
@@ -356,6 +410,7 @@ const Town = {
       });
       for (const b of this.sprites.buildings) c.drawImage(b.img, b.x, b.y);
       for (const d of this.sprites.decor) c.drawImage(d.img, d.x, d.y);
+      for (const v of this.sprites.visitors || []) c.drawImage(v.img, v.x - 8, v.y + Math.round(Math.sin(t / 700)));
       for (let i = 0; i * 48 < w.w; i++) {
         c.globalAlpha = .25 + .25 * Math.sin(t / 400 - i);
         c.fillStyle = "#5ef2ff"; c.fillRect(4 + i * 48, 190, 3, 1);
@@ -743,6 +798,53 @@ async function updateNow() {
 }
 async function backupNow() { document.getElementById("backup").textContent = "Backing up…"; await api("/api/backup", {}); refresh(); }
 
+async function loadExtras() {
+  const [aud, alb, gif, tas, voi, dec, vis] = await Promise.all([api("/api/audio"), api("/api/album"), api("/api/gifts"),
+    api("/api/taste"), api("/api/voice"), api("/api/decor"), api("/api/visitors")]);
+  const key = JSON.stringify([aud, alb, gif, tas, voi, dec, vis]);
+  if (key === loadExtras.last) return; loadExtras.last = key;
+  document.getElementById("voicelogs").innerHTML = (aud.audio || []).map(a => `<div class="item"><b>${esc(a.title)}</b>
+     <span class="meta">${when(a.ts)}</span>${a.status === "ready" ? `<br><audio controls preload="none" src="/api/audio/${a.id}.wav" style="width:100%; margin-top:4px"></audio>` :
+     `<span class="tag">${esc(a.status)}</span>`}<div class="meta">${esc(a.text.slice(0, 240))}</div></div>`).join("") ||
+     `<div class="meta">No spoken logs yet. They need a voice (Hub tab → Voice).</div>`;
+  document.getElementById("album").innerHTML = (alb.album || []).map(p => `<div class="tile"><a href="/api/album/${p.id}.png" target="_blank">
+     <img src="/api/album/${p.id}.png" style="width:100%; image-rendering:pixelated; border-radius:6px; border:1px solid var(--line)"></a>
+     <div>${esc(p.title)}</div><div>${when(p.ts)}</div></div>`).join("") || `<div class="meta">Its first snapshots will show up here.</div>`;
+  document.getElementById("gifts").innerHTML = (gif.gifts || []).map(g => `<div class="item"><b>${esc(g.title)}</b> <span class="tag">${esc(g.kind)}</span>
+     <span class="meta">${when(g.ts)}</span>${g.note ? `<div><i>"${esc(g.note)}"</i></div>` : ""}
+     ${g.kind === "poem" ? `<pre class="meta" style="margin-top:4px">${esc(g.text)}</pre>` : ""}
+     ${g.kind === "song" ? `<audio controls preload="none" src="/api/compositions/${g.ref}.wav" style="width:100%"></audio>` : ""}
+     ${g.kind === "painting" || g.kind === "curio" ? `<div class="row"><img src="/api/gifts/${g.id}.png" style="width:96px; image-rendering:pixelated; border-radius:6px">
+       <a href="/api/gifts/${g.id}.png" download="gift-${g.id}.png"><button class="ghost">Save</button></a></div>` : ""}</div>`).join("") ||
+     `<div class="meta">Nothing yet. Now and then it makes you something.</div>`;
+  document.getElementById("taste").innerHTML = tas.songs ? `${tas.listening ? `<div class="warnbox">♪ Listening together: ${esc(tas.listening.title)} by ${esc(tas.listening.artist)}</div>` : ""}
+     <div class="meta">${tas.songs} songs heard. Favourite artists: ${esc((tas.artists || []).join(", ") || "still learning")}</div>` +
+     (tas.favourites || []).map((f, i) => `<div class="lvl"><span>${i + 1}. ${esc(f.title)} <span class="meta">by ${esc(f.artist)}</span></span>
+       <span class="meta">${f.completes}✓ ${f.skips}⏭</span></div>`).join("") :
+     "Share your listening from Stellar Disc in the Hub Connect S app (Hub tab), and it learns what you love.";
+  const inst = voi.install || {};
+  document.getElementById("voice").innerHTML = `Voice: <b>${esc(voi.name)}</b>${voi.enabled ? "" : " (off)"}<br>
+     Spoken colony logs and radio shows are sent to your phone. Speech is made on this computer.
+     ${voi.piper_installed ? "" : `<div class="row"><button class="ghost" onclick="voiceInstall()">Install natural voice (Piper, ~80 MB)</button>
+       <select id="pipervoice">${voi.voices.map(v => `<option ${v === voi.voice ? "selected" : ""}>${v}</option>`).join("")}</select></div>`}
+     ${inst.step ? `<div class="${inst.error ? "err" : "meta"}">${esc(inst.step)}${inst.error ? ": " + esc(inst.error) : ""}</div>` : ""}
+     <div class="row"><button class="ghost" onclick="voiceTest()" ${voi.backend ? "" : "disabled"}>Test voice</button>
+       <button class="ghost" onclick="voiceSet({enabled: ${!voi.enabled}})">${voi.enabled ? "Turn voice off" : "Turn voice on"}</button></div>`;
+  const owned = Object.entries(dec.owned || {}).map(([k, n]) => `${k.replace(/_/g, " ")} ×${n}`).join(", ");
+  const placed = Object.entries(dec.placed || {}).filter(([b, s]) => Object.keys(s).length).map(([b, s]) =>
+     `<div><b>${esc(NAMES[b] || b)}</b>: ${Object.entries(s).map(([sl, it]) => `${sl} ${esc(it.replace(/_/g, " "))}`).join(", ")}</div>`).join("");
+  document.getElementById("furniture").innerHTML = (owned ? `Furniture it owns: ${esc(owned)}` : "No furniture yet. It buys it at the Credit Vault.") +
+     (placed ? `<div style="margin-top:6px">${placed}</div>` : "");
+  const vn = vis.now;
+  document.getElementById("visitors").innerHTML = (vn ? `<div class="warnbox">🧳 ${esc(vn.name)}, ${esc(vn.who)}, is at the ${esc(NAMES[vn.building] || vn.building)} until ${when(vn.until)}</div>` : "No visitors right now.") +
+     (vis.visits || []).map(v => `<div class="item"><b>${esc(v.visitor)}</b> <span class="meta">${when(v.ts)} · ${esc(NAMES[v.building] || v.building)}</span>
+       <pre class="meta">${esc(v.talk)}</pre>${v.learned ? `<div><i>${esc(v.learned)}</i></div>` : ""}</div>`).join("");
+}
+async function voiceInstall() { const v = document.getElementById("pipervoice"); if (v) await api("/api/voice/settings", {piper_voice: v.value});
+  await api("/api/voice/install", {}); loadExtras.last = null; setTimeout(loadExtras, 500); }
+async function voiceTest() { await api("/api/voice/test", {}); alert("Recording a test… it shows up under Radio Tower → Radio shows & spoken logs in a few seconds."); }
+async function voiceSet(v) { await api("/api/voice/settings", v); loadExtras.last = null; loadExtras(); }
+
 async function loadPairing() {
   const p = await api("/api/pairing");
   document.getElementById("pairing").innerHTML = p.tailscale_ip
@@ -776,6 +878,7 @@ async function lockB(id) { await api(`/api/buildings/${id}/lock`, {}); refresh()
 
 refresh(); loadPairing();
 setInterval(refresh, 5000);
+loadExtras(); setInterval(loadExtras, 15000);
 </script>
 </body>
 </html>

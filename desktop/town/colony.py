@@ -75,7 +75,8 @@ class ColonyMixin:
         return inv
 
     def shop_text(self):
-        decor = ", ".join(f"decor:{n} ({p})" for n, p in sprites.DECOR_PRICES.items())
+        decor = ", ".join(f"decor:{n} ({p})" for n, p in sprites.DECOR_PRICES.items()) + \
+            "; furniture for inside any building: " + self.decor_shop_text()
         unlocks = ", ".join(f"unlock:{bid} ({b['unlock_price']})" for bid, b in BUILDINGS.items()
                             if b.get("unlockable") and self.is_locked(bid))
         return (f"{decor}; seeds:<species> by tier (common 3, uncommon 10, rare 25, legendary 60); "
@@ -118,6 +119,8 @@ class ColonyMixin:
             del stock[key]
             self.db.set("space_event", ev)
             return f"I bought {name.replace('_', ' ')} from the travelling trader for {price} credits!"
+        if kind == "furniture" or (not kind and name in self.decor_items_catalog()):
+            return self.buy_decor_item(name) or f"The vault clerk doesn't sell '{name}' furniture."
         if kind == "decor" or (not kind and name in sprites.DECOR_PRICES):
             price = sprites.DECOR_PRICES.get(name)
             if price is None:
@@ -212,6 +215,7 @@ class ColonyMixin:
             self.send_letter(f"I've unlocked the {b['name']} for you. {b['about'].split('.')[0]}. "
                              f"You have its blueprint now: pick a plot and build it from your Home Dome.")
         self.add_event("unlock", f"🔓 {b['name']} unlocked", f"Unlocked by {by}.")
+        self.give_manual(bid)
 
     # ================================================================ greenhouse
     def pot_plants(self):
@@ -306,6 +310,7 @@ class ColonyMixin:
                         "VALUES(?,?,?,?,?,?,?)", (species, nick, now, now, now, "medium", now))
         sp = P.SPECIES[species]
         self.gain_xp("gardening", 3, f"planted {species}")
+        self.plant_card_once(species)
         return (f"I planted a {species.replace('_', ' ')} (#{pid}{', ' + nick if nick else ''}): {sp['about']}. "
                 f"Care: water every {sp['water_h']}h, feed every {sp['feed_h']}h, {sp['light']} light.")
 
@@ -553,7 +558,8 @@ class ColonyMixin:
         self._bump("logs")
         bid = self.db.x("INSERT INTO broadcasts(ts, text) VALUES(?,?)", (time.time(), text[:2000]))
         self.add_event("log", f"📡 {self.name}'s colony log", text, bid)
-        return f"I broadcast a colony log: \"{text[:200]}\""
+        spoken = self.speak_async("log", f"📡 {self.name}'s colony log", text, bid)
+        return f"I broadcast a colony log{' and it was sent to my creator as audio' if spoken else ''}: \"{text[:200]}\""
 
     # ================================================================ archive vault
     def act_archive_memories(self, a, imp):

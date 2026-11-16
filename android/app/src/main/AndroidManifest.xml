@@ -43,5 +43,13 @@
         <receiver
             android:name=".ActionReceiver"
             android:exported="false" />
+        <!-- Stellar Disc shares your listening here (only when you turn it on in both apps) -->
+        <receiver
+            android:name=".ListenReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.stellapp.disc.LISTEN" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

@@ -110,6 +110,8 @@ class LifeMixin:
                 changed = True
                 name = BUILDINGS[bid]["name"]
                 self.mem.add("observation", f"The {name} is finished on plot {c['plot'] + 1}. It's open now!", bid, 7)
+                self.give_manual(bid)
+                self.give_manual(bid, opened=True)
                 self.add_event("build", f"🏗 {name} is built", f"{self.name} built it on plot {c['plot'] + 1}.")
         if changed:
             self.save_layout(lay)

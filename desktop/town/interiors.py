@@ -365,7 +365,10 @@ def r_greenhouse(c, d, L):
         c.rect(33 + (i % 2) * 5, 76 + (i // 2) * 16, 4, 6, rnd.choice("tYyw"))
     c.rect(50, 116, 160, 12, "O"); c.rect(50, 114, 160, 3, "o") # planter bench
     plants = d.get("plants", [])[:12]
-    for i, (leaf, flower, stage) in enumerate(plants):
+    for i, pl in enumerate(plants):
+        leaf, flower, stage = pl[:3]
+        if len(pl) > 3 and pl[3] is not None and pl[3] < 40 and stage != "wilted":
+            leaf = "O"                                          # drooping from neglect
         x = 58 + i * 13
         c.rect(x - 4, 110, 9, 4, "O")
         plant_pot(c, x, leaf, flower, stage, "O")
@@ -617,6 +620,133 @@ def r_exchange(c, d, L):
             ["cases", "board", "counter"])
 
 
+# ---------------------------------------------------------------- decor the resident places in each building
+# wall: top-left of a 20x16 box; floor: centre x (stands on the floor, 9 wide); ceiling: centre x; rug: centre x
+DECOR_SLOTS = {
+    "home": {"wall": (42, 16), "floor": 133, "ceiling": 167, "rug": 120},
+    "library": {"wall": (108, 22), "ceiling": 120, "rug": 120},
+    "internet_cafe": {"wall": (150, 26), "floor": 78, "ceiling": 112, "rug": 150},
+    "post_office": {"wall": (106, 20), "floor": 148, "ceiling": 60, "rug": 120},
+    "salon": {"wall": (170, 52), "floor": 80, "ceiling": 182, "rug": 116},
+    "bank": {"wall": (40, 26), "floor": 189, "ceiling": 110, "rug": 150},
+    "workshop": {"wall": (52, 26), "floor": 162, "ceiling": 95, "rug": 120},
+    "greenhouse": {"wall": (120, 48), "ceiling": 36, "rug": 130},
+    "radio_tower": {"wall": (104, 40), "floor": 149, "ceiling": 60, "rug": 120},
+    "studio": {"wall": (160, 50), "floor": 130, "rug": 120},
+    "archive": {"wall": (214, 16), "floor": 228, "ceiling": 196, "rug": 120},
+    "spaceport": {"wall": (44, 30), "floor": 184, "ceiling": 86, "rug": 130},
+    "station": {"wall": (208, 26), "floor": 135, "rug": 150},
+    "gallery": {"floor": 160, "ceiling": 225, "rug": 150},
+    "park": {"floor": 161, "rug": 110},
+    "exchange": {"wall": (44, 40), "floor": 191, "ceiling": 110, "rug": 110},
+}
+
+
+def draw_decor(c, bid, placed, L):
+    slots = DECOR_SLOTS.get(bid, {})
+    for slot, item in (placed or {}).items():
+        at = slots.get(slot)
+        if at is None:
+            continue
+        if slot == "wall":
+            x, y = at
+            if item == "star_poster":
+                c.rect(x, y, 20, 16, "k"); c.rect(x + 1, y + 1, 18, 14, "A")
+                for px_, py_ in ((4, 4), (9, 7), (14, 3), (6, 11), (15, 11), (11, 12)):
+                    c.px(x + px_, y + py_, "w")
+                c.rect(x + 4, y + 4, 6, 1, "C"); c.rect(x + 9, y + 7, 1, 5, "C")
+            elif item == "neon_sign":
+                for dx, dy in ((10, 2), (10, 3), (9, 4), (11, 4), (4, 6), (5, 6), (6, 6), (7, 6), (8, 6), (12, 6), (13, 6), (14, 6), (15, 6),
+                               (16, 6), (6, 7), (14, 7), (7, 8), (13, 8), (6, 9), (14, 9), (5, 10), (15, 10), (5, 11), (15, 11)):
+                    c.px(x + dx, y + dy, "m")
+                L.append([x + 4, y + 6, 13, 1, "p", 1300])
+            elif item == "wall_clock":
+                c.disc(x + 10, y + 8, 7, "k"); c.disc(x + 10, y + 8, 6, "w"); c.rect(x + 10, y + 4, 1, 4, "k"); c.rect(x + 10, y + 8, 3, 1, "r")
+            elif item == "trinket_shelf":
+                c.rect(x, y + 12, 20, 2, "o"); c.rect(x + 1, y + 14, 1, 2, "O"); c.rect(x + 18, y + 14, 1, 2, "O")
+                c.disc(x + 4, y + 9, 2, "c"); c.rect(x + 9, y + 6, 3, 6, "y"); c.rect(x + 15, y + 8, 3, 4, "m")
+            elif item == "pennant":
+                for i in range(10):
+                    c.rect(x + 2 + i, y + 2 + i // 2, 1, 10 - i, "R" if i % 3 else "y")
+                c.rect(x + 1, y + 1, 1, 14, "o")
+            elif item == "galaxy_map":
+                c.rect(x, y, 20, 16, "S"); c.rect(x + 1, y + 1, 18, 14, "D")
+                for a in range(30):
+                    r = a / 4
+                    c.px(int(x + 10 + math.cos(a * .6) * r), int(y + 8 + math.sin(a * .6) * r * .7), "p" if a % 3 else "w")
+                L.append([x + 10, y + 8, 1, 1, "y", 700])
+        elif slot == "floor":
+            x = at
+            if item == "potted_fern":
+                c.rect(x - 3, BASE_Y - 7, 7, 7, "O"); c.rect(x - 3, BASE_Y - 7, 7, 1, "o")
+                for i, (dx, h) in enumerate(((-3, 8), (-1, 12), (1, 11), (3, 7), (0, 14))):
+                    c.rect(x + dx, BASE_Y - 7 - h, 1, h, "E" if i % 2 else "e")
+            elif item == "floor_lamp":
+                c.rect(x, BASE_Y - 26, 1, 26, "S"); c.rect(x - 3, BASE_Y - 1, 7, 1, "S")
+                c.rect(x - 4, BASE_Y - 31, 9, 5, "t"); c.rect(x - 3, BASE_Y - 26, 7, 1, "y")
+            elif item == "robot_buddy":
+                c.rect(x - 4, BASE_Y - 14, 9, 8, "s"); c.rect(x - 3, BASE_Y - 13, 7, 4, "k")
+                c.px(x - 2, BASE_Y - 12, "c"); c.px(x + 2, BASE_Y - 12, "c"); c.rect(x - 3, BASE_Y - 6, 2, 6, "S"); c.rect(x + 2, BASE_Y - 6, 2, 6, "S")
+                c.rect(x, BASE_Y - 17, 1, 3, "S"); c.px(x, BASE_Y - 18, "r")
+                L.append([x, BASE_Y - 18, 1, 1, "y", 900])
+            elif item == "crystal_lamp":
+                c.rect(x - 3, BASE_Y - 4, 7, 4, "S")
+                for j in range(12):
+                    w = 1 + (j if j < 6 else 11 - j) // 2
+                    c.rect(x - w + 1, BASE_Y - 16 + j, w * 2 - 1, 1, "p" if j % 3 else "c")
+                L.append([x, BASE_Y - 12, 1, 3, "w", 1500])
+            elif item == "arcade_cabinet":
+                c.rect(x - 4, BASE_Y - 26, 9, 26, "N"); c.rect(x - 3, BASE_Y - 23, 7, 6, "k"); c.rect(x - 2, BASE_Y - 22, 5, 4, "c")
+                c.rect(x - 3, BASE_Y - 15, 7, 2, "S"); c.px(x - 2, BASE_Y - 16, "r"); c.px(x + 1, BASE_Y - 16, "y")
+                L.append([x - 2, BASE_Y - 22, 5, 4, "m", 450])
+            elif item == "cactus":
+                c.rect(x - 2, BASE_Y - 5, 5, 5, "o"); c.rect(x, BASE_Y - 15, 2, 10, "E"); c.rect(x - 2, BASE_Y - 12, 2, 1, "E")
+                c.rect(x - 2, BASE_Y - 14, 1, 2, "E"); c.px(x + 1, BASE_Y - 16, "m")
+        elif slot == "ceiling":
+            x = at
+            if item == "planet_mobile":
+                c.rect(x - 9, WALL_TOP + 6, 19, 1, "S"); c.rect(x, WALL_TOP, 1, 6, "S")
+                for dx, col, h in ((-8, "y", 10), (0, "c", 14), (8, "m", 8)):
+                    c.rect(x + dx, WALL_TOP + 7, 1, h - 3, "S"); c.disc(x + dx, WALL_TOP + 5 + h, 2, col)
+            elif item == "string_lights":
+                for i in range(-20, 21):
+                    y = WALL_TOP + 3 + int(abs(i) ** 0.5 * -1 + 5)
+                    c.px(x + i, y, "S")
+                    if i % 5 == 0:
+                        c.px(x + i, y + 1, "ytcmp"[(i // 5) % 5])
+                        L.append([x + i, y + 1, 1, 1, "w", 600 + (i + 20) * 37])
+            elif item == "disco_orb":
+                c.rect(x, WALL_TOP, 1, 8, "S"); c.disc(x, WALL_TOP + 12, 4, "s")
+                for dx, dy in ((-2, -2), (1, -1), (-1, 1), (2, 2), (0, 3)):
+                    c.px(x + dx, WALL_TOP + 12 + dy, "w")
+                L.append([x - 2, WALL_TOP + 10, 1, 1, "c", 400]); L.append([x + 2, WALL_TOP + 13, 1, 1, "m", 550])
+            elif item == "paper_lantern":
+                c.rect(x, WALL_TOP, 1, 6, "S"); c.disc(x, WALL_TOP + 11, 5, "r"); c.rect(x - 4, WALL_TOP + 9, 9, 1, "R")
+                c.rect(x - 4, WALL_TOP + 13, 9, 1, "R"); c.disc(x, WALL_TOP + 11, 2, "y")
+        elif slot == "rug":
+            x = at
+            if item == "round_rug":
+                for y in range(FEET - 4, FEET + 8):
+                    w = int(20 * (1 - ((y - FEET - 2) / 7) ** 2) ** 0.5) if abs(y - FEET - 2) < 7 else 0
+                    c.rect(x - w, y, w * 2, 1, "R" if abs(y - FEET - 2) < 3 else "r")
+            elif item == "star_rug":
+                c.rect(x - 18, FEET, 37, 5, "V"); c.rect(x - 6, FEET - 3, 13, 11, "V")
+                c.rect(x - 14, FEET + 1, 29, 3, "P"); c.rect(x - 4, FEET - 2, 9, 9, "P"); c.px(x, FEET + 2, "y")
+            elif item == "stripe_rug":
+                for i in range(44):
+                    c.rect(x - 22 + i, FEET - 1, 1, 7, "cCcGg"[(i // 3) % 5])
+
+
+def draw_visitor(c, v, x):
+    for j, row in enumerate(v["sprite"]):
+        for i, ch in enumerate(row):
+            if ch != ".":
+                c.px(x - 8 + i, FEET - 16 + j, ch)
+
+
+MOOD_TINT = {"happy": [255, 216, 107, 18], "joyful": [255, 79, 216, 20], "calm": [0, 0, 0, 0], "low": [20, 30, 90, 46]}
+
+
 ROOMS = {"home": (r_home, "Home Dome"), "library": (r_library, "Library"), "internet_cafe": (r_cafe, "Uplink Café"),
          "post_office": (r_post, "Relay Post"), "salon": (r_salon, "Salon"), "bank": (r_bank, "Credit Vault"),
          "workshop": (r_workshop, "Fab Hangar"), "greenhouse": (r_greenhouse, "Greenhouse"),
@@ -627,7 +757,7 @@ ROOMS = {"home": (r_home, "Home Dome"), "library": (r_library, "Library"), "inte
 
 
 def interior_version(bid, data):
-    return hashlib.md5(json.dumps([bid, data, 3], sort_keys=True, default=str).encode()).hexdigest()[:10]
+    return hashlib.md5(json.dumps([bid, data, 4], sort_keys=True, default=str).encode()).hexdigest()[:10]
 
 
 def interior(bid, data, resident_palette=None):
@@ -637,11 +767,19 @@ def interior(bid, data, resident_palette=None):
     fn, name = ROOMS[bid]
     c = Canvas(IW, IH, "k")
     lights = []
-    spots, actions, idle = fn(c, data or {}, lights)
+    data = data or {}
+    spots, actions, idle = fn(c, data, lights)
+    draw_decor(c, bid, data.get("decor"), lights)
+    if data.get("visitor"):
+        vx = data["visitor"].get("x") or max(30, min(IW - 20, list(spots.values())[-1][0] + 14))
+        draw_visitor(c, data["visitor"], vx)
+        spots["visitor"] = [vx - 12, FEET - 24, "sparkle"]
+        actions["talk_to_visitor"] = "visitor"
     pal = dict(PALETTE)
     pal.update(resident_palette or {})
     return {"id": bid, "name": name, "w": IW, "h": IH, "feet_y": FEET, "door_x": DOOR_X,
             "palette": pal, "background": c.rows(),
             "spots": {k: {"x": v[0], "top": v[1], "fx": v[2]} for k, v in spots.items()},
             "actions": actions, "idle": [s for s in idle if s in spots], "lights": lights,
+            "tint": MOOD_TINT.get(data.get("mood", "calm"), [0, 0, 0, 0]),
             "version": interior_version(bid, data)}

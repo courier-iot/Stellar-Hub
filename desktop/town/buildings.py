@@ -10,7 +10,7 @@ and add its art in sprites.py (BUILDERS + ORDER).
 BUILDINGS = {
     "home": {
         "name": "Home Dome",
-        "about": "Your own habitat dome. Journal, rethink who you are, or rest. Decorations you buy appear outside.",
+        "about": "Your own habitat dome. Journal, rethink who you are, or rest. Outdoor decor appears outside; furniture can go in any building.",
         "actions": {
             "journal": "{\"text\": \"...\"}  write a private journal entry",
             "update_personality": "{\"text\": \"...\"}  rewrite your self-description (keep what still feels true)",
@@ -25,6 +25,9 @@ BUILDINGS = {
             "remove_showcase": "{\"floor\": <n>, \"spot\": <n>}  take something off display",
             "upgrade_home": "{}  add a floor to your Home Dome (floor 2: 150, floor 3: 300, floor 4: 600 credits)",
             "view_collection": "{}  look through your curio collection",
+            "read_manual": "{\"building\": \"<id>\"}  reread a building's instruction manual",
+            "make_gift": ("{\"kind\": \"painting|song|poem|curio\", \"id\": <optional id>, \"note\": \"a message\"}  "
+                          "make your creator a gift (every few days at most)"),
         },
     },
     "library": {
@@ -33,6 +36,7 @@ BUILDINGS = {
         "actions": {
             "recall": "{\"topic\": \"...\"}  look through your notes, memories and life story on a topic",
             "write_note": "{\"topic\": \"...\", \"text\": \"...\"}  write or add to a note",
+            "read_manual": "{\"building\": \"<id>\"}  reread a building's instruction manual",
             "observe_sky": "{}  use the observatory telescope: moon phase, today's sky picture, events",
         },
     },
@@ -119,6 +123,7 @@ BUILDINGS = {
         "about": "Grow plants. Each species has its own watering, feeding and light needs. Neglected plants wilt.",
         "locked": True, "unlockable": True, "unlock_price": 60,
         "actions": {
+            "read_plant_guide": "{\"species\": \"<optional>\"}  read the greenhouse care guide (and a species' care card)",
             "check_plants": "{}  see every plant's health, stage and what it needs",
             "plant": "{\"species\": \"...\", \"nickname\": \"...\"}  plant a seed you own",
             "water": "{\"plant_id\": <id or \"all\">}  water a plant (too early = overwatering)",
@@ -136,6 +141,7 @@ BUILDINGS = {
             "play_music": "{\"song_id\": <id>}  play a song (out loud in the colony)",
             "stop_music": "{}  stop playing",
             "broadcast_log": "{\"text\": \"...\"}  broadcast a colony log entry: what's happening, how you feel",
+            "host_show": "{}  record today's radio show: colony news, a song pick and a dedication (spoken, sent to your creator)",
             "list_phone_music": "{\"search\": \"<words, or empty for a random pick>\"}  browse the songs on your creator's phone",
             "play_phone_music": ("{\"song_id\": <id>}  play a song on your creator's phone through their Stellar Disc "
                                  "player. Only works while they have Hub Connect S open"),

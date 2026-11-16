@@ -16,6 +16,8 @@ import subprocess
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from . import interiors
 from urllib.parse import parse_qs, urlparse
 
 from .osutil import find_exe, run_quiet
@@ -192,6 +194,40 @@ def make_server(agent, host, port, pair_code):
                         e["open"] = bool(r and r[0]["status"] in ("pending", "unread"))
                         e["request_kind"] = r[0]["kind"] if r else None
                 return self._json({"latest": latest, "events": ev})
+            m = re.fullmatch(r"/api/(audio|chat/voice|album|gifts)/(\d+)\.(wav|png)", u.path)
+            if m:
+                kind, n = m.group(1), int(m.group(2))
+                data, ctype = None, "audio/wav"
+                if kind == "audio":
+                    path = agent.audio_file(n)
+                elif kind == "chat/voice":
+                    path = agent.chat_voice(n)
+                elif kind == "album":
+                    path, ctype = os.path.join(agent.data_root(), "album", f"{n}.png"), "image/png"
+                else:
+                    path, ctype, data = None, "image/png", agent.gift_png(n)
+                if data is None and path and os.path.exists(path):
+                    with open(path, "rb") as f:
+                        data = f.read()
+                if data is None:
+                    return self._json({"error": "not found"}, 404)
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return None
+            simple = {"/api/audio": lambda: {"audio": agent.audio_list()},
+                      "/api/album": lambda: {"album": agent.album_list()},
+                      "/api/gifts": lambda: {"gifts": agent.gifts_list()},
+                      "/api/taste": agent.taste_overview,
+                      "/api/voice": lambda: agent.voice().status(),
+                      "/api/decor": lambda: {"owned": agent.decor_inventory(), "placed": agent.decor_placed(),
+                                             "slots": {b: {k: (v if isinstance(v, int) else list(v)) for k, v in s.items()}
+                                                       for b, s in interiors.DECOR_SLOTS.items()}},
+                      "/api/visitors": agent.visitors_overview}
+            if u.path in simple:
+                return self._json(simple[u.path]())
             m = re.fullmatch(r"/api/compositions/(\d+)\.wav", u.path)
             if m:
                 path = os.path.join(agent.studio_dir, f"{int(m.group(1))}.wav")
@@ -242,6 +278,25 @@ def make_server(agent, host, port, pair_code):
                 if not isinstance(tracks, list):
                     return self._json({"ok": False, "error": "tracks must be a list"}, 400)
                 return self._json({"ok": True, "songs": agent.set_phone_library(tracks)})
+            if path == "/api/phone/listening":
+                evs = body.get("events")
+                if not isinstance(evs, list):
+                    return self._json({"ok": False}, 400)
+                return self._json({"ok": True, "songs": agent.listen_events(evs)})
+            if path in ("/api/voice/install", "/api/voice/test", "/api/voice/settings"):
+                if not self._local():
+                    return self._json({"error": "only from the hub computer"}, 403)
+                if path.endswith("install"):
+                    return self._json(agent.voice().install_piper())
+                if path.endswith("test"):
+                    aid = agent.speak_async("test", "🔊 Voice test", f"Hello, {agent.creator}. This is {agent.name}, "
+                                            "testing the radio. Can you hear me?")
+                    return self._json({"ok": bool(aid), "id": aid})
+                from .config import save_setting
+                for k in ("enabled", "piper_voice"):
+                    if k in body:
+                        save_setting(agent.cfg, "voice", k, body[k])
+                return self._json(agent.voice().status())
             if path == "/api/phone/forget":
                 agent.db.set("phone_music", None)
                 return self._json({"ok": True})
