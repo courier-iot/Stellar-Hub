@@ -344,6 +344,10 @@
   <section>
     <h2>Hub Connect S · phone pairing</h2>
     <div id="pairing" class="meta">Loading…</div>
+    <h2 class="sub">People &amp; devices</h2>
+    <div class="meta">Each phone creates a username and waits here until you approve it. <b>Owner</b>: everything (that's you).
+      <b>Member</b>: watch, chat, give goals and letters, take a turn. <b>Viewer</b>: watch only.</div>
+    <div id="devices" style="margin-top:8px"></div>
   </section>
 </main>
 <script>
@@ -664,7 +668,7 @@ async function refreshInner() {
   const [s, inbox, feed, lib, col] = await Promise.all([api("/api/status"), api("/api/inbox"), api("/api/feed?limit=80"),
                                                         api("/api/library?limit=40"), api("/api/colony")]);
   if (s.world_version !== worldVersion) { Town.setWorld(await api("/api/world")); worldVersion = s.world_version; }
-  Town.away = !!s.away; Town.inOrbit = !!s.in_orbit; Town.emote = s.emote; Town.daylight = s.daylight; Town.event = s.event; Town.asleep = s.asleep; Town.mood = s.mood; Town.listening = !!s.listening; Town.hour = s.hour;
+  Town.away = !!s.away; Town.inOrbit = !!s.in_orbit; Town.emote = s.emote; Town.daylight = s.daylight; Town.event = s.event; Town.asleep = s.asleep; Town.mood = s.mood; Town.creator = s.creator; Town.listening = !!s.listening; Town.hour = s.hour;
   Town.setLocation(s.location, s.prev_location, s.last_turn);
   programs = {}; (col.programs || []).forEach(p => programs[p.id] = p);
 
@@ -959,7 +963,7 @@ let chatBusy = false;
 function renderChat(st, active) {
   const log = document.getElementById("chatlog");
   const msgs = (st && st.messages) || [];
-  log.innerHTML = msgs.map(m => `<div class="item"><b style="color:${m.who === "creator" ? "var(--warn)" : "var(--accent)"}">${m.who === "creator" ? "You" : "Resident"}</b><div>${esc(m.text)}</div></div>`).join("")
+  log.innerHTML = msgs.map(m => `<div class="item"><b style="color:${m.who === "creator" ? "var(--warn)" : "var(--accent)"}">${m.who === "creator" ? (m.name && Town.creator && m.name !== Town.creator ? esc(m.name) : "You") : "Resident"}</b><div>${esc(m.text)}</div></div>`).join("")
     || `<div class="meta">Say hi. Your resident pauses what it's doing to talk with you, and remembers the conversation afterwards.</div>`;
   log.scrollTop = log.scrollHeight;
   document.getElementById("chatnote").textContent = active ? "chat open (ends after 10 min quiet)" : "";
@@ -1115,10 +1119,28 @@ async function voiceSet(v) { await api("/api/voice/settings", v); loadExtras.las
 async function loadPairing() {
   const p = await api("/api/pairing");
   document.getElementById("pairing").innerHTML = p.tailscale_ip
-    ? `In Hub Connect S, open the Hub tab, enter these and tap <b>Save &amp; test</b>:<br>Address: <span class="code">${esc(p.tailscale_ip)}:${p.port}</span><br>Pair code: <span class="code">${esc(p.code)}</span>` +
+    ? `In Hub Connect S, open the Hub tab, enter these, create a username, and tap <b>Join</b>. Then approve the phone below.<br>Address: <span class="code">${esc(p.tailscale_ip)}:${p.port}</span><br>Pair code: <span class="code">${esc(p.code)}</span>` +
       (p.windows ? `<br><br>On Windows, if the app can't connect, run <b>Setup and model check</b> and let it add the firewall rule.` : "")
     : `Tailscale isn't running on this computer, so the phone can't connect yet. Install Tailscale on this PC and your phone, sign in to both, then restart Stellar Hub.<br><br>Pair code: <span class="code">${esc(p.code)}</span>`;
 }
+
+async function loadDevices() {
+  const d = await api("/api/devices");
+  const key = JSON.stringify(d); if (key === loadDevices.last) return; loadDevices.last = key;
+  const roles = ["owner", "member", "viewer"];
+  const pick = (dv) => `<select onchange="setDevice(${dv.id}, {role: this.value})">${roles.map(r => `<option ${r === dv.role ? "selected" : ""}>${r}</option>`).join("")}</select>`;
+  document.getElementById("devices").innerHTML = (d.devices || []).map(dv => dv.status === "pending"
+    ? `<div class="item" style="border:1px solid var(--warn, #ffd86b); border-radius:10px; padding:8px"><b>📱 ${esc(dv.name)}</b> <span class="tag pending">waiting</span>
+        <span class="meta">${esc(dv.platform || "phone")} · asked ${when(dv.created)}</span>
+        <div class="row">Join as <select id="joinrole-${dv.id}"><option>member</option><option>viewer</option><option>owner</option></select>
+        <button class="ok" onclick="setDevice(${dv.id}, {status: 'active', role: document.getElementById('joinrole-${dv.id}').value})">Approve</button>
+        <button class="deny" onclick="setDevice(${dv.id}, {status: 'removed'})">Decline</button></div></div>`
+    : `<div class="item"><b>📱 ${esc(dv.name)}</b> ${pick(dv)} <span class="meta">${esc(dv.platform || "phone")} · last seen ${when(dv.last_seen)}</span>
+        <button class="ghost" onclick="if (confirm('Remove ${esc(dv.name)}\'s device? It will need to join again.')) setDevice(${dv.id}, {status: 'removed'})">Remove</button></div>`
+  ).join("") || `<div class="meta">No phones yet.</div>`;
+}
+async function setDevice(id, change) { await api(`/api/devices/${id}`, change); loadDevices.last = null; loadDevices(); }
+setTimeout(loadDevices, 1200); setInterval(loadDevices, 10000);
 
 async function takeTurn() { await api("/api/turn", {}); setTimeout(refresh, 600); }
 async function reply(id, decision) {

@@ -2,6 +2,16 @@
 
 Stellar Hub's update manager shows the entries newer than the version you have.
 
+## v0.13.2
+- Added: more than one phone, each with its own username. In Hub Connect S you enter the address and pair code, create a username (3-20 characters, unique; "This is another device of mine" adds a second phone to your name), then wait for the owner to approve it.
+- Added: roles. Owner: everything. Member: watch, chat, give goals, write letters, take a turn, play chess. Viewer: watch only. Approve, change or remove devices on the dashboard (Hub tab → People & devices) or in the owner's app (Hub tab).
+- Added: the resident knows each person by name. Chats show who's talking (several people can join one chat), goals and letters say who they're from, it remembers meeting new people, and it can write letters to them (they appear in that person's inbox).
+- Changed: the pair code is now only an invitation. Each approved phone gets its own key, so removing a phone locks it out without changing anyone else's. Members and viewers only see their own letters and don't get request, program or monitor notifications.
+- Changed: after updating, every phone (yours too) joins once with a username. Approve your own phone on the dashboard as Owner.
+
+## v0.13.1
+- Fixed: Hub Connect S crashed when opening the new Build tab.
+
 ## v0.13.0
 - Added: the Mechanical Workshop (unlock for 300). The resident buys parts at the Department Store (frames, wheels, gears, motors, sensors, circuits, batteries, solar panels…), designs machines, and a simulator checks every design: required parts, power and frame space. Parts are only used when it passes.
 - Added: 10 machines with daily colony bonuses: Watering Bot, Seed Sorter, Telescope Tracker, Music Box Bot, Cleaning Drone, Solar Array, Delivery Drone (5% store discount), Pet Feeder, Repair Bot (halves wear) and Comet Catcher. Machines wear down slowly; a broken machine does nothing until it's serviced (maintain_machine, one spare gear).

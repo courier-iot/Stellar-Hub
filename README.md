@@ -203,6 +203,10 @@ are shown to the resident next time, so it improves over time.
 pieces. Bots, drones, a cargo shuttle and the lift car move around the colony, more as it grows. The resident buys its
 own accessories and paints its buildings at the Department Store.
 
+**More than one phone:** each phone joins with the pair code and its own username, then waits until you approve it on
+the dashboard (Hub tab → People & devices). Roles: **Owner** (everything), **Member** (watch, chat, give goals and
+letters, take a turn) and **Viewer** (watch only). The resident knows each person by name and can write them letters.
+
 **Phone music (app + Stellar Disc):** in the Hub tab, tap **Share my music**. Only song titles, artists and albums go
 to your hub. At the Radio Tower the resident can then pick one of your songs, and Stellar Disc plays it on your phone,
 but only while Hub Connect S is open. Stop sharing removes the list from the hub.

@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS pets(id INTEGER PRIMARY KEY, name TEXT, species TEXT,
     runs_today INTEGER, run_day TEXT, last_run REAL, rest_until REAL, critical_since REAL, updated REAL);
 CREATE TABLE IF NOT EXISTS goals(id INTEGER PRIMARY KEY, ts REAL, week TEXT, kind TEXT, ref TEXT, title TEXT, text TEXT,
     tests TEXT, source TEXT, status TEXT, attempts INTEGER DEFAULT 0, result TEXT, last_code TEXT);
+CREATE TABLE IF NOT EXISTS devices(id INTEGER PRIMARY KEY, name TEXT, token_hash TEXT UNIQUE, role TEXT, status TEXT,
+    created REAL, last_seen REAL, platform TEXT);
 CREATE TABLE IF NOT EXISTS skills(id INTEGER PRIMARY KEY, ts REAL, kind TEXT, title TEXT, tags TEXT, content TEXT);
 CREATE TABLE IF NOT EXISTS machines(id INTEGER PRIMARY KEY, ts REAL, kind TEXT, design TEXT, condition REAL, last_maint REAL);
 CREATE TABLE IF NOT EXISTS plans(id INTEGER PRIMARY KEY, ts REAL, kind TEXT, title TEXT, plan TEXT);
@@ -71,6 +73,8 @@ MIGRATIONS = [
     "ALTER TABLE memories ADD COLUMN archived INTEGER DEFAULT 0",
     "ALTER TABLE requests ADD COLUMN building TEXT",
     "ALTER TABLE requests ADD COLUMN extra TEXT",
+    "ALTER TABLE requests ADD COLUMN to_user TEXT",
+    "ALTER TABLE goals ADD COLUMN by_user TEXT",
 ]
 
 

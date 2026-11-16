@@ -13,6 +13,7 @@ class ListenReceiver : BroadcastReceiver() {
         if (intent.action != "com.stellapp.disc.LISTEN") return
         val p = Notifier.prefs(ctx)
         if (!p.getBoolean("share_listening", false)) return
+        if ((p.getString("role", "owner") ?: "owner") != "owner") return     // listening together is the owner's
         val event = intent.getStringExtra("event") ?: return
         if (event !in listOf("play", "complete", "skip")) return
         val title = intent.getStringExtra("title")?.take(120)?.takeIf { it.isNotBlank() } ?: return
@@ -46,6 +47,7 @@ object ListenQueue {
     fun flush(ctx: Context, foreground: Boolean = false) {
         val p = Notifier.prefs(ctx)
         if (!p.getBoolean("share_listening", false)) return
+        if ((p.getString("role", "owner") ?: "owner") != "owner") return     // listening together is the owner's
         val addr = p.getString("address", "") ?: ""
         val code = p.getString("code", "") ?: ""
         if (addr.isBlank() || code.isBlank()) return

@@ -57,7 +57,7 @@ BUILDINGS = {
             "ask_question": "{\"question\": \"...\"}  ask your creator anything; they answer in their own words",
             "send_request": ("{\"kind\": \"want|access|learn|other\", \"content\": \"...\", \"reason\": \"...\", "
                              "\"building\": \"<building id, for access requests>\"}  ask your creator for something"),
-            "write_letter": "{\"text\": \"...\"}  write your creator a letter (no request, just talking)",
+            "write_letter": "{\"text\": \"...\", \"to\": \"<optional: the name of someone who visits by phone>\"}  write a letter (to your creator unless you name someone else)",
         },
     },
     "gallery": {

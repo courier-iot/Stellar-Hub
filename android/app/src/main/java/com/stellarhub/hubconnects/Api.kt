@@ -27,8 +27,10 @@ class Api(address: String, private val pairCode: String, private val foreground:
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
-            if (code == 401) throw ApiException("Wrong pair code")
-            if (code !in 200..299) throw ApiException("Hub answered with error $code")
+            if (code == 401) throw ApiException(if ("\"join\"" in text) "Not signed in" else (errorOf(text) ?: "Wrong pair code"))
+            if (code == 403 && "\"pending\"" in text) throw ApiException("Waiting for approval")
+            if (code == 403) throw ApiException(errorOf(text) ?: "Your account can't do that")
+            if (code !in 200..299) throw ApiException(errorOf(text) ?: "Hub answered with error $code")
             return text
         } finally {
             conn.disconnect()
@@ -43,7 +45,8 @@ class Api(address: String, private val pairCode: String, private val foreground:
         val conn = open(path, "GET")
         try {
             val code = conn.responseCode
-            if (code == 401) throw ApiException("Wrong pair code")
+            if (code == 401) throw ApiException("Not signed in")
+            if (code == 403) throw ApiException("Waiting for approval")
             if (code !in 200..299) throw ApiException("Hub answered with error $code")
             return conn.inputStream.use { it.readBytes() }
         } finally {
@@ -59,7 +62,28 @@ class Api(address: String, private val pairCode: String, private val foreground:
         return JSONObject(read(conn))
     }
 
+    private fun errorOf(text: String): String? =
+        try { JSONObject(text).optString("error").takeIf { it.isNotBlank() } } catch (e: Exception) { null }
+
+    /** Joining (or checking a username) only needs the pair code, which goes in the body. Answers even on errors. */
+    fun join(body: JSONObject): JSONObject {
+        val conn = open("/api/join", "POST")
+        conn.doOutput = true
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+        try {
+            val code = conn.responseCode
+            val text = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() } ?: "{}"
+            return try { JSONObject(text) } catch (e: Exception) { JSONObject().put("ok", false).put("error", "Hub answered with error $code") }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     companion object {
+        /** v0.13.2 and later: a pair code (ABCD-EFGH-JKMN) is only an invitation; the saved key is the device's own. */
+        fun looksLikePairCode(s: String) = Regex("^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$").matches(s.trim())
+
         fun normalize(address: String): String {
             var a = address.trim().trimEnd('/')
             if (!a.startsWith("http://") && !a.startsWith("https://")) a = "http://$a"

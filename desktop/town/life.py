@@ -297,18 +297,30 @@ class LifeMixin:
             self.set_location("post_office")
         return st
 
-    def chat_say(self, text):
+    def _speaker(self, m):
+        return (m.get("name") or self.creator) if m["who"] == "creator" else self.name
+
+    def chat_say(self, text, who=None):
         st = self.chat_state() or self.chat_start()
         text = text.strip()[:1500]
-        st["messages"].append({"who": "creator", "text": text, "ts": time.time()})
+        who = None if self.is_creator(who) else who
+        st["messages"].append({"who": "creator", "name": who or self.creator, "text": text, "ts": time.time()})
         st["last"] = time.time()
         self.db.set("chat", st)
-        history = "\n".join(f"{self.creator if m['who'] == 'creator' else self.name}: {m['text']}" for m in st["messages"][-16:])
+        history = "\n".join(f"{self._speaker(m)}: {m['text']}" for m in st["messages"][-16:])
+        present = sorted({m.get("name") or self.creator for m in st["messages"] if m["who"] == "creator"})
+        others = [p for p in present if not self.is_creator(p)]
         recent = Memory.fmt(self.mem.recent(10))
         related = Memory.fmt(self.mem.relevant(text, 5))
         where = "on an expedition, talking over the long-range radio" if self.expedition() else \
                 ("half asleep" if self.is_asleep() else "at the Relay Post")
-        ctx = (f"WHO YOU ARE:\n{self.personality()}\nYou are {where}.\n\nRECENT MEMORIES:\n{recent}\n\n"
+        about = ""
+        if others:
+            about = (f"\nIn this chat: {', '.join(present)}. " + ", ".join(others) + (" is" if len(others) == 1 else " are")
+                     + f" not {self.creator}: they're people {self.creator} let into the colony, visiting from their phones. "
+                     f"The last message is from {who or self.creator}.\n")
+            related = Memory.fmt(self.mem.relevant(" ".join(others) + " " + text, 6))
+        ctx = (f"WHO YOU ARE:\n{self.personality()}\nYou are {where}.{about}\nRECENT MEMORIES:\n{recent}\n\n"
                f"MEMORIES THAT MIGHT BE RELATED:\n{related}\n\nCONVERSATION SO FAR:\n{history}\n\n{self.name}:")
         out = self.ask(prompts.CHAT.format(name=self.name, creator=self.creator), ctx, "chat")
         reply = str(out.get("reply", "")).strip()[:2000] or "…"
@@ -327,14 +339,17 @@ class LifeMixin:
         msgs = st.get("messages", [])
         if not msgs:
             return None
-        transcript = "\n".join(f"{self.creator if m['who'] == 'creator' else self.name}: {m['text']}" for m in msgs)
+        transcript = "\n".join(f"{self._speaker(m)}: {m['text']}" for m in msgs)
+        people = sorted({m.get("name") or self.creator for m in msgs if m["who"] == "creator"})
         try:
-            out = self.ask(prompts.CHAT_SUMMARY.format(name=self.name, creator=self.creator), transcript[:6000], "chat_summary")
+            out = self.ask(prompts.CHAT_SUMMARY.format(name=self.name, creator=" and ".join(people)), transcript[:6000], "chat_summary")
             summary = str(out.get("summary", "")).strip()[:1200]
             imp = int(out.get("importance", 6))
         except Exception:
-            summary, imp = f"I had a live chat with {self.creator} ({len(msgs)} messages).", 6
-        self.mem.add("chat", summary or f"I chatted with {self.creator}.", "post_office", imp)
+            summary, imp = f"I had a live chat with {' and '.join(people)} ({len(msgs)} messages).", 6
+        if people != [self.creator] and summary and not all(p in summary for p in people):
+            summary = f"(Chat with {' and '.join(people)}) " + summary
+        self.mem.add("chat", summary or f"I chatted with {' and '.join(people)}.", "post_office", imp)
         self.check_milestones()
         return summary
 

@@ -16,6 +16,7 @@ from .museum import MuseumMixin
 from .monitor import MonitorMixin
 from .workshop import WorkshopMixin
 from .style import StyleMixin
+from .devices import DevicesMixin
 from .hobbies import HobbiesMixin, level_for
 from .life import LifeMixin
 from .plants import SPECIES as PLANT_SPECIES
@@ -28,7 +29,7 @@ class BudgetExceeded(Exception):
     pass
 
 
-class Agent(ExtrasMixin, MonitorMixin, StyleMixin, WorkshopMixin, MuseumMixin, PetsMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
+class Agent(ExtrasMixin, MonitorMixin, DevicesMixin, StyleMixin, WorkshopMixin, MuseumMixin, PetsMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
     def __init__(self, cfg, db, llm, data_dir):
         self.cfg, self.db, self.llm = cfg, db, llm
         self.mem = Memory(db)
@@ -621,13 +622,15 @@ What do you do now?"""
         text = str(a.get("text", "")).strip()
         if not text:
             return "I started a letter but didn't know what to say."
-        rid = self.db.x("INSERT INTO requests(ts, kind, content, reason, status) VALUES(?,?,?,?,?)",
-                        (time.time(), "letter", text[:3000], "", "unread"))
-        self.add_event("letter", f"✉️ Letter from {self.name}", text[:500], rid)
-        return f"I wrote {self.creator} a letter: \"{text[:200]}\""
+        to = str(a.get("to", "")).strip()
+        person = next((p["name"] for p in self.people() if p["name"].lower() == to.lower()), None) if to else None
+        rid = self.db.x("INSERT INTO requests(ts, kind, content, reason, status, to_user) VALUES(?,?,?,?,?,?)",
+                        (time.time(), "letter", text[:3000], "", "unread", person))
+        self.add_event("letter", f"✉️ Letter from {self.name}" + (f" to {person}" if person else ""), text[:500], rid)
+        return f"I wrote {person or self.creator} a letter: \"{text[:200]}\""
 
     # ---------- things the creator does (from the dashboard) ----------
-    def reply_request(self, rid, decision, reply):
+    def reply_request(self, rid, decision, reply, sender=None):
         rows = self.db.q("SELECT * FROM requests WHERE id=?", (rid,))
         if not rows:
             return False
@@ -635,7 +638,7 @@ What do you do now?"""
         if r["kind"] == "letter":
             self.db.x("UPDATE requests SET status='read', reply=?, replied_ts=? WHERE id=?", (reply, time.time(), rid))
             if reply:
-                self.send_letter(f"(Replying to your letter) {reply}")
+                self.send_letter(f"(Replying to your letter) {reply}", sender=sender)
             return True
         if r["status"] not in ("pending", "unread"):
             return True  # already answered (e.g. from the phone and the dashboard)
@@ -668,8 +671,10 @@ What do you do now?"""
                     self.unlock(bid)
         return True
 
-    def send_letter(self, text):
-        self.db.x("INSERT INTO letters(ts, sender, content) VALUES(?,?,?)", (time.time(), self.creator, text[:3000]))
+    def send_letter(self, text, sender=None):
+        self.db.x("INSERT INTO letters(ts, sender, content) VALUES(?,?,?)", (time.time(), sender or self.creator, text[:3000]))
+        if sender and not self.is_creator(sender):
+            self.mem.add("observation", f"{sender} sent me a letter.", "post_office", 5)
 
     def toggle_lock(self, bid):
         b = BUILDINGS.get(bid, {})
@@ -907,7 +912,7 @@ What do you do now?"""
                              + ((self.visitor_now() or {}).get("id") or "")
                              + "".join(f"{p['id']}{p['status'][0]}{int(p['last_run'] > time.time() - 600)}{int(self.on_shift(p))}" for p in self.pets()),
             "emote": self.emote() if self.db.get("name") else None, "asleep": self.is_asleep(),
-            "mood": self.mood_word() if self.db.get("name") else None, "listening": bool(self.listening_now()),
+            "mood": self.mood_word() if self.db.get("name") else None, "creator": self.creator, "listening": bool(self.listening_now()),
             "hour": datetime.datetime.now().hour,
             "sleep": self.bedtime(), "night": self.is_night(), "daylight": self.daylight(),
             "chat": bool(self.chat_state()), "event": self.space_event(),

@@ -179,13 +179,14 @@ class WorkshopMixin:
                    + ", ".join(f"{n} {p}" for p, n in req.items()) + ", plus power.", None, "auto", "open"))
         self.add_event("goal", f"🎯 This week's workshop goal: build a {name}", f"It {does}.")
 
-    def add_creator_goal(self, kind, title, text, tests=None):
+    def add_creator_goal(self, kind, title, text, tests=None, by=None):
         kind = kind if kind in ("code", "machine", "plan") else "code"
-        gid = self.db.x("INSERT INTO goals(ts, week, kind, ref, title, text, tests, source, status, attempts) VALUES(?,?,?,?,?,?,?,?,?,0)",
+        by = None if self.is_creator(by) else by
+        gid = self.db.x("INSERT INTO goals(ts, week, kind, ref, title, text, tests, source, status, attempts, by_user) VALUES(?,?,?,?,?,?,?,?,?,0,?)",
                         (time.time(), week_key(), kind, None, str(title)[:120], str(text)[:2000],
-                         (str(tests)[:4000] or None) if tests else None, "creator", "open"))
-        self.mem.add("observation", f"My creator gave me a {kind} goal: {title}. {text[:300]}", "workshop", 7)
-        self.add_event("goal", f"🎯 New goal from {self.creator}: {title}", text[:300])
+                         (str(tests)[:4000] or None) if tests else None, "creator", "open", by))
+        self.mem.add("observation", f"{by or 'My creator'} gave me a {kind} goal: {title}. {text[:300]}", "workshop", 7)
+        self.add_event("goal", f"🎯 New goal from {by or self.creator}: {title}", text[:300])
         return gid
 
     def review_goal(self, gid, passed, note=""):
@@ -218,7 +219,7 @@ class WorkshopMixin:
         gs = [g for g in self.goals_open() if g["kind"] == "code"]
         if not gs:
             return "No coding goals right now. A new challenge arrives every week."
-        return " | ".join(f"Goal #{g['id']} ({'from my creator' if g['source'] == 'creator' else 'weekly'}): {g['title']}. "
+        return " | ".join(f"Goal #{g['id']} ({('from ' + (g.get('by_user') or 'my creator')) if g['source'] == 'creator' else 'weekly'}): {g['title']}. "
                           f"{g['text']} Attempts so far: {g['attempts']}." for g in gs) + " (attempt_challenge to try.)"
 
     def act_attempt_challenge(self, a, imp):
@@ -244,7 +245,7 @@ class WorkshopMixin:
         if not g["tests"]:          # a creator's goal without tests: they review it
             self.db.x("UPDATE goals SET status='review', result=? WHERE id=?", ("Waiting for your review.", g["id"]))
             self.add_event("goal", f"👀 {self.name} wants you to review '{g['title']}'", code[:400], g["id"])
-            return f"I wrote my answer to '{g['title']}' and sent it to my creator to review."
+            return f"I wrote my answer to '{g['title']}' and sent it to {g.get('by_user') or 'my creator'} to review."
         ok, output = self.run_tests(code, g["tests"])
         self.db.x("UPDATE goals SET result=? WHERE id=?", (output[-2000:], g["id"]))
         if ok is None:
@@ -502,7 +503,7 @@ class WorkshopMixin:
         return out
 
     def workshop_overview(self):
-        return {"goals": [dict(g) for g in self.db.q("SELECT id, ts, week, kind, ref, title, text, tests, source, status, attempts, result, last_code FROM goals ORDER BY id DESC LIMIT 30")],
+        return {"goals": [dict(g) for g in self.db.q("SELECT id, ts, week, kind, ref, title, text, tests, source, status, attempts, result, last_code, by_user FROM goals ORDER BY id DESC LIMIT 30")],
                 "code_level": int(self.db.get("code_level", 1)), "mech_level": int(self.db.get("mech_level", 1)),
                 "parts": self.parts(), "part_prices": {k: v[0] for k, v in PARTS.items()},
                 "machines": [dict(m, name=MACHINES[m["kind"]][1], does=MACHINES[m["kind"]][2]) for m in self.machines()],

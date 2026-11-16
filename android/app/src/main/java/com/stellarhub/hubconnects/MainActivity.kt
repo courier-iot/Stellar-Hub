@@ -220,6 +220,7 @@ class MainActivity : Activity() {
         main.removeCallbacks(poller)
         main.post(poller)
         if (::town.isInitialized) town.wave()
+        refreshMe()
         if (prefs.getBoolean("share_music", false) && api != null &&
             System.currentTimeMillis() - prefs.getLong("music_synced", 0L) > 24 * 3600 * 1000L &&
             checkSelfPermission(audioPermission) == PackageManager.PERMISSION_GRANTED) shareMusic(false)
@@ -268,9 +269,31 @@ class MainActivity : Activity() {
 
     private fun connectFromPrefs() {
         val addr = prefs.getString("address", "") ?: ""
-        val code = prefs.getString("code", "") ?: ""
+        var code = prefs.getString("code", "") ?: ""
+        if (Api.looksLikePairCode(code)) {        // from before v0.13.2: that was the shared pair code, now this phone joins
+            prefs.edit().putString("pair_code", code).remove("code").apply()
+            code = ""
+        }
         api = if (addr.isNotBlank() && code.isNotBlank()) Api(addr, code, foreground = true) else null
         worldVersion = null
+    }
+
+    private val myRole get() = prefs.getString("role", "owner") ?: "owner"
+    private val isOwner get() = myRole == "owner"
+
+    /** Asks the hub who this device is signed in as, and remembers its username and role. */
+    private fun refreshMe(done: (() -> Unit)? = null) {
+        val a = api ?: return
+        io.execute {
+            try {
+                val me = a.getObject("/api/me")
+                main.post {
+                    prefs.edit().putString("username", me.optString("name")).putString("role", me.optString("role", "member"))
+                        .putString("join_status", me.optString("status")).apply()
+                    done?.invoke()
+                }
+            } catch (e: Exception) { }
+        }
     }
 
     // ------------------------------------------------------------------ helpers
@@ -388,7 +411,7 @@ class MainActivity : Activity() {
     // ------------------------------------------------------------------ status + town
     private fun pollStatus() {
         val a = api ?: run {
-            caption.text = "Not paired yet. Open the Hub tab, enter the address and pair code from the dashboard, then tap Save & test."
+            caption.text = "Not connected yet. Open the Hub tab, enter the address and pair code from the dashboard, create your username, then tap Join."
             return
         }
         io.execute {
@@ -410,7 +433,9 @@ class MainActivity : Activity() {
     }
 
     private fun explain(e: Exception): String = when {
-        e.message == "Wrong pair code" -> "Wrong pair code. Check it on the dashboard and tap Save & test again."
+        e.message == "Wrong pair code" -> "Wrong pair code. Check it on the dashboard and join again."
+        e.message == "Waiting for approval" -> "Waiting for the owner to approve “${prefs.getString("username", "")}” on the Stellar Hub dashboard…"
+        e.message == "Not signed in" -> "This phone isn't signed in (or was removed). Open the Hub tab and join again."
         e is java.net.SocketTimeoutException || e is java.net.ConnectException || e is java.net.NoRouteToHostException ->
             "Can't reach Stellar Hub at ${api?.base}.\nCheck: hub running · Tailscale on (phone and PC) · Windows Firewall rule (run Setup on the PC)."
         e is java.net.UnknownHostException -> "That address doesn't exist. Use the 100.x.x.x address from the dashboard."
@@ -585,7 +610,7 @@ class MainActivity : Activity() {
                     val body = JSONObject().put("decision", decision).put("reply", box.text.toString())
                     bgTask({ it.post("/api/requests/$id/reply", body) }) { toast("Sent"); loadInbox() }
                 }
-                when (kind) {
+                if (!isOwner && kind != "letter") { } else when (kind) {
                     "letter" -> c.addView(rowOf(button("Mark read / reply", cyan) { send("read") }))
                     "question" -> c.addView(rowOf(button("Answer", cyan) { send("noted") }))
                     "run_program" -> c.addView(rowOf(button("Run it", good) { send("approved") }, button("Don't run", bad) { send("denied") }))
@@ -878,7 +903,6 @@ class MainActivity : Activity() {
                 head.addView(rowOf(smallButton("Remove", line) {
                     bgTask({ it.post("/api/goals/cancel", JSONObject().put("id", id)) }) { loadWorkshop() } }))
         }
-        content.addView(head)
 
         val add = section("Give it a goal")
         add.addView(label("Coding goals with tests are checked automatically in the sandbox. Without tests, you review the answer.", 12f, dim))
@@ -900,7 +924,6 @@ class MainActivity : Activity() {
                 if (r.optBoolean("ok")) { toast("Goal added"); loadWorkshop() } else toast(r.optString("error", "Couldn't add it"))
             }
         }))
-        content.addView(add)
 
         val mach = section("Machines & parts")
         val parts = d.optJSONObject("parts")
@@ -916,7 +939,6 @@ class MainActivity : Activity() {
             mach.addView(label("It ${m.optString("does")}.", 12f, dim))
         }
         if (ms.length() == 0) mach.addView(label("No machines yet.", 13f, dim))
-        content.addView(mach)
 
         val plans = section("Real-world plans")
         plans.addView(label("About once a week your resident designs a small low-voltage project for you to build.", 12f, dim))
@@ -935,7 +957,6 @@ class MainActivity : Activity() {
             if (q.optString("scad").isNotBlank()) btns.add(smallButton("⬇ OpenSCAD", line) { savePlanFile(pid, "scad") })
             plans.addView(rowOf(*btns.toTypedArray()))
         }
-        content.addView(plans)
     }
 
     private fun reviewGoal(id: Int, passed: Boolean) {
@@ -1374,10 +1395,14 @@ class MainActivity : Activity() {
         val msgs = st.optJSONArray("messages") ?: JSONArray()
         for (i in 0 until msgs.length()) {
             val m = msgs.getJSONObject(i)
-            val mine = m.optString("who") == "creator"
-            c.addView(spaced(label(if (mine) "You" else (lastStatus?.optString("name") ?: "Resident"), 12f, if (mine) warn else cyan, true)))
+            val human = m.optString("who") == "creator"
+            val speaker = m.optString("name").takeIf { it.isNotBlank() && it != "null" }
+            val me = prefs.getString("username", "") ?: ""
+            val mine = human && (speaker == null || speaker.equals(me, true) || (isOwner && speaker == lastStatus?.optString("creator")))
+            c.addView(spaced(label(if (mine) "You" else if (human) speaker!! else (lastStatus?.optString("name") ?: "Resident"), 12f,
+                if (mine) warn else if (human) pink else cyan, true)))
             c.addView(label(m.optString("text"), 15f))
-            if (!mine) {
+            if (!human) {
                 val n = i
                 c.addView(button("🔊 Hear it", dim) { toast("Getting its voice…"); playAudio("/api/chat/voice/$n.wav") }.apply { textSize = 12f })
             }
@@ -1435,31 +1460,81 @@ class MainActivity : Activity() {
     }
 
     private fun showHub() {
-        // Connection settings
+        // Connection: address + pair code, then create a username and wait for the owner's approval
         val conn = card()
         conn.addView(label("Connection", 13f, dim, true))
-        conn.addView(label("Find these on the Stellar Hub dashboard, under “Hub Connect S · phone pairing”.", 13f, dim))
-        val addr = input("Address, e.g. 100.101.102.103:8080", value = prefs.getString("address", "") ?: "")
-        val code = input("Pair code, e.g. ABCD-EFGH-JKMN", value = prefs.getString("code", "") ?: "").apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
-        }
-        conn.addView(spaced(addr))
-        conn.addView(spaced(code))
-        conn.addView(rowOf(button("Save & test", cyan) {
-            prefs.edit().putString("address", addr.text.toString().trim())
-                .putString("code", code.text.toString().trim()).putInt("last_event", -1).apply()
-            connectFromPrefs()
-            Notifier.schedule(this)?.let { toast(it) }
-            io.execute { try { Notifier.check(applicationContext) } catch (_: Exception) { } }
-            caption.text = "Testing the connection…"
-            bgTask({ it.getObject("/api/ping") }) { r ->
-                val n = r.optString("name")
-                toast(if (n.isBlank() || n == "null") "Connected to Stellar Hub" else "Connected to $n's colony")
-                pollStatus()
-                showTab("hub")
+        val signedIn = (prefs.getString("code", "") ?: "").isNotBlank()
+        val uname = prefs.getString("username", "") ?: ""
+        if (signedIn && prefs.getString("join_status", "") != "pending") {
+            conn.addView(label("Signed in as $uname · ${myRole}", 15f, good, true))
+            conn.addView(label(when (myRole) {
+                "owner" -> "You can do everything: approve requests and programs, change settings, and manage other people's devices."
+                "member" -> "You can watch, chat, give goals, write letters and take a turn. The owner handles approvals and settings."
+                else -> "You can watch the colony. Ask the owner if you'd like to chat too."
+            }, 12f, dim))
+            conn.addView(rowOf(smallButton("Refresh", line) { refreshMe { showTab("hub") } },
+                smallButton("Sign out", bad) {
+                    prefs.edit().remove("code").remove("username").remove("role").remove("join_status").apply()
+                    connectFromPrefs(); showTab("hub")
+                }))
+        } else if (signedIn) {
+            conn.addView(label("Waiting for approval", 15f, warn, true))
+            conn.addView(label("“$uname” has asked to join. The owner approves it on the Stellar Hub dashboard (Hub tab → People & devices) or in their app.", 13f, dim))
+            conn.addView(rowOf(smallButton("Check again", cyan) {
+                bgTask({ it.getObject("/api/me") }) { me ->
+                    prefs.edit().putString("role", me.optString("role")).putString("join_status", me.optString("status")).apply()
+                    if (me.optString("status") == "active") { toast("Approved! Welcome, $uname"); pollStatus(); Notifier.schedule(this) }
+                    showTab("hub")
+                }
+            }, smallButton("Start over", bad) {
+                prefs.edit().remove("code").remove("join_status").apply(); connectFromPrefs(); showTab("hub")
+            }))
+        } else {
+            conn.addView(label("Step 1 · Find these on the Stellar Hub dashboard, under “Hub Connect S · phone pairing”.", 13f, dim))
+            val addr = input("Address, e.g. 100.101.102.103:8080", value = prefs.getString("address", "") ?: "")
+            val code = input("Pair code, e.g. ABCD-EFGH-JKMN", value = prefs.getString("pair_code", "") ?: "").apply {
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
             }
-        }))
+            conn.addView(spaced(addr)); conn.addView(spaced(code))
+            conn.addView(spaced(label("Step 2 · Create your username", 14f, textCol, true)))
+            conn.addView(label("This is how the resident will know you. 3-20 letters, numbers or spaces.", 12f, dim))
+            val name = input("Username", value = uname)
+            conn.addView(spaced(name))
+            var another = false
+            val anotherBtn = smallButton("☐ This is another device of mine", line) { }
+            anotherBtn.setOnClickListener {
+                another = !another
+                anotherBtn.text = if (another) "☑ This is another device of mine" else "☐ This is another device of mine"
+            }
+            conn.addView(rowOf(anotherBtn))
+            val msg = label("", 13f, bad)
+            conn.addView(msg)
+            conn.addView(rowOf(button("Join", cyan) {
+                val address = addr.text.toString().trim()
+                val pc = code.text.toString().trim().uppercase()
+                val n = name.text.toString().trim()
+                if (address.isBlank() || pc.isBlank()) { msg.text = "Enter the address and pair code first."; return@button }
+                prefs.edit().putString("address", address).putString("pair_code", pc).apply()
+                msg.setTextColor(dim); msg.text = "Checking…"
+                val body = JSONObject().put("code", pc).put("name", n).put("another_device", another)
+                    .put("platform", "${Build.MANUFACTURER} ${Build.MODEL}".trim())
+                io.execute {
+                    val r = try { Api(address, "").join(body) } catch (e: Exception) { JSONObject().put("ok", false).put("error", explain(e)) }
+                    main.post {
+                        if (!r.optBoolean("ok")) { msg.setTextColor(bad); msg.text = r.optString("error", "Couldn't join") }
+                        else {
+                            prefs.edit().putString("code", r.optString("token")).putString("username", r.optString("name"))
+                                .putString("join_status", "pending").putString("role", "member").putInt("last_event", -1).apply()
+                            connectFromPrefs()
+                            toast("Asked to join as ${r.optString("name")}")
+                            showTab("hub")
+                        }
+                    }
+                }
+            }))
+        }
         content.addView(conn)
+        if (isOwner && signedIn && prefs.getString("join_status", "") != "pending") content.addView(devicesCard())
 
         // Notifications
         val nc = card()
@@ -1483,9 +1558,11 @@ class MainActivity : Activity() {
             }
         ))
         content.addView(nc)
-        content.addView(phoneMusicCard())
-        content.addView(listeningCard())
-        content.addView(monitorCard())
+        if (isOwner) {
+            content.addView(phoneMusicCard())
+            content.addView(listeningCard())
+        }
+        if (isOwner) content.addView(monitorCard())
 
         val s = lastStatus ?: return
         // Resident
@@ -1554,6 +1631,37 @@ class MainActivity : Activity() {
     private val discPackage = "com.stellapp.disc"
     private val audioPermission get() =
         if (Build.VERSION.SDK_INT >= 33) "android.permission.READ_MEDIA_AUDIO" else "android.permission.READ_EXTERNAL_STORAGE"
+
+    /** Owner only: approve new phones, change roles, remove devices. */
+    private fun devicesCard(): LinearLayout {
+        val c = card()
+        c.addView(label("People & devices", 13f, dim, true))
+        c.addView(label("Member: watch, chat, give goals and letters, take a turn. Viewer: watch only.", 12f, dim))
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        c.addView(list)
+        fun change(id: Int, body: JSONObject) { bgTask({ it.post("/api/devices/$id", body) }) { showTab("hub") } }
+        bgTask({ it.getObject("/api/devices") }) { d ->
+            val ds = d.optJSONArray("devices") ?: JSONArray()
+            if (ds.length() == 0) list.addView(label("No phones yet.", 13f, dim))
+            for (i in 0 until ds.length()) {
+                val dv = ds.getJSONObject(i)
+                val id = dv.optInt("id")
+                val pending = dv.optString("status") == "pending"
+                list.addView(spaced(label("📱 ${dv.optString("name")} · ${if (pending) "waiting" else dv.optString("role")}", 14f,
+                    if (pending) warn else textCol, true)))
+                list.addView(label(dv.optString("platform").ifBlank { "phone" } + if (pending) "" else " · last seen ${fmt(dv.optDouble("last_seen"))}", 12f, dim))
+                if (pending) list.addView(rowOf(
+                    smallButton("Approve as member", good) { change(id, JSONObject().put("status", "active").put("role", "member")) },
+                    smallButton("Viewer", cyan) { change(id, JSONObject().put("status", "active").put("role", "viewer")) },
+                    smallButton("Decline", bad) { change(id, JSONObject().put("status", "removed")) }))
+                else list.addView(rowOf(
+                    *listOf("owner", "member", "viewer").filter { it != dv.optString("role") }.map { r ->
+                        smallButton("Make $r", line) { change(id, JSONObject().put("role", r)) } }.toTypedArray(),
+                    smallButton("Remove", bad) { change(id, JSONObject().put("status", "removed")) }))
+            }
+        }
+        return c
+    }
 
     private fun discInstalled(): Boolean = try {
         packageManager.getPackageInfo(discPackage, 0); true

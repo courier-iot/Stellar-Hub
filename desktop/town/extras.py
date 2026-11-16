@@ -530,7 +530,7 @@ class ExtrasMixin:
         return "calm"
 
     def extra_news(self):
-        news = list(self.pet_news()) + list(self.workshop_news())
+        news = list(self.pet_news()) + list(self.workshop_news()) + list(self.people_news())
         w = self.weather()
         if w == "dust_storm":
             news.append("WEATHER: a dust storm has closed the walkway. You can only do things where you are until it clears.")

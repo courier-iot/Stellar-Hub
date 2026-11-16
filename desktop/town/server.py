@@ -3,8 +3,9 @@
 Requests from this computer (localhost) are allowed without the pair code, with two safety checks so that
 websites open in your browser can't control the hub: the Host header must be localhost (stops "DNS
 rebinding"), and changes (POST) must carry the dashboard's own header, which other sites can't send.
-Requests from anywhere else (your phone over Tailscale) need the pair code, sent as the X-Hub-Token header
-or ?token=... in the URL. Too many wrong pair codes from one address get it blocked for 5 minutes.
+Requests from anywhere else (phones over Tailscale) need a device key, sent as the X-Hub-Token header or
+?token=... in the URL. A phone gets its key by joining with the pair code and a username (POST /api/join); the key
+only works once the owner approves the device. Each device has a role: owner, member or viewer (see devices.py). Too many wrong pair codes from one address get it blocked for 5 minutes.
 """
 import hmac
 import json
@@ -21,6 +22,7 @@ from . import interiors
 from urllib.parse import parse_qs, urlparse
 
 from .osutil import find_exe, run_quiet
+from .devices import MEMBER_POSTS, OWNER_ONLY_GETS, PRIVATE_EVENTS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
@@ -96,17 +98,61 @@ def make_server(agent, host, port, pair_code):
                 return True
             return origin in (f"http://localhost:{port}", f"http://127.0.0.1:{port}") or not self._local()
 
-        def _authed(self, qs):
-            ip = self.client_address[0]
+        who = None     # the signed-in device for this request (the hub computer counts as the owner)
+
+        def _identity(self, qs):
             if self._local():
-                return True
+                return {"id": 0, "name": None, "role": "owner", "status": "active", "local": True}
+            ip = self.client_address[0]
             if _blocked(ip):
-                return False
-            given = self.headers.get("X-Hub-Token") or (qs.get("token") or [""])[0]
-            ok = hmac.compare_digest(given.strip().upper().encode(), pair_code.encode())
-            if not ok:
+                return None
+            given = (self.headers.get("X-Hub-Token") or (qs.get("token") or [""])[0]).strip()
+            d = agent.device_for(given) if given else None
+            if not d or d["status"] == "removed":
                 _failed(ip)
-            return ok
+                return None
+            return dict(d)
+
+        def _gate(self, qs):
+            """Signs the request in. Returns True when it may go on; otherwise it has already answered."""
+            self.who = self._identity(qs)
+            if self.who is None:
+                if _blocked(self.client_address[0]):
+                    self._json({"error": "too many wrong keys, try again in 5 minutes"}, 429)
+                else:
+                    self._json({"error": "not signed in", "join": True}, 401)
+                return False
+            if self.who["status"] == "pending":
+                self._json({"error": "waiting for the owner to approve this device", "pending": True,
+                            "name": self.who["name"]}, 403)
+                return False
+            return True
+
+        @property
+        def role(self):
+            return (self.who or {}).get("role", "viewer")
+
+        @property
+        def person(self):
+            """The speaker's name for the resident, or None when it's the creator (the owner)."""
+            return None if self.role == "owner" else (self.who or {}).get("name")
+
+        def _join(self, body):
+            ip = self.client_address[0]
+            if _blocked(ip):
+                return self._json({"ok": False, "error": "too many wrong pair codes, try again in 5 minutes"}, 429)
+            code = str(body.get("code", "")).strip().upper()
+            if not hmac.compare_digest(code.encode(), pair_code.encode()):
+                _failed(ip)
+                return self._json({"ok": False, "error": "Wrong pair code. Check it on the Stellar Hub dashboard."}, 401)
+            another = bool(body.get("another_device"))
+            if body.get("check_only"):
+                problem = agent.username_problem(body.get("name"), another)
+                return self._json({"ok": problem is None, "error": problem})
+            out, problem = agent.join_device(body.get("name"), str(body.get("platform", ""))[:60], another)
+            if problem:
+                return self._json({"ok": False, "error": problem}, 400)
+            return self._json({"ok": True, **out})
 
         def _send(self, body, ctype="application/json", code=200):
             data = body if isinstance(body, bytes) else body.encode("utf-8")
@@ -153,11 +199,19 @@ def make_server(agent, host, port, pair_code):
                                       "text/plain", 403)
                 with open(os.path.join(HERE, "dashboard.html"), encoding="utf-8") as f:
                     return self._send(f.read(), "text/html")
-            if not self._authed(qs):
-                if _blocked(self.client_address[0]):
-                    return self._json({"error": "too many wrong pair codes, try again in 5 minutes"}, 429)
-                return self._json({"error": "wrong or missing pair code"}, 401)
-            if self.headers.get("X-Hub-App") == "open":
+            if u.path == "/api/me":
+                self.who = self._identity(qs)
+                if self.who is None:
+                    return self._json({"error": "not signed in", "join": True}, 401)
+                return self._json({**{k: self.who.get(k) for k in ("id", "name", "role", "status")},
+                                   "creator": agent.creator, "resident": agent.db.get("name")})
+            if not self._gate(qs):
+                return None
+            if u.path in OWNER_ONLY_GETS and self.role != "owner":
+                return self._json({"error": "only the owner can see this"}, 403)
+            if u.path == "/api/devices":
+                return self._json({"devices": agent.devices_list()})
+            if self.headers.get("X-Hub-App") == "open" and self.role == "owner":
                 agent.phone_here()
             try:
                 limit = max(1, min(500, int((qs.get("limit") or ["60"])[0])))
@@ -180,6 +234,10 @@ def make_server(agent, host, port, pair_code):
             if u.path == "/api/feed":
                 return self._json(db.q("SELECT * FROM memories ORDER BY id DESC LIMIT ?", (limit,)))
             if u.path == "/api/inbox":
+                if self.role != "owner":    # other people see the letters the resident wrote to them
+                    return self._json(db.q("SELECT * FROM requests WHERE kind='letter' AND lower(to_user)=? "
+                                           "ORDER BY CASE WHEN status='unread' THEN 0 ELSE 1 END, id DESC LIMIT ?",
+                                           (str(self.who.get("name") or "").lower(), limit)))
                 return self._json(db.q(
                     "SELECT * FROM requests ORDER BY CASE WHEN status IN ('pending','unread') THEN 0 ELSE 1 END, id DESC LIMIT ?",
                     (limit,)))
@@ -194,12 +252,19 @@ def make_server(agent, host, port, pair_code):
                 if after < 0:  # phone asking only "where are we?" when it first pairs
                     return self._json({"latest": latest, "events": []})
                 ev = db.q("SELECT * FROM events WHERE id > ? ORDER BY id LIMIT 50", (after,))
+                me = str((self.who or {}).get("name") or "").lower()
+                keep = []
                 for e in ev:
                     if e["kind"] in ("request", "question", "letter"):
-                        r = db.q("SELECT status, kind FROM requests WHERE id=?", (e["ref_id"],))
+                        r = db.q("SELECT status, kind, to_user FROM requests WHERE id=?", (e["ref_id"],))
                         e["open"] = bool(r and r[0]["status"] in ("pending", "unread"))
                         e["request_kind"] = r[0]["kind"] if r else None
-                return self._json({"latest": latest, "events": ev})
+                        if self.role != "owner" and e["kind"] == "letter" and not (r and str(r[0]["to_user"] or "").lower() == me):
+                            continue
+                    if self.role != "owner" and e["kind"] in PRIVATE_EVENTS:
+                        continue
+                    keep.append(e)
+                return self._json({"latest": latest, "events": keep})
             m = re.fullmatch(r"/api/(audio|chat/voice|album|gifts)/(\d+)\.(wav|png)", u.path)
             if m:
                 kind, n = m.group(1), int(m.group(2))
@@ -302,12 +367,24 @@ def make_server(agent, host, port, pair_code):
             if self._local() and not (self.headers.get("X-Stellar-Hub") or self.headers.get("X-Hub-Token")):
                 return self._json({"error": "missing X-Stellar-Hub header"}, 403)
             u = urlparse(self.path)
-            if not self._authed(parse_qs(u.query)):
-                return self._json({"error": "wrong or missing pair code"}, 401)
             path = u.path
             body = self._body(2_000_000 if path == "/api/phone/music" else 100_000)
-            if self.headers.get("X-Hub-App") == "open":
+            if path == "/api/join":
+                return self._join(body)
+            if not self._gate(parse_qs(u.query)):
+                return None
+            if self.role != "owner":
+                letter_reply = re.fullmatch(r"/api/requests/(\d+)/reply", path)
+                mine = letter_reply and db.q("SELECT id FROM requests WHERE id=? AND kind='letter' AND lower(to_user)=?",
+                                             (int(letter_reply.group(1)), str(self.who.get("name") or "").lower()))
+                if self.role == "viewer" or not (path in MEMBER_POSTS or mine):
+                    return self._json({"error": f"your account ({self.role}) can't do that. Ask the owner."}, 403)
+            if self.headers.get("X-Hub-App") == "open" and self.role == "owner":
                 agent.phone_here()
+            m = re.fullmatch(r"/api/devices/(\d+)", path)
+            if m:
+                ok = agent.update_device(int(m.group(1)), body.get("role"), body.get("status"), body.get("name"))
+                return self._json({"ok": ok, "devices": agent.devices_list()})
             if path == "/api/phone/music":
                 tracks = body.get("tracks")
                 if not isinstance(tracks, list):
@@ -336,20 +413,27 @@ def make_server(agent, host, port, pair_code):
                 title, text = str(body.get("title", "")).strip(), str(body.get("text", "")).strip()
                 if not title or not text:
                     return self._json({"ok": False, "error": "a goal needs a title and a description"}, 400)
-                gid = agent.add_creator_goal(body.get("kind", "code"), title, text, body.get("tests") or None)
+                gid = agent.add_creator_goal(body.get("kind", "code"), title, text, body.get("tests") or None, by=self.person)
                 return self._json({"ok": True, "id": gid})
             if path == "/api/goals/review":
                 try:
                     gid = int(body.get("id"))
                 except (TypeError, ValueError):
                     return self._json({"ok": False}, 400)
+                if self.role != "owner" and not db.q("SELECT id FROM goals WHERE id=? AND lower(by_user)=?",
+                                                     (gid, str(self.who.get("name") or "").lower())):
+                    return self._json({"ok": False, "error": "only the person who set this goal (or the owner) can review it"}, 403)
                 return self._json({"ok": agent.review_goal(gid, bool(body.get("passed")), str(body.get("note", ""))[:500])})
             if path == "/api/goals/cancel":
                 try:
                     gid = int(body.get("id"))
                 except (TypeError, ValueError):
                     return self._json({"ok": False}, 400)
-                agent.db.x("UPDATE goals SET status='cancelled' WHERE id=? AND source='creator' AND status IN ('open','review')", (gid,))
+                if self.role == "owner":
+                    agent.db.x("UPDATE goals SET status='cancelled' WHERE id=? AND source='creator' AND status IN ('open','review')", (gid,))
+                else:
+                    agent.db.x("UPDATE goals SET status='cancelled' WHERE id=? AND source='creator' AND lower(by_user)=? "
+                               "AND status IN ('open','review')", (gid, str(self.who.get("name") or "").lower()))
                 return self._json({"ok": True})
             if path == "/api/pets/brain":
                 if not self._local():
@@ -367,13 +451,13 @@ def make_server(agent, host, port, pair_code):
                 return self._json({"ok": ok})
             m = re.fullmatch(r"/api/requests/(\d+)/reply", path)
             if m:
-                ok = agent.reply_request(int(m.group(1)), body.get("decision", ""), str(body.get("reply", ""))[:3000])
+                ok = agent.reply_request(int(m.group(1)), body.get("decision", ""), str(body.get("reply", ""))[:3000], sender=self.person)
                 return self._json({"ok": ok}, 200 if ok else 404)
             if path == "/api/letter":
                 text = str(body.get("text", "")).strip()
                 if not text:
                     return self._json({"ok": False, "error": "empty letter"}, 400)
-                agent.send_letter(text[:3000])
+                agent.send_letter(text[:3000], sender=self.person)
                 return self._json({"ok": True})
             if path == "/api/turn":
                 threading.Thread(target=agent.take_turn, daemon=True).start()
@@ -414,7 +498,7 @@ def make_server(agent, host, port, pair_code):
                 if not text:
                     return self._json({"error": "say something"}, 400)
                 try:
-                    return self._json({"reply": agent.chat_say(text), "chat": agent.chat_state()})
+                    return self._json({"reply": agent.chat_say(text, who=self.person), "chat": agent.chat_state()})
                 except Exception as e:
                     return self._json({"error": f"{agent.name} couldn't answer: {e}"}, 503)
             if path == "/api/chat/end":
