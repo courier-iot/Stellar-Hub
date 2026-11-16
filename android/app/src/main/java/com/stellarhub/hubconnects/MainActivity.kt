@@ -52,7 +52,7 @@ class MainActivity : Activity() {
     private val names = mapOf(
         "home" to "Home Dome", "library" to "Observatory Library", "internet_cafe" to "Uplink Café",
         "post_office" to "Relay Post", "salon" to "Nova Salon", "bank" to "Credit Vault",
-        "workshop" to "Fabrication Hangar", "greenhouse" to "Hydro Greenhouse", "radio_tower" to "Radio Tower",
+        "workshop" to "Fabrication Hangar", "pet_shop" to "Pet Shop", "greenhouse" to "Hydro Greenhouse", "radio_tower" to "Radio Tower",
         "archive" to "Archive Vault", "spaceport" to "Spaceport", "gallery" to "Starlight Gallery", "park" to "Low-G Park",
         "studio" to "Radio Studio", "station" to "Orbital Station", "exchange" to "Curio Exchange"
     )
@@ -78,7 +78,13 @@ class MainActivity : Activity() {
         "play_composition" to "playing its own song", "station_study" to "studying",
         "check_exchange" to "browsing the Exchange", "sell_curio" to "selling curios", "trade_up" to "trading up curios",
         "auction_curio" to "starting an auction", "list_phone_music" to "browsing the music on your phone",
-        "play_phone_music" to "playing a song on your phone"
+        "play_phone_music" to "playing a song on your phone",
+        "browse_pets" to "looking at pets", "adopt_pet" to "adopting a pet", "train_pet" to "training a pet",
+        "check_pets" to "checking on its pets", "feed_pets" to "feeding its pets", "play_with_pet" to "playing with a pet",
+        "rest_pet" to "resting a pet", "treat_pet" to "taking a pet to the clinic", "rescue_pet" to "rescuing a pet",
+        "work_pet" to "putting a pet to work", "decorate" to "decorating", "host_show" to "hosting its radio show",
+        "make_gift" to "making you a gift", "talk_to_visitor" to "talking with a visitor", "read_manual" to "reading a manual",
+        "read_plant_guide" to "reading the plant guide"
     )
     private val hobbyIcons = mapOf("painting" to "🎨", "writing" to "✍️", "composing" to "🎼", "astronomy" to "🔭",
         "collecting" to "🧺", "games" to "♟️", "gardening" to "🌱", "coding" to "🛠")
@@ -100,6 +106,7 @@ class MainActivity : Activity() {
     private var resumed = false
     private var player: MediaPlayer? = null
     private var chessSel: String? = null
+    private var lastPalette: Map<Char, Int>? = null
     private lateinit var turnBtn: Button
     private lateinit var viewBtn: Button
     private lateinit var followBtn: Button
@@ -381,7 +388,10 @@ class MainActivity : Activity() {
                 val v = s.optString("world_version")
                 val world = if (v != worldVersion) a.getObject("/api/world") else null
                 main.post {
-                    if (world != null) { town.setWorld(world); worldVersion = v }
+                    if (world != null) {
+                        town.setWorld(world); worldVersion = v
+                        lastPalette = try { Pixel.palette(world.getJSONObject("palette")) } catch (e: Exception) { lastPalette }
+                    }
                     applyStatus(s)
                 }
             } catch (e: Exception) {
@@ -578,9 +588,54 @@ class MainActivity : Activity() {
 
     private fun loadColony() {
         loading()
-        bgTask({ Pair(Triple(it.getObject("/api/colony"), it.getArray("/api/milestones"), it.getObject("/api/gallery")), it.getObject("/api/visitors")) }) { (t, vis) ->
+        bgTask({ Triple(Triple(it.getObject("/api/colony"), it.getArray("/api/milestones"), it.getObject("/api/gallery")), it.getObject("/api/visitors"), it.getObject("/api/pets")) }) { (t, vis, pets) ->
             val (col, ms, gal) = t
-            if (tab == "colony") { renderDigests(gal); renderVisitors(vis); renderColony(col, false); renderMilestones(ms); renderStudies(gal) }
+            if (tab == "colony") { renderDigests(gal); renderPets(pets); renderVisitors(vis); renderColony(col, false); renderMilestones(ms); renderStudies(gal) }
+        }
+    }
+
+    private fun petBar(c: LinearLayout, name: String, v: Double, color: Int) {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        row.addView(label(name, 12f, dim), LinearLayout.LayoutParams(dp(78), ViewGroup.LayoutParams.WRAP_CONTENT))
+        val pb = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100; progress = v.toInt().coerceIn(0, 100)
+            progressTintList = android.content.res.ColorStateList.valueOf(color)
+        }
+        row.addView(pb, LinearLayout.LayoutParams(0, dp(10), 1f))
+        c.addView(row)
+    }
+
+    private fun renderPets(d: JSONObject) {
+        val pets = d.optJSONArray("pets") ?: return
+        val alive = (0 until pets.length()).map { pets.getJSONObject(it) }.filter { it.optString("status") in listOf("ok", "sick", "injured", "critical") }
+        if (alive.isEmpty()) return
+        val c = section("PETS")
+        val credits = d.optInt("credits")
+        if (credits < 0) c.addView(label("In debt: $credits credits. Nothing can be bought until it's paid back.", 13f, bad))
+        val pal = lastPalette
+        for (p in alive) {
+            val status = p.optString("status")
+            val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            if (pal != null) p.optJSONArray("frames")?.optJSONArray(0)?.let { head.addView(pixelView(it, pal, 40)) }
+            head.addView(label("  ${p.optString("name")} · ${p.optString("species_name")} · $status", 15f,
+                if (status == "ok") good else if (status == "critical") bad else warn, true))
+            c.addView(spaced(head))
+            if (status == "critical") c.addView(label("Critical! Rescue costs ${p.optInt("rescue")} credits; " +
+                "${p.optDouble("hours_left", 0.0).toInt()} hours left before it's taken away.", 13f, bad))
+            val job = p.optString("job").takeIf { it.isNotBlank() && it != "null" }
+            c.addView(label((if (job != null) "Job: ${job.replace('_', ' ')} × ${p.optInt("shifts")}/day (safe ~${p.optInt("safe")})" else "Not trained yet") +
+                " · ${p.optString("stage")} · ${if (p.optBoolean("on_shift")) "on shift" else "resting"}", 12f, dim))
+            petBar(c, "health", p.optDouble("health"), good)
+            petBar(c, "energy", p.optDouble("energy"), cyan)
+            petBar(c, "fullness", 100 - p.optDouble("hunger"), warn)
+            petBar(c, "happiness", p.optDouble("happiness"), pink)
+            petBar(c, "strain", p.optDouble("strain"), bad)
+        }
+        val log = d.optJSONArray("log") ?: JSONArray()
+        for (i in 0 until minOf(4, log.length())) {
+            val l = log.getJSONObject(i)
+            c.addView(spaced(label("${l.optString("name")} · ${fmt(l.optDouble("ts", 0.0))}", 12f, textCol, true)))
+            c.addView(label(l.optString("text"), 12f, dim))
         }
     }
 

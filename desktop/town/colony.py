@@ -200,7 +200,8 @@ class ColonyMixin:
                 return bid
         aliases = {"salon": "salon", "greenhouse": "greenhouse", "garden": "greenhouse", "radio": "radio_tower",
                    "archive": "archive", "spaceport": "spaceport", "rocket": "spaceport", "hangar": "workshop",
-                   "workshop": "workshop", "fabrication": "workshop", "vault": "bank", "bank": "bank"}
+                   "workshop": "workshop", "fabrication": "workshop", "vault": "bank", "bank": "bank",
+                   "pet": "pet_shop", "pets": "pet_shop"}
         for word, bid in aliases.items():
             if re.search(rf"\b{word}\b", t):
                 return bid

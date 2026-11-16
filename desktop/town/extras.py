@@ -521,7 +521,7 @@ class ExtrasMixin:
         return "calm"
 
     def extra_news(self):
-        news = []
+        news = list(self.pet_news())
         got = self.db.get("manuals") or {}
         for bid, m in got.items():
             if m.get("opened") and time.time() - m["opened"] < 72 * 3600 and bid in BUILDINGS:

@@ -127,8 +127,17 @@ def main():
 
     tick = cfg["tick_minutes"] * 60
     log(f"The resident wakes every {cfg['tick_minutes']} minutes. Press Ctrl+C to stop.")
+    def pet_loop():      # pets live on their own clock, using the computer's spare time
+        while True:
+            try:
+                agent.pet_tick()
+            except Exception as e:
+                log(f"Pet problem: {e}")
+            time.sleep(max(60, int(cfg.get("pets", {}).get("tick_minutes", 5)) * 60))
+
     try:
         threading.Thread(target=lambda: agent.updater.check(), daemon=True).start()
+        threading.Thread(target=pet_loop, daemon=True).start()
         while True:
             if time.time() - (db.get("update") or {}).get("checked", 0) > 12 * 3600:
                 threading.Thread(target=lambda: agent.updater.check(), daemon=True).start()

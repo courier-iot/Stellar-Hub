@@ -43,6 +43,8 @@ class TownView(context: Context) : View(context) {
     private var floats = true
     private var decor: List<Building> = emptyList()
     private var visitors: List<Building> = emptyList()
+    private class Pet(val id: Int, val homeX: Int, val targetX: Int?, val asleep: Boolean, val unwell: Boolean, val frames: List<Bitmap>, var x: Float)
+    private var pets: List<Pet> = emptyList()
     private var listening = false
     private var away = false
     private var night = false
@@ -177,6 +179,16 @@ class TownView(context: Context) : View(context) {
         visitors = if (vj == null) emptyList() else (0 until vj.length()).map { i ->
             val v = vj.getJSONObject(i)
             Building(v.optString("name"), v.getInt("x"), v.getInt("y"), 0, bake(v.getJSONArray("sprite"), pal), null)
+        }
+        val pj = world.optJSONArray("pets")
+        val oldX = pets.associate { it.id to it.x }
+        pets = if (pj == null) emptyList() else (0 until pj.length()).map { i ->
+            val p = pj.getJSONObject(i)
+            val fr = p.getJSONArray("frames")
+            val id = p.getInt("id")
+            Pet(id, p.getInt("x"), if (p.isNull("target_x")) null else p.optInt("target_x"), p.optBoolean("asleep"),
+                p.optString("status") in listOf("sick", "injured", "critical"),
+                (0 until fr.length()).map { bake(fr.getJSONArray(it), pal) }, oldX[id] ?: p.getInt("x").toFloat())
         }
         away = world.optBoolean("away", false)
         val tw = world.getJSONArray("twinkle")
@@ -662,6 +674,28 @@ class TownView(context: Context) : View(context) {
         }
         for (d in decor) canvas.drawBitmap(d.bitmap, d.x.toFloat(), d.y.toFloat(), pixelPaint)
         for (v in visitors) canvas.drawBitmap(v.bitmap, v.x - 8f, v.y + (sin(t / 700)).roundToInt().toFloat(), pixelPaint)
+        for (p in pets) {                       // pets trot off to their jobs and back
+            val goal = (p.targetX ?: p.homeX).toFloat()
+            val d = goal - p.x
+            val moving = abs(d) > 0.5f
+            if (moving) p.x += sign(d) * min(0.6f, abs(d))
+            val f = if (moving || !p.asleep) ((t / 250).toLong() % 2).toInt() else 0
+            val py = 192f - 12f - (if (moving && f == 1) 1f else 0f)
+            val bmp = p.frames[f.coerceAtMost(p.frames.size - 1)]
+            if (moving && d < 0) {
+                canvas.save(); canvas.scale(-1f, 1f, p.x.roundToInt().toFloat(), 0f)
+                canvas.drawBitmap(bmp, p.x.roundToInt() - 6f, py, pixelPaint); canvas.restore()
+            } else canvas.drawBitmap(bmp, p.x.roundToInt() - 6f, py, pixelPaint)
+            if (p.asleep && !moving) {
+                fill.color = Color.parseColor("#A7B0D3")
+                canvas.drawRect(p.x.roundToInt() + 4f, py - 3 + (sin(t / 500)).roundToInt(), p.x.roundToInt() + 6f, py - 2 + (sin(t / 500)).roundToInt(), fill)
+            }
+            if (p.unwell) {
+                fill.color = Color.parseColor("#FF5D73")
+                canvas.drawRect(p.x.roundToInt() - 1f, py - 4, p.x.roundToInt() + 2f, py - 3, fill)
+                canvas.drawRect(p.x.roundToInt().toFloat(), py - 5, p.x.roundToInt() + 1f, py - 2, fill)
+            }
+        }
 
         for (i in 0 until (worldW / 48 + 1)) {
             val a = (0.25 + 0.25 * sin(t / 400 - i)).coerceIn(0.0, 1.0)

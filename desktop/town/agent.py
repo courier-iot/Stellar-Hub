@@ -11,6 +11,7 @@ from .colony import COLOUR_PRICE, FORM_PRICE, ColonyMixin
 from .backup import make_backup
 from .exchange import ExchangeMixin
 from .extras import ExtrasMixin
+from .pets import PetsMixin
 from .hobbies import HobbiesMixin, level_for
 from .life import LifeMixin
 from .plants import SPECIES as PLANT_SPECIES
@@ -23,7 +24,7 @@ class BudgetExceeded(Exception):
     pass
 
 
-class Agent(ExtrasMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
+class Agent(ExtrasMixin, PetsMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
     def __init__(self, cfg, db, llm, data_dir):
         self.cfg, self.db, self.llm = cfg, db, llm
         self.mem = Memory(db)
@@ -31,6 +32,7 @@ class Agent(ExtrasMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
         os.makedirs(self.home_dir, exist_ok=True)
         self.personality_path = os.path.join(self.home_dir, "personality.md")
         self.turn_lock = threading.Lock()
+        self.pet_lock = threading.Lock()
         self.busy = False
         self.last_error = None
         self.model_status = None
@@ -782,6 +784,10 @@ What do you do now?"""
             return {"away": bool(self.expedition())}
         if bid == "internet_cafe":
             return {"storm": self.storm()}
+        if bid == "pet_shop":
+            from .pets import pet_frames
+            return {"pets": [{"name": p["name"], "status": p["status"], "frames": pet_frames(p["species"]),
+                              "asleep": not self.on_shift(p) or p["rest_until"] > time.time()} for p in self.pets()]}
         return {}
 
     def room_data(self, bid):
@@ -829,6 +835,7 @@ What do you do now?"""
     def world(self):
         w = sprites.world(self.draw_layout(), self.building_states(), self.appearance(), self.world_extras())
         w["visitors"] = self.world_visitors(w["buildings"])
+        w["pets"] = self.world_pets(w["buildings"])
         return w
 
     def toggle_building(self, bid):
@@ -861,7 +868,8 @@ What do you do now?"""
             "last_act": self.db.get("last_act"), "appearance": self.appearance(),
             "look": self.describe_look() if self.db.get("name") else None,
             "world_version": sprites.world_version(self.draw_layout(), self.building_states(), self.appearance(), self.world_extras())
-                             + ((self.visitor_now() or {}).get("id") or ""),
+                             + ((self.visitor_now() or {}).get("id") or "")
+                             + "".join(f"{p['id']}{p['status'][0]}{int(p['last_run'] > time.time() - 600)}{int(self.on_shift(p))}" for p in self.pets()),
             "emote": self.emote() if self.db.get("name") else None, "asleep": self.is_asleep(),
             "sleep": self.bedtime(), "night": self.is_night(), "daylight": self.daylight(),
             "chat": bool(self.chat_state()), "event": self.space_event(),

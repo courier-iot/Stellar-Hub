@@ -34,5 +34,13 @@
   "voice": {
     "enabled": true,
     "piper_voice": "amy"
+  },
+  "pets": {
+    "enabled": true,
+    "model": "qwen3:0.6b",
+    "main_model_fallback": true,
+    "max_cpu": 55,
+    "max_gpu": 30,
+    "tick_minutes": 5
   }
 }

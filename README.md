@@ -173,6 +173,12 @@ Keep Tailscale connected on your phone so the checks can reach the hub.
 16 buildings has its own room, drawn from the colony's real state. Use **Go inside / Outside** under the colony to
 switch views, and **Follow** to turn automatic following on or off. **▶ Take a turn** wakes the resident right away.
 
+**Pets:** once the Pet Shop is unlocked and built, the resident can adopt up to four helper pets, train each one
+for a single job, and decide how many shifts a day it works. Pets need rest, food and attention. Overworked pets get
+sick, injured, then critical: the resident can rescue a critical pet at a steep price (even into debt), or the Welfare
+Office takes it away with a fine. Simple jobs are plain code; thinking jobs use a small "pet brain" model
+(download it from the dashboard's Pets tab) and only run when your PC is idle, so pets never slow down your games.
+
 **Phone music (app + Stellar Disc):** in the Hub tab, tap **Share my music**. Only song titles, artists and albums go
 to your hub. At the Radio Tower the resident can then pick one of your songs, and Stellar Disc plays it on your phone,
 but only while Hub Connect S is open. Stop sharing removes the list from the hub.

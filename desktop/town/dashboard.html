@@ -307,14 +307,18 @@ showTab((() => { try { return localStorage.getItem("tab") || "today"; } catch (e
 const NAMES = {home:"Home Dome", library:"Observatory Library", internet_cafe:"Uplink Café", post_office:"Relay Post",
   greenhouse:"Hydro Greenhouse", radio_tower:"Radio Tower", archive:"Archive Vault", salon:"Nova Salon",
   gallery:"Starlight Gallery", park:"Low-G Park", studio:"Radio Studio", station:"Orbital Station", exchange:"Curio Exchange",
-  spaceport:"Spaceport", bank:"Credit Vault", workshop:"Fabrication Hangar"};
+  spaceport:"Spaceport", bank:"Credit Vault", workshop:"Fabrication Hangar", pet_shop:"Pet Shop"};
 const VERBS = {journal:"writing in its journal", update_personality:"rethinking who it is", rest:"resting",
   recall:"looking through its notes", write_note:"writing a note", research:"researching", read_page:"reading a web page",
   read_mail:"reading mail", send_request:"sending you a request", ask_question:"asking you a question",
   write_letter:"writing you a letter", change_look:"trying a new look", check_balance:"checking its credits", buy:"shopping",
   check_plants:"checking its plants", plant:"planting a seed", water:"watering plants", feed:"feeding plants",
   set_light:"adjusting grow lamps", remove:"clearing a pot", list_music:"browsing music", play_music:"playing music",
-  stop_music:"turning the music off", broadcast_log:"broadcasting a colony log", list_phone_music:"browsing the music on your phone", play_phone_music:"playing a song on your phone", archive_memories:"writing its life story",
+  stop_music:"turning the music off", broadcast_log:"broadcasting a colony log", browse_pets:"looking at pets", adopt_pet:"adopting a pet", train_pet:"training a pet",
+  check_pets:"checking on its pets", feed_pets:"feeding its pets", play_with_pet:"playing with a pet", rest_pet:"resting a pet",
+  treat_pet:"taking a pet to the clinic", rescue_pet:"rescuing a pet", work_pet:"putting a pet to work", decorate:"decorating",
+  host_show:"hosting its radio show", make_gift:"making you a gift", talk_to_visitor:"talking with a visitor", read_manual:"reading a manual",
+  read_plant_guide:"reading the plant guide", list_phone_music:"browsing the music on your phone", play_phone_music:"playing a song on your phone", archive_memories:"writing its life story",
   read_chapter:"rereading its life story", start_expedition:"launching an expedition", read_reports:"reading old reports",
   write_program:"building a program", list_programs:"checking its programs", expedition_return:"just back from an expedition",
   paint:"painting", showcase:"arranging its home", remove_showcase:"rearranging its home", upgrade_home:"adding a floor to its home",
@@ -352,6 +356,8 @@ const Town = {
     this.sprites.buildings = w.buildings.map(b => ({...b, img: this.bake(b.sprite, pal)}));
     this.sprites.decor = (w.decor || []).map(d => ({...d, img: this.bake(d.sprite, pal)}));
     this.sprites.visitors = (w.visitors || []).map(d => ({...d, img: this.bake(d.sprite, pal)}));
+    const old = {}; (this.sprites.pets || []).forEach(p => old[p.id] = p.cx);
+    this.sprites.pets = (w.pets || []).map(p => ({...p, imgs: p.frames.map(f => this.bake(f, pal)), cx: old[p.id] ?? p.x}));
     this.sprites.frames = w.resident.frames.map(f => this.bake(f, pal));
     this.sprites.emotes = {}; for (const k in (w.emotes || {})) this.sprites.emotes[k] = this.bake(w.emotes[k], pal);
     this.sprites.ship = w.trader_ship ? this.bake(w.trader_ship, pal) : null;
@@ -411,6 +417,16 @@ const Town = {
       for (const b of this.sprites.buildings) c.drawImage(b.img, b.x, b.y);
       for (const d of this.sprites.decor) c.drawImage(d.img, d.x, d.y);
       for (const v of this.sprites.visitors || []) c.drawImage(v.img, v.x - 8, v.y + Math.round(Math.sin(t / 700)));
+      for (const p of this.sprites.pets || []) {              // pets wander to their jobs and back
+        const goal = p.target_x ?? p.x, d = goal - p.cx;
+        if (Math.abs(d) > 0.5) p.cx += Math.sign(d) * Math.min(0.6, Math.abs(d));
+        const moving = Math.abs(d) > 0.5, f = moving || !p.asleep ? Math.floor(t / 250) % 2 : 0;
+        const py = 192 - 12 + (moving ? -(Math.floor(t / 250) % 2) : 0);
+        if (moving && d < 0) { c.save(); c.scale(-1, 1); c.drawImage(p.imgs[f], -Math.round(p.cx) - 6, py); c.restore(); }
+        else c.drawImage(p.imgs[f], Math.round(p.cx) - 6, py);
+        if (p.asleep && !moving) { c.fillStyle = "#a7b0d3"; c.fillRect(Math.round(p.cx) + 4, py - 3 + Math.round(Math.sin(t / 500)), 2, 1); }
+        if (["sick", "injured", "critical"].includes(p.status)) { c.fillStyle = "#ff5d73"; c.fillRect(Math.round(p.cx) - 1, py - 4, 3, 1); c.fillRect(Math.round(p.cx), py - 5, 1, 3); }
+      }
       for (let i = 0; i * 48 < w.w; i++) {
         c.globalAlpha = .25 + .25 * Math.sin(t / 400 - i);
         c.fillStyle = "#5ef2ff"; c.fillRect(4 + i * 48, 190, 3, 1);
@@ -840,6 +856,41 @@ async function loadExtras() {
      (vis.visits || []).map(v => `<div class="item"><b>${esc(v.visitor)}</b> <span class="meta">${when(v.ts)} · ${esc(NAMES[v.building] || v.building)}</span>
        <pre class="meta">${esc(v.talk)}</pre>${v.learned ? `<div><i>${esc(v.learned)}</i></div>` : ""}</div>`).join("");
 }
+async function loadPets() {
+  const d = await api("/api/pets");
+  const key = JSON.stringify(d); if (key === loadPets.last) return; loadPets.last = key;
+  const pal = Town.world ? Object.fromEntries(Object.entries(Town.world.palette).map(([k, v]) => [k, Town.toRGBA(v)])) : null;
+  const bar = (v, cls) => `<div class="bar ${cls || ""}"><div style="width:${Math.max(0, Math.min(100, v))}%"></div></div>`;
+  const pets = d.pets || [];
+  let html = `<div class="meta">Pet runner: ${esc(d.runner)} · Pet brain (${esc(d.brain_model)}): ${d.brain ? "ready ✓" :
+     `not downloaded <button class="ghost" onclick="petBrain()">Download (~0.5 GB)</button>`}
+     ${d.pull ? ` · ${esc(d.pull.step)}${d.pull.error ? ": " + esc(d.pull.error) : ""}` : ""}
+     · Credits: <span class="${d.credits < 0 ? "minus" : "credits"}">${d.credits}</span>${d.credits < 0 ? " (in debt)" : ""}</div>`;
+  html += `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px; margin-top:10px">` + pets.map((p, i) => {
+    const gone = !["ok", "sick", "injured", "critical"].includes(p.status);
+    return `<div class="item" style="border:1px solid ${p.status === "critical" ? "var(--bad)" : "var(--line)"}; border-radius:10px; padding:10px; ${gone ? "opacity:.55" : ""}">
+      <div class="row" style="margin:0"><canvas class="px petimg" data-i="${i}" width="12" height="12" style="width:48px; height:48px"></canvas>
+      <div><b>${esc(p.name)}</b> <span class="tag ${p.status === "ok" ? "approved" : "denied"}">${esc(p.status)}</span><br>
+      <span class="meta">${esc(p.species_name)} · ${esc(p.stage)} · day ${p.age_days.toFixed(0)} of ~${p.lifespan_days.toFixed(0)} · ${p.active === "day" ? "☀️ day" : p.active === "night" ? "🌙 night" : "any time"}${p.on_shift ? "" : " · resting"}</span></div></div>
+      ${p.status === "critical" ? `<div class="err">Critical! Rescue costs ${p.rescue} credits. ${p.hours_left.toFixed(0)} hours left before the Welfare Office takes it.</div>` : ""}
+      ${gone ? "" : `<div class="meta" style="margin-top:6px">Job: ${p.job ? `<b>${esc(p.job.replace(/_/g, " "))}</b> × ${p.shifts}/day (safe ~${p.safe})` : "not trained yet"} · speciality: ${esc(p.special)}</div>
+      <div class="lvl"><span>health</span><span class="meta">${p.health.toFixed(0)}</span></div>${bar(p.health)}
+      <div class="lvl"><span>energy</span><span class="meta">${p.energy.toFixed(0)}</span></div>${bar(p.energy)}
+      <div class="lvl"><span>fullness</span><span class="meta">${(100 - p.hunger).toFixed(0)}</span></div>${bar(100 - p.hunger)}
+      <div class="lvl"><span>happiness</span><span class="meta">${p.happiness.toFixed(0)}</span></div>${bar(p.happiness)}
+      <div class="lvl"><span>strain</span><span class="meta">${p.strain.toFixed(0)}</span></div>${bar(p.strain)}`}</div>`;
+  }).join("") + `</div>` + (pets.length ? "" : `<div class="meta" style="margin-top:8px">No pets yet. Unlock and build the Pet Shop, and your resident can adopt helpers.</div>`);
+  html += `<h2 class="sub">What the pets have been up to</h2>` + ((d.log || []).map(l => `<div class="item"><b>${esc(l.name)}</b> <span class="meta">${when(l.ts)}</span><div>${esc(l.text)}</div></div>`).join("") || `<div class="meta">Nothing yet.</div>`);
+  html += `<h2 class="sub">Species</h2>` + Object.entries(d.species).map(([k, s]) => `<div class="item"><b>${esc(s.name)}</b> <span class="meta">${s.price} credits · lives ${s.days[0]}-${s.days[1]} days · ${s.active} · good at ${esc(s.special)}</span><div class="meta">${esc(s.about)}</div></div>`).join("");
+  document.getElementById("pets").innerHTML = html;
+  if (pal) document.querySelectorAll("canvas.petimg").forEach(cv => {
+    const rows = pets[+cv.dataset.i].frames[0], g = cv.getContext("2d"), img = g.createImageData(12, 12);
+    for (let y = 0; y < 12; y++) for (let x = 0; x < 12; x++) { const ch = rows[y][x]; if (ch !== ".") img.data.set(pal[ch] || [255, 0, 255, 255], (y * 12 + x) * 4); }
+    g.putImageData(img, 0, 0);
+  });
+}
+async function petBrain() { await api("/api/pets/brain", {}); loadPets.last = null; setTimeout(loadPets, 800); }
+
 async function voiceInstall() { const v = document.getElementById("pipervoice"); if (v) await api("/api/voice/settings", {piper_voice: v.value});
   await api("/api/voice/install", {}); loadExtras.last = null; setTimeout(loadExtras, 500); }
 async function voiceTest() { await api("/api/voice/test", {}); alert("Recording a test… it shows up under Radio Tower → Radio shows & spoken logs in a few seconds."); }
@@ -879,6 +930,7 @@ async function lockB(id) { await api(`/api/buildings/${id}/lock`, {}); refresh()
 refresh(); loadPairing();
 setInterval(refresh, 5000);
 loadExtras(); setInterval(loadExtras, 15000);
+setTimeout(loadPets, 1500); setInterval(loadPets, 15000);
 </script>
 </body>
 </html>

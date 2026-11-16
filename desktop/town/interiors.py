@@ -620,6 +620,48 @@ def r_exchange(c, d, L):
             ["cases", "board", "counter"])
 
 
+def r_pet_shop(c, d, L):
+    room(c, "E", "e", "y", "o", "O")
+    airlock(c, L)
+    c.rect(30, 94, 44, 34, "o"); c.rect(30, 92, 44, 3, "y")                  # adoption counter with eggs
+    for i, col in enumerate("pcmyw"):
+        c.disc(36 + i * 8, 88, 3, col); c.px(35 + i * 8, 87, "w")
+    c.rect(30, 30, 44, 40, "O"); c.rect(32, 32, 40, 36, "o")                  # food shelves
+    for shelf in range(3):
+        y = 34 + shelf * 12
+        for x in range(34, 70, 6):
+            c.rect(x, y, 4, 8, "ytcrmY"[(x + shelf) % 6]); c.rect(x, y + 2, 4, 1, "w")
+        c.rect(32, y + 9, 40, 1, "O")
+    pets = d.get("pets", [])[:4]
+    for i in range(4):                                                        # four habitat pens
+        x = 84 + i * 30
+        c.rect(x, 74, 26, 54, "k"); c.rect(x + 1, 75, 24, 52, "D"); c.rect(x + 1, 75, 24, 1, "c")
+        c.rect(x + 3, 118, 20, 8, "o"); c.rect(x + 3, 118, 20, 1, "O")      # bedding
+        if i < len(pets):
+            p = pets[i]
+            frame = p["frames"][0]
+            for j, row in enumerate(frame):
+                for k, ch in enumerate(row):
+                    if ch != ".":
+                        c.px(x + 7 + k, 106 + j, ch)
+            if p.get("asleep"):
+                c.px(x + 20, 100, "w"); c.px(x + 21, 99, "w"); c.px(x + 20, 98, "w")
+            if p.get("status") in ("sick", "injured", "critical"):
+                c.rect(x + 3, 80, 3, 1, "r"); c.rect(x + 4, 79, 1, 3, "r")
+                L.append([x + 3, 79, 3, 3, "w", 600])
+            c.rect(x + 2, 70, 22, 3, "y"); c.rect(x + 3, 71, 2 + len(p.get("name", "")) * 2, 1, "k")
+        else:
+            c.rect(x + 10, 110, 6, 1, "g")
+    c.rect(206, 98, 30, 6, "s"); c.rect(208, 104, 2, 24, "S"); c.rect(232, 104, 2, 24, "S")   # clinic table
+    c.rect(214, 70, 14, 10, "w"); c.rect(220, 72, 2, 6, "r"); c.rect(218, 74, 6, 2, "r")       # first-aid sign
+    return ({"counter": [52, 84, "sparkle"], "pens": [128, 66, "sparkle"], "pen_left": [96, 66, "sparkle"],
+             "pen_right": [186, 66, "sparkle"], "clinic": [221, 66, "sparkle"], "shelves": [52, 28, "sparkle"]},
+            {"browse_pets": "counter", "adopt_pet": "counter", "train_pet": "pens", "check_pets": "pens",
+             "feed_pets": "shelves", "play_with_pet": "pen_left", "rest_pet": "pen_right", "work_pet": "pens",
+             "treat_pet": "clinic", "rescue_pet": "clinic"},
+            ["pen_left", "pens", "pen_right", "shelves"])
+
+
 # ---------------------------------------------------------------- decor the resident places in each building
 # wall: top-left of a 20x16 box; floor: centre x (stands on the floor, 9 wide); ceiling: centre x; rug: centre x
 DECOR_SLOTS = {
@@ -639,6 +681,7 @@ DECOR_SLOTS = {
     "gallery": {"floor": 160, "ceiling": 225, "rug": 150},
     "park": {"floor": 161, "rug": 110},
     "exchange": {"wall": (44, 40), "floor": 191, "ceiling": 110, "rug": 110},
+    "pet_shop": {"wall": (100, 24), "ceiling": 150, "rug": 140},
 }
 
 
@@ -753,7 +796,7 @@ ROOMS = {"home": (r_home, "Home Dome"), "library": (r_library, "Library"), "inte
          "radio_tower": (r_radio, "Radio Tower"), "studio": (r_studio, "Radio Studio"),
          "archive": (r_archive, "Archive Vault"), "spaceport": (r_spaceport, "Spaceport"),
          "station": (r_station, "Orbital Station"), "gallery": (r_gallery, "Gallery"), "park": (r_park, "Park"),
-         "exchange": (r_exchange, "Exchange")}
+         "exchange": (r_exchange, "Exchange"), "pet_shop": (r_pet_shop, "Pet Shop")}
 
 
 def interior_version(bid, data):

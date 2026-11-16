@@ -137,6 +137,7 @@ def neon_icon(c, x, y, icon, col):
         "note": ["..####.", "..#..#.", "..#..#.", "..#..#.", "###.###", "###.###"],
         "rocket": ["...#...", "..###..", "..#.#..", "..###..", ".#####.", "#.#.#.#"],
         "gavel": [".###...", ".####..", "..###..", "...#.#.", "....#.#", "######."],
+        "paw": ["#.#.#..", "#.#.#..", ".......", ".###...", "#####..", ".###..."],
     }
     for j, row in enumerate(shapes[icon]):
         for i, ch in enumerate(row):
@@ -464,6 +465,25 @@ def b_exchange(lit):
     return c, d
 
 
+def b_pet_shop(lit):
+    c = Canvas(BW, BH)
+    c.box(4, 24, 36, 31, "E")                                                 # rounded habitat
+    c.disc(22, 24, 18, "e" if lit else "E", 8); c.rect(4, 24, 37, 8, ".")
+    c.disc(22, 24, 16, "E", 6); c.rect(6, 24, 33, 7, ".")
+    c.rect(4, 24, 36, 2, "e" if lit else "E")
+    for i, x in enumerate((8, 32)):                                           # round pet windows
+        c.disc(x + 2, 34, 4, "k"); c.disc(x + 2, 34, 3, "c" if lit else "D")
+        if lit:
+            c.px(x + 1 + i, 35, "y"); c.px(x + 3 - i, 33, "w")
+    c.rect(4, 46, 36, 1, "o")
+    d = door(c, 18, 40, 9, 15)
+    sign(c, 22, 6, "paw", "m", lit)
+    c.rect(6, 52, 4, 3, "O"); c.rect(35, 52, 4, 3, "O")                        # food bowls
+    c.outline()
+    c.rect(0, 55, BW, 1, "k")
+    return c, d
+
+
 STATION = [
     "............kk............",
     "...........kcck...........",
@@ -476,7 +496,7 @@ STATION = [
     "............kk............",
 ]
 
-BUILDERS = {"home": b_home, "gallery": b_gallery, "park": b_park, "exchange": b_exchange, "library": b_library, "internet_cafe": b_cafe, "post_office": b_post,
+BUILDERS = {"home": b_home, "gallery": b_gallery, "park": b_park, "exchange": b_exchange, "pet_shop": b_pet_shop, "library": b_library, "internet_cafe": b_cafe, "post_office": b_post,
             "salon": b_salon, "bank": b_bank, "workshop": b_workshop, "greenhouse": b_greenhouse,
             "radio_tower": b_radio, "archive": b_archive, "spaceport": b_spaceport}
 ORDER = ["home", "library", "internet_cafe", "post_office", "greenhouse", "radio_tower",

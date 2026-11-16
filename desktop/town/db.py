@@ -30,6 +30,10 @@ CREATE TABLE IF NOT EXISTS broadcasts(id INTEGER PRIMARY KEY, ts REAL, text TEXT
 CREATE TABLE IF NOT EXISTS audio(id INTEGER PRIMARY KEY, ts REAL, kind TEXT, title TEXT, text TEXT, ref INTEGER, file TEXT, status TEXT);
 CREATE TABLE IF NOT EXISTS album(id INTEGER PRIMARY KEY, ts REAL, day TEXT, title TEXT, caption TEXT, place TEXT);
 CREATE TABLE IF NOT EXISTS gifts(id INTEGER PRIMARY KEY, ts REAL, kind TEXT, ref TEXT, title TEXT, note TEXT, text TEXT);
+CREATE TABLE IF NOT EXISTS pets(id INTEGER PRIMARY KEY, name TEXT, species TEXT, born REAL, lifespan_days REAL,
+    energy REAL, hunger REAL, happiness REAL, health REAL, strain REAL, status TEXT, job TEXT, shifts INTEGER,
+    runs_today INTEGER, run_day TEXT, last_run REAL, rest_until REAL, critical_since REAL, updated REAL);
+CREATE TABLE IF NOT EXISTS pet_log(id INTEGER PRIMARY KEY, ts REAL, pet_id INTEGER, text TEXT);
 CREATE TABLE IF NOT EXISTS visits(id INTEGER PRIMARY KEY, ts REAL, visitor TEXT, building TEXT, talk TEXT, learned TEXT);
 CREATE TABLE IF NOT EXISTS chapters(
     id INTEGER PRIMARY KEY, ts REAL, title TEXT, text TEXT, from_ts REAL, to_ts REAL);

@@ -2,6 +2,13 @@
 
 Stellar Hub's update manager shows the entries newer than the version you have.
 
+## v0.11.0
+- Added: pets and the Pet Shop (unlock for 250 credits). Six species, each with a speciality, a lifespan and its own hours: Orbit Moth (small repetitive tasks, night), Drone Cat (watching, night), Rover Pup (fetching, day), Comet Finch (words, day), Crystal Snail (careful long jobs, any time, lives longest) and Nebula Axolotl (care, night).
+- Added: the resident trains each pet for one of 10 jobs (watering plants, sorting curios, night watch, Exchange watch, scouting the uplink, drafting logs, proofreading, tidying memories, tending other pets, fetching) and sets its shifts a day. Specialised jobs cost a pet less energy.
+- Added: pet needs: energy (rest), hunger, happiness and health. Overwork builds strain: sick, then injured, then critical. A critical pet can be rescued at a steep price (debt allowed); otherwise after 24 hours the Colony Welfare Office takes it and fines the resident. Debt blocks shopping until paid off. Pets grow up, grow old and pass away at the end of their lifespan.
+- Added: pets run on the computer's spare time. Simple jobs are plain code; thinking jobs use a small "pet brain" model (qwen3:0.6b, download it from the dashboard's Pets tab) and only run while the CPU and graphics card are idle.
+- Added: a Pets tab on the dashboard, a Pets card in the app's Colony tab, pets trotting along the walkway to their jobs, and the Pet Shop's own room with a habitat pen for each pet.
+
 ## v0.10.0
 - Added: building manuals. The resident gets a manual when a blueprint unlocks, reads it when the building opens, and can reread any of them (read_manual). Greenhouse care guide and a care card for each new species (read_plant_guide).
 - Added: a voice. Colony logs and a new daily radio show (host_show) are spoken and sent to your phone. Every chat reply has a 🔊 Hear it button. It uses Windows' built-in voice out of the box, or install the natural Piper voice from the dashboard's Hub tab.

@@ -225,7 +225,8 @@ def make_server(agent, host, port, pair_code):
                       "/api/decor": lambda: {"owned": agent.decor_inventory(), "placed": agent.decor_placed(),
                                              "slots": {b: {k: (v if isinstance(v, int) else list(v)) for k, v in s.items()}
                                                        for b, s in interiors.DECOR_SLOTS.items()}},
-                      "/api/visitors": agent.visitors_overview}
+                      "/api/visitors": agent.visitors_overview,
+                      "/api/pets": agent.pets_overview}
             if u.path in simple:
                 return self._json(simple[u.path]())
             m = re.fullmatch(r"/api/compositions/(\d+)\.wav", u.path)
@@ -297,6 +298,10 @@ def make_server(agent, host, port, pair_code):
                     if k in body:
                         save_setting(agent.cfg, "voice", k, body[k])
                 return self._json(agent.voice().status())
+            if path == "/api/pets/brain":
+                if not self._local():
+                    return self._json({"error": "only from the hub computer"}, 403)
+                return self._json(agent.pull_pet_brain())
             if path == "/api/phone/forget":
                 agent.db.set("phone_music", None)
                 return self._json({"ok": True})

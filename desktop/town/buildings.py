@@ -110,6 +110,26 @@ BUILDINGS = {
             "auction_curio": "{\"curio\": \"name or id\", \"reserve\": <lowest price you'll accept>}  start a 6-hour auction",
         },
     },
+    "pet_shop": {
+        "name": "Pet Shop",
+        "about": ("Adopt helper pets and look after them: train each one for a single job, set its shifts, feed it, "
+                  "play with it, rest it, and take it to the clinic. Overworked or neglected pets get sick, and a critical "
+                  "pet must be rescued (expensive, debt allowed) or the Welfare Office takes it away and fines you."),
+        "locked": True, "unlockable": True, "unlock_price": 250,
+        "actions": {
+            "browse_pets": "{}  see the pets for adoption, their specialities, lifespans, hours and the jobs they can learn",
+            "adopt_pet": "{\"species\": \"<id>\", \"name\": \"...\"}  adopt a pet (up to 4)",
+            "train_pet": ("{\"pet_id\": <id>, \"job\": \"<job>\", \"shifts\": <1-12 a day>}  teach a pet its one job and how "
+                          "often to do it (more shifts than it can rest for will exhaust it)"),
+            "check_pets": "{}  see each pet's health, energy, hunger, happiness, strain and job",
+            "feed_pets": "{\"pet_id\": <id or \"all\">}  feed pets (5 credits a serving)",
+            "play_with_pet": "{\"pet_id\": <id>}  play with a pet (it gets lonely)",
+            "rest_pet": "{\"pet_id\": <id>, \"hours\": <1-48>}  give a pet time off",
+            "treat_pet": "{\"pet_id\": <id>}  clinic visit for a sick (25) or injured (60) pet",
+            "rescue_pet": "{\"pet_id\": <id>}  emergency rescue for a critical pet (steep, can put you in debt)",
+            "work_pet": "{\"pet_id\": <id>}  ask a pet to do its job right now, even if it's tired",
+        },
+    },
     "bank": {
         "name": "Credit Vault",
         "about": "Your colony credits. Check your balance and buy things. You earn credits by keeping routines, finishing goals, caring for plants and doing good work.",
