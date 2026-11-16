@@ -65,8 +65,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           V: ${{ steps.v.outputs.version }}
         run: |
-          gh release view "v${V}" > /dev/null 2>&1 || gh release create "v${V}" --title "v${V}" --notes "" --target "${GITHUB_SHA}"
+          gh release view "v${V}" > /dev/null 2>&1 || gh release create "v${V}" --title "v${V}" --notes "" --target "${GITHUB_SHA}" --latest
           gh release upload "v${V}" out/* --clobber
+          gh release edit "v${V}" --latest
 
   windows-installer:
     needs: build
@@ -113,5 +114,5 @@ jobs:
           V: ${{ steps.v.outputs.version }}
         run: |
           gh release view "v$env:V" *> $null
-          if ($LASTEXITCODE -ne 0) { gh release create "v$env:V" --title "v$env:V" --notes "" --target "$env:GITHUB_SHA" }
+          if ($LASTEXITCODE -ne 0) { gh release create "v$env:V" --title "v$env:V" --notes "" --target "$env:GITHUB_SHA" --latest }
           gh release upload "v$env:V" (Get-ChildItem out\*.exe, out\*.sha256).FullName --clobber
