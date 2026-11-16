@@ -107,6 +107,7 @@ class MainActivity : Activity() {
     // ------------------------------------------------------------------ setup
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installCrashReporter()
         window.statusBarColor = bg
         window.navigationBarColor = bg
 
@@ -160,8 +161,9 @@ class MainActivity : Activity() {
             checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 1)
         }
+        showCrashReportIfAny()
         connectFromPrefs()
-        if (api != null) Notifier.schedule(this)
+        if (api != null) Notifier.schedule(this)?.let { toast(it) }
         showTab(intent?.getStringExtra("tab") ?: if (api == null) "hub" else "inbox")
     }
 
@@ -181,6 +183,40 @@ class MainActivity : Activity() {
         super.onPause()
         resumed = false
         main.removeCallbacks(poller)
+    }
+
+    /** If the app ever crashes, save what happened so it can be shown (and photographed) next time. */
+    private fun installCrashReporter() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        val store = getSharedPreferences("crash", MODE_PRIVATE)
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try {
+                val trace = android.util.Log.getStackTraceString(e).take(3000)
+                store.edit().putString("report", "Hub Connect S ${appVersion()} · Android ${Build.VERSION.RELEASE}\n" +
+                    "Thread: ${t.name}\n$trace").commit()
+            } catch (_: Throwable) { }
+            previous?.uncaughtException(t, e)
+        }
+    }
+
+    private fun appVersion(): String = try {
+        packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+    } catch (_: Exception) { "?" }
+
+    private fun showCrashReportIfAny() {
+        val store = getSharedPreferences("crash", MODE_PRIVATE)
+        val report = store.getString("report", null) ?: return
+        android.app.AlertDialog.Builder(this)
+            .setTitle("The app crashed last time")
+            .setMessage("Please send a screenshot of this so it can be fixed:\n\n$report")
+            .setPositiveButton("Dismiss") { _, _ -> store.edit().remove("report").apply() }
+            .setNeutralButton("Copy") { _, _ ->
+                val cb = getSystemService(android.content.ClipboardManager::class.java)
+                cb.setPrimaryClip(android.content.ClipData.newPlainText("Hub Connect S crash", report))
+                store.edit().remove("report").apply()
+                toast("Copied")
+            }
+            .show()
     }
 
     private fun connectFromPrefs() {
@@ -961,7 +997,7 @@ class MainActivity : Activity() {
             prefs.edit().putString("address", addr.text.toString().trim())
                 .putString("code", code.text.toString().trim()).putInt("last_event", -1).apply()
             connectFromPrefs()
-            Notifier.schedule(this)
+            Notifier.schedule(this)?.let { toast(it) }
             io.execute { try { Notifier.check(applicationContext) } catch (_: Exception) { } }
             caption.text = "Testing the connection…"
             bgTask({ it.getObject("/api/ping") }) { r ->

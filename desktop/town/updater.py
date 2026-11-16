@@ -41,6 +41,58 @@ class Updater:
     def __init__(self, root, cfg, db, agent):
         self.root, self.cfg, self.db, self.agent = root, cfg, db, agent
         self.lock = threading.Lock()
+        self.read_watchdog_result()
+
+    @property
+    def result_path(self):
+        return os.path.join(self.root, "data", "update_result.json")
+
+    def read_watchdog_result(self):
+        """After a Windows update, the watchdog leaves a note saying whether the installer succeeded."""
+        try:
+            with open(self.result_path, encoding="utf-8-sig") as f:
+                r = json.load(f)
+            os.remove(self.result_path)
+        except (OSError, ValueError):
+            return
+        cur = self.current()
+        if r.get("code") == 0 and parse_version(cur) >= parse_version(r.get("version")):
+            self._progress(f"Updated to v{cur} ✓")
+            self.agent.add_event("update", f"⬆️ Stellar Hub updated to v{cur}", "The hub restarted on the new version.")
+        else:
+            self._progress("Update failed", f"The installer for v{r.get('version')} stopped (code {r.get('code')}), so "
+                                            f"Stellar Hub restarted on v{cur}. Details: data/updates/install.log. "
+                                            f"You can try again, or run the new installer from the release page.")
+
+    def _windows_watchdog(self, exe, version):
+        """A small hidden PowerShell helper that outlives the hub: it waits for the hub to close, runs the
+        installer, records the result, and makes sure Stellar Hub is running afterwards no matter what."""
+        port = int(self.cfg.get("port", 8080))
+        logs = os.path.join(self.root, "data", "updates")
+        os.makedirs(logs, exist_ok=True)
+        q = lambda s: str(s).replace("'", "''")   # PowerShell single-quote escaping
+        pyw = os.path.join(self.root, "python", "pythonw.exe")
+        script = f"""$ErrorActionPreference = 'SilentlyContinue'
+$hubPid = {os.getpid()}
+for ($i = 0; $i -lt 120 -and (Get-Process -Id $hubPid -ErrorAction SilentlyContinue); $i++) {{ Start-Sleep -Milliseconds 500 }}
+$code = 1
+try {{
+  $p = Start-Process -FilePath '{q(exe)}' -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LOG="{q(os.path.join(logs, "install.log"))}"' -PassThru -Wait
+  $code = $p.ExitCode
+}} catch {{ $code = 99 }}
+$ts = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+Set-Content -Path '{q(self.result_path)}' -Value ('{{"version": "{q(version)}", "code": ' + $code + ', "ts": ' + $ts + '}}') -Encoding UTF8
+for ($i = 0; $i -lt 25; $i++) {{
+  try {{ $c = New-Object Net.Sockets.TcpClient; $c.Connect('127.0.0.1', {port}); $c.Close(); exit 0 }} catch {{ }}
+  Start-Sleep -Seconds 1
+}}
+Start-Process -FilePath '{q(pyw)}' -ArgumentList '"{q(os.path.join(self.root, "run.py"))}"' -WorkingDirectory '{q(self.root)}'
+"""
+        path = os.path.join(logs, "watchdog.ps1")
+        with open(path, "w", encoding="utf-8-sig") as f:
+            f.write(script)
+        subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", path],
+                         close_fds=True, creationflags=0x00000008 | NO_WINDOW)   # DETACHED_PROCESS
 
     @property
     def repo(self):
@@ -158,15 +210,14 @@ class Updater:
                 exe = self._download_verified(f"StellarHub-Setup-v{version}.exe", assets, work)
                 self._progress("Installing. Stellar Hub will restart by itself in a minute.")
                 self.agent.mem.add("observation", f"The colony is being upgraded to {tag}.", "home", 6)
-                subprocess.Popen([exe, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
-                                 close_fds=True, creationflags=0x00000008 | NO_WINDOW)   # DETACHED_PROCESS
+                self._windows_watchdog(exe, version)
                 self._exit_soon(restart=False)
                 return
             self._progress("Downloading the update…")
             z = self._download_verified(f"StellarHub-v{version}.zip", assets, work)
             self._progress("Installing the new files…")
             self._install_zip(z, work)
-            self._progress(f"Updated to {tag}. Restarting…")
+            self._progress(f"Updated to {tag} ✓ Restarting…")
             self.agent.mem.add("observation", f"The colony was upgraded to {tag}.", "home", 6)
             self._exit_soon(restart=True)
         except Exception as e:

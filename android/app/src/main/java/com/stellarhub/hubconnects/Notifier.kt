@@ -41,7 +41,8 @@ object Notifier {
             .apply { description = "Colony logs, expeditions, plants and finished programs" })
     }
 
-    fun schedule(ctx: Context) {
+    /** Returns null on success, or a short reason the background check couldn't be scheduled. */
+    fun schedule(ctx: Context): String? = try {
         val js = ctx.getSystemService(JobScheduler::class.java)
         val job = JobInfo.Builder(JOB_ID, ComponentName(ctx, NotifyJob::class.java))
             .setPeriodic(15 * 60 * 1000L)
@@ -49,6 +50,9 @@ object Notifier {
             .setPersisted(true)
             .build()
         js.schedule(job)
+        null
+    } catch (e: Exception) {
+        "Background notifications couldn't start: ${e.message}"
     }
 
     fun quietNow(p: SharedPreferences): Boolean {

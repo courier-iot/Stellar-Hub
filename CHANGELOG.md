@@ -2,6 +2,13 @@
 
 Stellar Hub's update manager shows the entries newer than the version you have.
 
+## v0.8.4
+- Fixed: Hub Connect S crashed when you tapped Save & test (and could crash on opening once paired) on Android 14 and newer. A required network permission for the background notification check was missing.
+- Added: if the app ever crashes, the next time it opens it shows what happened, so it can be screenshotted and fixed.
+- Changed: if background notifications can't be set up, the app shows a short message instead of closing.
+- Added: Windows update watchdog. It runs the installer, then makes sure Stellar Hub starts again whether the install worked or not. If it failed, the dashboard explains what happened and offers Try again.
+- Added: the dashboard shows "Reconnecting…" (or "Updating…") while the hub is restarting, and reloads itself onto the new version when it's back.
+
 ## v0.8.3
 - Fixed: on Windows, update checks and the resident's web research failed with a certificate error. The installer now includes a certificate bundle.
 - Added: Windows setup offers a firewall rule that lets your phone in over Tailscale only (the usual reason the app says "Connecting…").
