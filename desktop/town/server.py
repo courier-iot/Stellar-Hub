@@ -226,7 +226,9 @@ def make_server(agent, host, port, pair_code):
                                              "slots": {b: {k: (v if isinstance(v, int) else list(v)) for k, v in s.items()}
                                                        for b, s in interiors.DECOR_SLOTS.items()}},
                       "/api/visitors": agent.visitors_overview,
-                      "/api/pets": agent.pets_overview}
+                      "/api/pets": agent.pets_overview,
+                      "/api/museum": agent.museum_overview,
+                      "/api/monitor": lambda: agent.monitor_overview((qs.get("track") or [None])[0])}
             if u.path in simple:
                 return self._json(simple[u.path]())
             m = re.fullmatch(r"/api/compositions/(\d+)\.wav", u.path)

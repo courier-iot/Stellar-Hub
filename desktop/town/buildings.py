@@ -26,6 +26,7 @@ BUILDINGS = {
             "upgrade_home": "{}  add a floor to your Home Dome (floor 2: 150, floor 3: 300, floor 4: 600 credits)",
             "view_collection": "{}  look through your curio collection",
             "read_manual": "{\"building\": \"<id>\"}  reread a building's instruction manual",
+            "build_upper_street": "{}  build the Upper Street: a raised deck with 14 more plots (1500 credits, about 8 hours)",
             "make_gift": ("{\"kind\": \"painting|song|poem|curio\", \"id\": <optional id>, \"note\": \"a message\"}  "
                           "make your creator a gift (every few days at most)"),
         },
@@ -108,6 +109,26 @@ BUILDINGS = {
             "sell_curio": "{\"curio\": \"name or id\", \"count\": n}  sell spare curios",
             "trade_up": "{\"rarity\": \"common|uncommon|rare\", \"kind\": \"optional, e.g. crystal\"}  trade 5 spares for 1 of the next rarity",
             "auction_curio": "{\"curio\": \"name or id\", \"reserve\": <lowest price you'll accept>}  start a 6-hour auction",
+        },
+    },
+    "store": {
+        "name": "Department Store",
+        "about": ("The colony's department store: seeds, outdoor decor, furniture for every building, and everything else "
+                  "you can buy. (The Credit Vault keeps your money; shopping happens here once the store is open.)"),
+        "actions": {
+            "browse_store": "{}  look through everything for sale",
+            "buy": "{\"item\": \"<kind:name, e.g. seeds:moon_moss, decor:lamp_post, furniture:neon_sign, pots, unlock:gallery>\"}  buy something. Shop: {shop}",
+        },
+    },
+    "museum": {
+        "name": "Stellar Museum",
+        "about": ("A museum for complete curio sets. Donate a set to a permanent exhibit (reputation, a daily stipend and "
+                  "more visitors) or sell it to the curator for a big one-off price."),
+        "locked": True, "unlockable": True, "unlock_price": 400,
+        "actions": {
+            "view_museum": "{}  see the exhibits, your reputation, and which complete sets you could donate or sell",
+            "donate_set": "{\"set\": \"<set id or name>\"}  give a complete set to the museum for good",
+            "sell_set": "{\"set\": \"<set id or name>\"}  sell a complete set to the curator",
         },
     },
     "pet_shop": {

@@ -90,6 +90,7 @@
   <button data-tab="creations">🎨 Creations</button>
   <button data-tab="mind">🧠 Mind</button>
   <button data-tab="pets">🐾 Pets</button>
+  <button data-tab="monitor">🩺 Monitor</button>
   <button data-tab="hub">⚙️ Hub</button>
 </nav>
 <div id="top">
@@ -194,6 +195,10 @@
     <h2 class="sub">Its room</h2>
     <div id="furniture" class="meta"></div>
   </section>
+  <section class="wide" style="padding:14px">
+    <h2>Curio sets &amp; the Stellar Museum</h2>
+    <div id="museum" class="meta">Loading…</div>
+  </section>
   <section>
     <h2>Photo album</h2>
     <div id="album" class="grid scroll" style="grid-template-columns:repeat(auto-fill, minmax(150px, 1fr))"><div class="meta">Its first snapshots will show up here.</div></div>
@@ -267,6 +272,19 @@
   </section>
 </main>
 
+<main class="pane" data-pane="monitor">
+  <section class="wide" style="padding:14px">
+    <h2>Monitor</h2>
+    <div class="meta">Watches pets, money and the model, and flags anything unusual. Alerts are also sent to your phone.</div>
+    <div class="row" id="monfilter">
+      <button class="ghost" data-t="">All</button><button class="ghost" data-t="pets">🐾 Pets</button>
+      <button class="ghost" data-t="money">◈ Money</button><button class="ghost" data-t="model">🧠 Model</button>
+    </div>
+    <div id="monsummary" class="meta" style="margin-top:8px"></div>
+    <div id="monitor" class="scroll" style="max-height:640px; margin-top:8px"></div>
+  </section>
+</main>
+
 <main class="pane" data-pane="hub">
   <section>
     <h2>Space events</h2>
@@ -307,7 +325,8 @@ showTab((() => { try { return localStorage.getItem("tab") || "today"; } catch (e
 const NAMES = {home:"Home Dome", library:"Observatory Library", internet_cafe:"Uplink Café", post_office:"Relay Post",
   greenhouse:"Hydro Greenhouse", radio_tower:"Radio Tower", archive:"Archive Vault", salon:"Nova Salon",
   gallery:"Starlight Gallery", park:"Low-G Park", studio:"Radio Studio", station:"Orbital Station", exchange:"Curio Exchange",
-  spaceport:"Spaceport", bank:"Credit Vault", workshop:"Fabrication Hangar", pet_shop:"Pet Shop"};
+  spaceport:"Spaceport", bank:"Credit Vault", workshop:"Fabrication Hangar", pet_shop:"Pet Shop", store:"Department Store",
+  museum:"Stellar Museum"};
 const VERBS = {journal:"writing in its journal", update_personality:"rethinking who it is", rest:"resting",
   recall:"looking through its notes", write_note:"writing a note", research:"researching", read_page:"reading a web page",
   read_mail:"reading mail", send_request:"sending you a request", ask_question:"asking you a question",
@@ -318,7 +337,8 @@ const VERBS = {journal:"writing in its journal", update_personality:"rethinking 
   check_pets:"checking on its pets", feed_pets:"feeding its pets", play_with_pet:"playing with a pet", rest_pet:"resting a pet",
   treat_pet:"taking a pet to the clinic", rescue_pet:"rescuing a pet", work_pet:"putting a pet to work", decorate:"decorating",
   host_show:"hosting its radio show", make_gift:"making you a gift", talk_to_visitor:"talking with a visitor", read_manual:"reading a manual",
-  read_plant_guide:"reading the plant guide", list_phone_music:"browsing the music on your phone", play_phone_music:"playing a song on your phone", archive_memories:"writing its life story",
+  read_plant_guide:"reading the plant guide", browse_store:"browsing the store", view_museum:"walking the museum",
+  donate_set:"donating a set to the museum", sell_set:"selling a set to the curator", build_upper_street:"building the Upper Street", list_phone_music:"browsing the music on your phone", play_phone_music:"playing a song on your phone", archive_memories:"writing its life story",
   read_chapter:"rereading its life story", start_expedition:"launching an expedition", read_reports:"reading old reports",
   write_program:"building a program", list_programs:"checking its programs", expedition_return:"just back from an expedition",
   paint:"painting", showcase:"arranging its home", remove_showcase:"rearranging its home", upgrade_home:"adding a floor to its home",
@@ -354,6 +374,7 @@ const Town = {
     this.world = w;
     this.sprites.bg = this.bake(w.background, pal);
     this.sprites.buildings = w.buildings.map(b => ({...b, img: this.bake(b.sprite, pal)}));
+    this.sprites.deck = w.upper ? this.bake(w.upper.sprite, pal) : null;
     this.sprites.decor = (w.decor || []).map(d => ({...d, img: this.bake(d.sprite, pal)}));
     this.sprites.visitors = (w.visitors || []).map(d => ({...d, img: this.bake(d.sprite, pal)}));
     const old = {}; (this.sprites.pets || []).forEach(p => old[p.id] = p.cx);
@@ -364,14 +385,19 @@ const Town = {
     this.sprites.station = w.station ? this.bake(w.station.sprite, pal) : null;
     if (this.location) this.targetX = this.door(this.location);
   },
-  door(id) {
+  bld(id) {
     if (this.world && this.world.aliases && this.world.aliases[id]) id = this.world.aliases[id];
-    const b = this.world && this.world.buildings.find(b => b.id === id); return b ? b.door_x : this.world.w / 2;
+    return this.world && this.world.buildings.find(b => b.id === id);
   },
+  door(id) { const b = this.bld(id); return b ? b.door_x : this.world.w / 2; },
+  feetOf(id) { const b = this.bld(id); return b && b.feet_y ? b.feet_y : this.world.resident.feet_y; },
   setLocation(loc, prev, lastTurn) {
     if (!this.world || loc === this.location) return;
     const fresh = lastTurn && (Date.now() / 1000 - lastTurn) < 120;
-    if (this.x === null) this.x = this.door(fresh && prev ? prev : loc);
+    if (this.x === null) {
+      const from = fresh && prev ? prev : loc;
+      this.x = this.door(from); this.feet = this.feetOf(from); this.level = (this.bld(from) || {}).level || 0;
+    }
     this.location = loc; this.targetX = this.door(loc);
   },
   draw(t) {
@@ -414,14 +440,16 @@ const Town = {
         const p = Math.sin(t / 600 + i * 1.7);
         if (p > .6) { c.fillStyle = "#ffffff"; c.fillRect(x, y, 1, 1); if (p > .93) { c.fillStyle = "#a7b0d3"; c.fillRect(x - 1, y, 3, 1); c.fillRect(x, y - 1, 1, 3); } }
       });
-      for (const b of this.sprites.buildings) c.drawImage(b.img, b.x, b.y);
+      for (const b of this.sprites.buildings) if (!b.level) c.drawImage(b.img, b.x, b.y);
+      if (this.sprites.deck) c.drawImage(this.sprites.deck, w.upper.x, w.upper.y);      // the Upper Street
+      for (const b of this.sprites.buildings) if (b.level) c.drawImage(b.img, b.x, b.y);
       for (const d of this.sprites.decor) c.drawImage(d.img, d.x, d.y);
       for (const v of this.sprites.visitors || []) c.drawImage(v.img, v.x - 8, v.y + Math.round(Math.sin(t / 700)));
       for (const p of this.sprites.pets || []) {              // pets wander to their jobs and back
         const goal = p.target_x ?? p.x, d = goal - p.cx;
         if (Math.abs(d) > 0.5) p.cx += Math.sign(d) * Math.min(0.6, Math.abs(d));
         const moving = Math.abs(d) > 0.5, f = moving || !p.asleep ? Math.floor(t / 250) % 2 : 0;
-        const py = 192 - 12 + (moving ? -(Math.floor(t / 250) % 2) : 0);
+        const py = (p.y ?? 180) + (moving ? -(Math.floor(t / 250) % 2) : 0);
         if (moving && d < 0) { c.save(); c.scale(-1, 1); c.drawImage(p.imgs[f], -Math.round(p.cx) - 6, py); c.restore(); }
         else c.drawImage(p.imgs[f], Math.round(p.cx) - 6, py);
         if (p.asleep && !moving) { c.fillStyle = "#a7b0d3"; c.fillRect(Math.round(p.cx) + 4, py - 3 + Math.round(Math.sin(t / 500)), 2, 1); }
@@ -441,14 +469,25 @@ const Town = {
       }
       if (w.night || ev === "eclipse") { c.fillStyle = ev === "eclipse" ? "rgba(5,6,20,.35)" : "rgba(5,6,20,.18)"; c.fillRect(0, 138, w.w, w.h - 138); }
       if (this.x !== null && !this.away && !this.inOrbit) {
-        const dx = this.targetX - this.x;
+        const tb = this.bld(this.location), tl = tb ? (tb.level || 0) : 0;
+        if (this.feet == null) { this.feet = this.feetOf(this.location); this.level = tl; }
+        let goal = this.targetX, riding = false;
+        if (w.upper && w.upper.state === "open" && (this.level || 0) !== tl) {   // take the lift between levels
+          goal = w.upper.lift_x;
+          if (Math.abs(this.x - goal) < 0.6) {
+            const tf = tl ? w.upper.feet_y : w.resident.feet_y, df = tf - this.feet;
+            if (Math.abs(df) > 0.6) { this.feet += Math.sign(df) * 0.7; riding = true; } else { this.feet = tf; this.level = tl; }
+          }
+        } else if (!w.upper || w.upper.state !== "open") { this.feet = w.resident.feet_y; this.level = 0; }
+        const dx = goal - this.x;
         const walking = Math.abs(dx) > 0.5;
         if (walking) this.x += Math.sign(dx) * Math.min(0.9, Math.abs(dx));
-        const r = w.resident, floats = r.floats;
+        const r = w.resident, floats = r.floats, feet = Math.round(this.feet);
         const bob = floats ? Math.round(Math.sin(t / 380) * 2) - 3 : 0;
         const fi = floats ? Math.floor(t / 450) % 2 : (walking ? Math.floor(t / 160) % 2 : 0);
-        const fx = Math.round(this.x) - 8, fy = r.feet_y - 16 + bob;
-        c.fillStyle = "rgba(0,0,0,.45)"; c.fillRect(fx + 4, r.feet_y - 1, 8, 2);
+        const fx = Math.round(this.x) - 8, fy = feet - 16 + bob;
+        if (riding) { c.fillStyle = "rgba(94,242,255,.35)"; c.fillRect(fx + 3, feet, 10, 2); }
+        c.fillStyle = "rgba(0,0,0,.45)"; c.fillRect(fx + 4, feet - 1, 8, 2);
         const img = this.sprites.frames[fi];
         if (walking && dx < 0) { c.save(); c.scale(-1, 1); c.drawImage(img, -fx - 16, fy); c.restore(); }
         else c.drawImage(img, fx, fy);
@@ -871,7 +910,7 @@ async function loadPets() {
     return `<div class="item" style="border:1px solid ${p.status === "critical" ? "var(--bad)" : "var(--line)"}; border-radius:10px; padding:10px; ${gone ? "opacity:.55" : ""}">
       <div class="row" style="margin:0"><canvas class="px petimg" data-i="${i}" width="12" height="12" style="width:48px; height:48px"></canvas>
       <div><b>${esc(p.name)}</b> <span class="tag ${p.status === "ok" ? "approved" : "denied"}">${esc(p.status)}</span><br>
-      <span class="meta">${esc(p.species_name)} · ${esc(p.stage)} · day ${p.age_days.toFixed(0)} of ~${p.lifespan_days.toFixed(0)} · ${p.active === "day" ? "☀️ day" : p.active === "night" ? "🌙 night" : "any time"}${p.on_shift ? "" : " · resting"}</span></div></div>
+      <span class="meta">${esc(p.species_name)} · level ${p.level} · ${esc(p.stage)} · day ${p.age_days.toFixed(0)} of ~${p.lifespan_days.toFixed(0)} · ${p.active === "day" ? "☀️ day" : p.active === "night" ? "🌙 night" : "any time"}${p.on_shift ? "" : " · resting"}</span></div></div>
       ${p.status === "critical" ? `<div class="err">Critical! Rescue costs ${p.rescue} credits. ${p.hours_left.toFixed(0)} hours left before the Welfare Office takes it.</div>` : ""}
       ${gone ? "" : `<div class="meta" style="margin-top:6px">Job: ${p.job ? `<b>${esc(p.job.replace(/_/g, " "))}</b> × ${p.shifts}/day (safe ~${p.safe})` : "not trained yet"} · speciality: ${esc(p.special)}</div>
       <div class="lvl"><span>health</span><span class="meta">${p.health.toFixed(0)}</span></div>${bar(p.health)}
@@ -881,11 +920,47 @@ async function loadPets() {
       <div class="lvl"><span>strain</span><span class="meta">${p.strain.toFixed(0)}</span></div>${bar(p.strain)}`}</div>`;
   }).join("") + `</div>` + (pets.length ? "" : `<div class="meta" style="margin-top:8px">No pets yet. Unlock and build the Pet Shop, and your resident can adopt helpers.</div>`);
   html += `<h2 class="sub">What the pets have been up to</h2>` + ((d.log || []).map(l => `<div class="item"><b>${esc(l.name)}</b> <span class="meta">${when(l.ts)}</span><div>${esc(l.text)}</div></div>`).join("") || `<div class="meta">Nothing yet.</div>`);
-  html += `<h2 class="sub">Species</h2>` + Object.entries(d.species).map(([k, s]) => `<div class="item"><b>${esc(s.name)}</b> <span class="meta">${s.price} credits · lives ${s.days[0]}-${s.days[1]} days · ${s.active} · good at ${esc(s.special)}</span><div class="meta">${esc(s.about)}</div></div>`).join("");
+  html += `<h2 class="sub">Species</h2>` + Object.entries(d.species).map(([k, s]) => `<div class="item"><b>${esc(s.name)}</b> <span class="meta">${s.adopt} credits now · lives ${s.days[0]}-${s.days[1]} days · ${s.active} · good at ${esc(s.special)}</span><div class="meta">${esc(s.about)}</div></div>`).join("");
   document.getElementById("pets").innerHTML = html;
   if (pal) document.querySelectorAll("canvas.petimg").forEach(cv => {
     const rows = pets[+cv.dataset.i].frames[0], g = cv.getContext("2d"), img = g.createImageData(12, 12);
     for (let y = 0; y < 12; y++) for (let x = 0; x < 12; x++) { const ch = rows[y][x]; if (ch !== ".") img.data.set(pal[ch] || [255, 0, 255, 255], (y * 12 + x) * 4); }
+    g.putImageData(img, 0, 0);
+  });
+}
+let monTrack = "";
+document.querySelectorAll("#monfilter button").forEach(b => b.onclick = () => { monTrack = b.dataset.t; loadMonitor.last = null; loadMonitor(); });
+async function loadMonitor() {
+  const d = await api("/api/monitor" + (monTrack ? "?track=" + monTrack : ""));
+  const key = JSON.stringify(d); if (key === loadMonitor.last) return; loadMonitor.last = key;
+  document.querySelectorAll("#monfilter button").forEach(b => b.classList.toggle("on", b.dataset.t === monTrack));
+  const c = d.counts || {}, cnt = t => { const x = c[t] || {}; return `${x.alert ? `<span class="minus">${x.alert} alert</span> ` : ""}${x.warn ? `<span style="color:var(--warn)">${x.warn} warn</span> ` : ""}${x.info || 0} info`; };
+  const m = d.model || {};
+  document.getElementById("monsummary").innerHTML = `Last 24 hours: 🐾 ${cnt("pets")} · ◈ ${cnt("money")} · 🧠 ${cnt("model")}<br>
+    Model ${esc(m.model || "?")}: ${m.calls_today}/${m.call_limit} AI calls today · average turn ${m.avg_turn_seconds ?? "?"}s ·
+    last turns: ${(m.recent_turns || []).slice(-8).map(h => `<span class="tag ${h.bad ? "denied" : ""}">${esc(h.a || "?")}</span>`).join("")}`;
+  const col = {alert: "var(--bad)", warn: "var(--warn)", info: "var(--dim)"}, icon = {pets: "🐾", money: "◈", model: "🧠"};
+  document.getElementById("monitor").innerHTML = (d.entries || []).map(e => `<div class="item" style="border-left:3px solid ${col[e.level]}; padding-left:8px">
+    <b>${icon[e.track] || ""} ${esc(e.title)}</b> <span class="tag" style="color:${col[e.level]}; border-color:${col[e.level]}">${e.level}</span>
+    <span class="meta">${when(e.ts)}</span>${e.detail ? `<div class="meta">${esc(e.detail)}</div>` : ""}</div>`).join("") || `<div class="meta">Nothing flagged. All quiet.</div>`;
+}
+async function loadMuseum() {
+  const d = await api("/api/museum");
+  const key = JSON.stringify(d); if (key === loadMuseum.last) return; loadMuseum.last = key;
+  const pal = Town.world ? Object.fromEntries(Object.entries(Town.world.palette).map(([k, v]) => [k, Town.toRGBA(v)])) : null;
+  let i = 0; const icons = [];
+  const ic = rows => { icons.push(rows); return `<canvas class="px museumicon" data-i="${i++}" width="10" height="10" style="width:30px; height:30px"></canvas>`; };
+  const rare = {common: "", uncommon: "pending", rare: "approved", legendary: "denied"};
+  document.getElementById("museum").innerHTML = `Reputation <b>${d.reputation}</b> · daily stipend <b>${d.stipend}</b> credits · exhibits:
+    ${d.exhibits.map(e => `${ic(e.icon)} ${esc(e.name)}`).join(" ") || "none yet"}
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(250px, 1fr)); gap:8px; margin-top:10px">` +
+    d.sets.map(s => `<div class="item" style="border:1px solid ${s.have === s.need ? "var(--good)" : "var(--line)"}; border-radius:8px; padding:8px">
+      <b>${esc(s.name)}</b> <span class="tag ${rare[s.rarity]}">${s.rarity}</span> <span class="meta">${s.have}/${s.need} · from ${esc(s.source)}</span>
+      <div class="row">${s.pieces.map(p => `<span title="${esc(p.name)}" style="opacity:${p.owned ? 1 : .25}">${ic(p.icon)}</span>`).join("")}</div>
+      <div class="meta">Donate +${s.value} reputation · or sell for ${s.sale}</div></div>`).join("") + `</div>`;
+  if (pal) document.querySelectorAll("canvas.museumicon").forEach(cv => {
+    const rows = icons[+cv.dataset.i], g = cv.getContext("2d"), img = g.createImageData(10, 10);
+    for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) { const ch = rows[y][x]; if (ch !== ".") img.data.set(pal[ch] || [255, 0, 255, 255], (y * 10 + x) * 4); }
     g.putImageData(img, 0, 0);
   });
 }
@@ -931,6 +1006,8 @@ refresh(); loadPairing();
 setInterval(refresh, 5000);
 loadExtras(); setInterval(loadExtras, 15000);
 setTimeout(loadPets, 1500); setInterval(loadPets, 15000);
+setTimeout(loadMuseum, 1800); setInterval(loadMuseum, 20000);
+loadMonitor(); setInterval(loadMonitor, 15000);
 </script>
 </body>
 </html>

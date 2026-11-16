@@ -8,7 +8,13 @@ Ideas saved for later. Nothing here is built yet.
 
 - [ ] **Pet host computer.** A second computer on Tailscale runs the pets' small model, so pet work doesn't touch the main PC at all.
 
+## Planned next (v0.13.0)
+- [ ] Mechanical Workshop: parts, in-game machines checked by a simulator, colony bonuses, and real-world project plans now and then.
+- [ ] Weekly goals: building goals at the Mechanical Workshop, programming challenges with tests at the Fab Hangar, plus goals you set.
+- [ ] More life: idle animations, weather, walkway traffic, new sprites and more customization.
+
 ## Done
+- v0.12.0: the Upper Street, Department Store, 64 set curios, Stellar Museum, four new pets with skill levels, the Monitor
 - v0.11.0: pets and the Pet Shop: six species, one trained job each, needs and strain, rescue or fines, debt, lifespans, spare-hardware runner
 - v0.10.0: tabbed dashboard, building and plant manuals, voice (spoken logs, daily radio show, chat voice) sent to the phone, decorating every building, visitors, room moods, photo album, gifts, music taste and listening together with Stellar Disc
 - v0.9.0: follow the resident inside all 16 buildings, enter/exit animations, phone music through Stellar Disc

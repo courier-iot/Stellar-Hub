@@ -1,4 +1,4 @@
-"""The 128 collectible curios: 8 kinds x 16 each, with rarity and a tiny generated pixel icon."""
+"""The 192 collectible curios: 8 kinds x 16 each, plus 64 that belong to sets (curio_sets.py), with rarity and a tiny generated pixel icon."""
 import hashlib
 import random
 
@@ -125,7 +125,7 @@ def _shape(kind, rnd):
 def sprite(cid):
     item = CATALOG[cid]
     rnd = random.Random(int(hashlib.md5(cid.encode()).hexdigest()[:8], 16))
-    a, b, accent = KIND_COLORS[item["kind"]]
+    a, b, accent = item.get("colors") or KIND_COLORS[item["kind"]]
     if item["rarity"] in ("rare", "legendary"):
         accent = "y" if item["rarity"] == "legendary" else "m"
     grid = _shape(item["kind"], rnd)
@@ -229,3 +229,6 @@ for _kind, _lines in DESCRIPTIONS.items():
     assert len(_lines) == 16, _kind
     for _i, _line in enumerate(_lines):
         CATALOG[f"{_kind}_{_i + 1:02d}"]["about"] = _line
+
+from .curio_sets import add_to_catalog as _add_sets   # noqa: E402  (the 64 set curios join the catalog)
+_add_sets(CATALOG)

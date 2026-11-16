@@ -12,6 +12,8 @@ from .backup import make_backup
 from .exchange import ExchangeMixin
 from .extras import ExtrasMixin
 from .pets import PetsMixin
+from .museum import MuseumMixin
+from .monitor import MonitorMixin
 from .hobbies import HobbiesMixin, level_for
 from .life import LifeMixin
 from .plants import SPECIES as PLANT_SPECIES
@@ -24,7 +26,7 @@ class BudgetExceeded(Exception):
     pass
 
 
-class Agent(ExtrasMixin, PetsMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
+class Agent(ExtrasMixin, MonitorMixin, MuseumMixin, PetsMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
     def __init__(self, cfg, db, llm, data_dir):
         self.cfg, self.db, self.llm = cfg, db, llm
         self.mem = Memory(db)
@@ -166,6 +168,10 @@ class Agent(ExtrasMixin, PetsMixin, ColonyMixin, LifeMixin, HobbiesMixin, Exchan
         """The actions shown to the model for a building (phone music only once the phone has shared its songs)."""
         out = []
         for a, d in list(BUILDINGS[bid]["actions"].items()) + self.extra_actions(bid):
+            if bid == "bank" and a == "buy" and self.is_built("store"):
+                continue     # shopping moved to the Department Store
+            if bid == "home" and a == "build_upper_street" and self.upper_state():
+                continue
             if a in ("list_phone_music", "play_phone_music"):
                 if not self.phone_songs():
                     continue
@@ -272,6 +278,15 @@ BUILDINGS:
 What do you do now?"""
 
     def take_turn(self):
+        t0 = time.time()
+        out = self._take_turn()
+        try:
+            self.monitor_turn(out, time.time() - t0)
+        except Exception:
+            pass
+        return out
+
+    def _take_turn(self):
         if not self.turn_lock.acquire(blocking=False):
             return {"skipped": "a turn is already running"}
         self.busy = True
@@ -680,7 +695,7 @@ What do you do now?"""
         return {"plants": plants, "playing": bool(self.now_playing()), "away": bool(self.expedition()),
                 "decor": self.inventory()["decor"], "night": self.is_night(),
                 "floors": self.floors(), "featured": self.featured_painting(),
-                "studio": self.is_built("studio"), "station": self.is_built("station")}
+                "studio": self.is_built("studio"), "station": self.is_built("station"), "upper": self.upper_state()}
 
     def gallery_overview(self):
         from . import curios as CU
@@ -724,6 +739,10 @@ What do you do now?"""
         if it["type"] == "painting":
             r = self.db.q("SELECT rows FROM paintings WHERE id=?", (it["id"],))
             rows = json.loads(r[0]["rows"]) if r else None
+        elif it["type"] == "set":
+            from .museum import set_icon
+            from .curio_sets import SETS
+            icon = set_icon(it["id"]) if it["id"] in SETS else None
         elif it["type"] == "curio" and it["id"] in CU.CATALOG:
             icon = CU.sprite(it["id"])
         elif it["type"] == "plant":
@@ -784,6 +803,9 @@ What do you do now?"""
             return {"away": bool(self.expedition())}
         if bid == "internet_cafe":
             return {"storm": self.storm()}
+        if bid == "museum":
+            from .museum import set_icon
+            return {"exhibits": [{"set": e["set_id"], "icon": set_icon(e["set_id"])} for e in self.exhibits()]}
         if bid == "pet_shop":
             from .pets import pet_frames
             return {"pets": [{"name": p["name"], "status": p["status"], "frames": pet_frames(p["species"]),

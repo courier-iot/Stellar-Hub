@@ -52,7 +52,7 @@ class MainActivity : Activity() {
     private val names = mapOf(
         "home" to "Home Dome", "library" to "Observatory Library", "internet_cafe" to "Uplink Café",
         "post_office" to "Relay Post", "salon" to "Nova Salon", "bank" to "Credit Vault",
-        "workshop" to "Fabrication Hangar", "pet_shop" to "Pet Shop", "greenhouse" to "Hydro Greenhouse", "radio_tower" to "Radio Tower",
+        "workshop" to "Fabrication Hangar", "pet_shop" to "Pet Shop", "store" to "Department Store", "museum" to "Stellar Museum", "greenhouse" to "Hydro Greenhouse", "radio_tower" to "Radio Tower",
         "archive" to "Archive Vault", "spaceport" to "Spaceport", "gallery" to "Starlight Gallery", "park" to "Low-G Park",
         "studio" to "Radio Studio", "station" to "Orbital Station", "exchange" to "Curio Exchange"
     )
@@ -84,7 +84,9 @@ class MainActivity : Activity() {
         "rest_pet" to "resting a pet", "treat_pet" to "taking a pet to the clinic", "rescue_pet" to "rescuing a pet",
         "work_pet" to "putting a pet to work", "decorate" to "decorating", "host_show" to "hosting its radio show",
         "make_gift" to "making you a gift", "talk_to_visitor" to "talking with a visitor", "read_manual" to "reading a manual",
-        "read_plant_guide" to "reading the plant guide"
+        "read_plant_guide" to "reading the plant guide", "browse_store" to "browsing the store",
+        "view_museum" to "walking the museum", "donate_set" to "donating a set to the museum",
+        "sell_set" to "selling a set to the curator", "build_upper_street" to "building the Upper Street"
     )
     private val hobbyIcons = mapOf("painting" to "🎨", "writing" to "✍️", "composing" to "🎼", "astronomy" to "🔭",
         "collecting" to "🧺", "games" to "♟️", "gardening" to "🌱", "coding" to "🛠")
@@ -617,7 +619,7 @@ class MainActivity : Activity() {
             val status = p.optString("status")
             val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             if (pal != null) p.optJSONArray("frames")?.optJSONArray(0)?.let { head.addView(pixelView(it, pal, 40)) }
-            head.addView(label("  ${p.optString("name")} · ${p.optString("species_name")} · $status", 15f,
+            head.addView(label("  ${p.optString("name")} · ${p.optString("species_name")} · lv ${p.optInt("level", 1)} · $status", 15f,
                 if (status == "ok") good else if (status == "critical") bad else warn, true))
             c.addView(spaced(head))
             if (status == "critical") c.addView(label("Critical! Rescue costs ${p.optInt("rescue")} credits; " +
@@ -841,9 +843,9 @@ class MainActivity : Activity() {
 
     private fun loadGallery() {
         loading()
-        bgTask({ Pair(Triple(it.getObject("/api/gallery"), it.getObject("/api/chess"), it.getObject("/api/exchange")), it.getObject("/api/album")) }) { (t, album) ->
+        bgTask({ Triple(Triple(it.getObject("/api/gallery"), it.getObject("/api/chess"), it.getObject("/api/exchange")), it.getObject("/api/album"), it.getObject("/api/museum")) }) { (t, album, museum) ->
             val (gal, ch, ex) = t
-            if (tab == "gallery") { renderGallery(gal, ch); renderAlbum(album); renderExchange(ex) }
+            if (tab == "gallery") { renderGallery(gal, ch); renderMuseum(museum); renderAlbum(album); renderExchange(ex) }
         }
     }
 
@@ -862,6 +864,31 @@ class MainActivity : Activity() {
                 parent.addView(row)
             }
             row?.addView(v)
+        }
+    }
+
+    private fun renderMuseum(m: JSONObject) {
+        val c = section("CURIO SETS & THE MUSEUM")
+        c.addView(label("Reputation ${m.optInt("reputation")} · daily stipend ${m.optInt("stipend")} credits · " +
+            "${m.optJSONArray("exhibits")?.length() ?: 0} exhibits", 13f, warn))
+        val pal = lastPalette
+        val sets = m.optJSONArray("sets") ?: JSONArray()
+        val list = (0 until sets.length()).map { sets.getJSONObject(it) }.sortedByDescending { it.optInt("have").toDouble() / it.optInt("need", 1) }
+        for (s in list) {
+            val have = s.optInt("have"); val need = s.optInt("need")
+            if (have == 0 && list.indexOf(s) > 7) continue
+            c.addView(spaced(label("${s.optString("name")} · ${s.optString("rarity")} · $have/$need · from ${s.optString("source")}",
+                13f, if (have == need) good else textCol, true)))
+            if (pal != null) {
+                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                val pieces = s.optJSONArray("pieces") ?: JSONArray()
+                for (i in 0 until pieces.length()) {
+                    val p = pieces.getJSONObject(i)
+                    row.addView(pixelView(p.getJSONArray("icon"), pal, 28).apply { alpha = if (p.optInt("owned") > 0) 1f else 0.25f })
+                }
+                c.addView(row)
+            }
+            c.addView(label("Donate +${s.optInt("value")} reputation, or sell for ${s.optInt("sale")}", 12f, dim))
         }
     }
 
@@ -1329,6 +1356,7 @@ class MainActivity : Activity() {
         content.addView(nc)
         content.addView(phoneMusicCard())
         content.addView(listeningCard())
+        content.addView(monitorCard())
 
         val s = lastStatus ?: return
         // Resident
@@ -1424,6 +1452,36 @@ class MainActivity : Activity() {
                 prefs.edit().putBoolean("share_music", true).apply()
                 shareMusic(true)
             }))
+        }
+        return c
+    }
+
+    private var monTrack = ""
+
+    private fun monitorCard(): LinearLayout {
+        val c = card()
+        c.addView(label("MONITOR", 13f, dim, true))
+        c.addView(label("Flags anything unusual with pets, money or the model. Alerts also come as notifications.", 12f, dim))
+        val filters = listOf("" to "All", "pets" to "🐾 Pets", "money" to "◈ Money", "model" to "🧠 Model")
+        c.addView(rowOf(*filters.map { (t, l) ->
+            button(l, if (t == monTrack) cyan else dim) { monTrack = t; showTab("hub") }.apply { textSize = 12f }
+        }.toTypedArray()))
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        c.addView(list)
+        bgTask({ it.getObject("/api/monitor" + if (monTrack.isNotEmpty()) "?track=$monTrack" else "") }) { d ->
+            val m = d.optJSONObject("model")
+            if (m != null) list.addView(label("Model ${m.optString("model")}: ${m.optInt("calls_today")}/${m.optInt("call_limit")} AI calls today, " +
+                "average turn ${m.optString("avg_turn_seconds")}s", 12f, textCol))
+            val es = d.optJSONArray("entries") ?: JSONArray()
+            if (es.length() == 0) list.addView(label("Nothing flagged. All quiet.", 13f, good))
+            for (i in 0 until minOf(15, es.length())) {
+                val e = es.getJSONObject(i)
+                val lvl = e.optString("level")
+                val icon = mapOf("pets" to "🐾", "money" to "◈", "model" to "🧠")[e.optString("track")] ?: ""
+                list.addView(spaced(label("$icon ${e.optString("title")} · ${fmt(e.optDouble("ts", 0.0))}", 13f,
+                    when (lvl) { "alert" -> bad; "warn" -> warn; else -> textCol }, true)))
+                e.optString("detail").takeIf { it.isNotBlank() }?.let { list.addView(label(it, 12f, dim)) }
+            }
         }
         return c
     }

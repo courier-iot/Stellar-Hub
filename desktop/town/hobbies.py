@@ -24,7 +24,7 @@ PAINT_PALETTE = {"k": "black", "w": "white", "s": "silver", "S": "grey", "n": "n
 GALLERY_WALL = 12
 SPOTS_PER_FLOOR, MAX_FLOORS = 12, 4
 FLOOR_PRICES = {2: 150, 3: 300, 4: 600}
-SHOWCASE_TYPES = ("painting", "curio", "plant", "writing")
+SHOWCASE_TYPES = ("painting", "curio", "set", "plant", "writing")
 SPACE_WORDS = ["comet", "nebula", "orbit", "galaxy", "quasar", "meteor", "eclipse", "rocket", "planet", "aurora",
                "gravity", "station", "cosmos", "stardust", "satellite", "telescope", "asteroid", "pulsar", "lunar", "photon"]
 TRAITS = ["curious", "creative", "social", "calm", "brave", "playful", "thoughtful"]
@@ -151,6 +151,10 @@ class HobbiesMixin:
                 return "painting \"" + self.db.q("SELECT title FROM paintings WHERE id=?", (int(i),))[0]["title"] + "\""
             if t == "curio":
                 return curios.CATALOG[i]["name"]
+            if t == "set":
+                from .curio_sets import SETS
+                n = SETS[i][0]
+                return f"{n[4:] if n.startswith('The ') else n} set"
             if t == "plant":
                 p = self.db.q("SELECT nickname, species FROM plants WHERE id=?", (int(i),))[0]
                 return f"cutting of {p['nickname'] or p['species'].replace('_', ' ')}"
@@ -174,6 +178,10 @@ class HobbiesMixin:
             return bool(self.db.q("SELECT 1 FROM paintings WHERE id=?", (i,)))
         if t == "curio":
             return i in self.collection()
+        if t == "set":
+            from .curio_sets import SETS, piece_ids
+            col = self.collection()
+            return i in SETS and all(col.get(c, 0) > 0 for c in piece_ids(i))
         if t == "plant":
             return bool(self.db.q("SELECT 1 FROM plants WHERE id=? AND bloomed=1", (i,)))
         if t == "writing":
@@ -190,6 +198,10 @@ class HobbiesMixin:
             col = self.collection()
             i = next((c for c in col if c == q or curios.CATALOG[c]["name"].lower() == q), None) or \
                 next((c for c in col if q and q in curios.CATALOG[c]["name"].lower()), None)
+        elif t == "set":
+            from .curio_sets import SETS
+            q = str(raw or "").strip().lower().replace(" ", "_")
+            i = q if q in SETS else next((k for k, v in SETS.items() if v[0].lower() == str(raw or "").strip().lower()), None)
         else:
             try:
                 i = int(raw)
@@ -345,8 +357,8 @@ class HobbiesMixin:
     def collection(self):
         return self.db.get("curios", {})
 
-    def find_curio(self, source, boost=0):
-        cid = curios.random_find(boost=boost)
+    def find_curio(self, source, boost=0, cid=None):
+        cid = cid or curios.random_find(boost=boost)
         col = self.collection()
         first = cid not in col
         col[cid] = col.get(cid, 0) + 1
@@ -389,7 +401,7 @@ class HobbiesMixin:
         for cid in col:
             by.setdefault(curios.CATALOG[cid]["kind"], []).append(curios.CATALOG[cid]["name"])
         pick = random.choice(list(col))
-        return (f"I have {len(col)} of 128 curios. I turned the {curios.CATALOG[pick]['name']} over in my hands: "
+        return (f"I have {len(col)} of {len(curios.CATALOG)} curios. I turned the {curios.CATALOG[pick]['name']} over in my hands: "
                 f"{curios.CATALOG[pick]['about']} " +
                 "; ".join(f"{k.replace('_', ' ')}: {', '.join(v)}" for k, v in by.items()))
 

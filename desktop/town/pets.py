@@ -40,6 +40,18 @@ SPECIES = {
     "nebula_axolotl": {"name": "Nebula Axolotl", "price": 180, "special": "care", "days": (35, 50), "active": "night",
                        "hunger": 3.0, "stamina": 1.0, "food": "plankton puffs",
                        "about": "a pink axolotl with nebula frills. A carer: tends plants and other pets."},
+    "signal_jelly": {"name": "Signal Jelly", "price": 160, "special": "music", "days": (20, 30), "active": "night",
+                     "hunger": 2.5, "stamina": 1.0, "food": "static jelly",
+                     "about": "a floating jellyfish that hums radio static. Musical: picks songs, writes radio segments."},
+    "gear_beetle": {"name": "Gear Beetle", "price": 140, "special": "mechanics", "days": (40, 60), "active": "day",
+                    "hunger": 2.0, "stamina": 1.4, "food": "copper crumbs",
+                    "about": "a clockwork beetle with a brass shell. Mechanical: checks programs, salvages parts."},
+    "star_owl": {"name": "Star Owl", "price": 170, "special": "astronomy", "days": (30, 45), "active": "night",
+                 "hunger": 3.0, "stamina": 1.1, "food": "comet crumbs",
+                 "about": "a wide-eyed owl with starry feathers. An astronomer: surveys the sky for fragments."},
+    "moss_tortoise": {"name": "Moss Tortoise", "price": 130, "special": "garden", "days": (80, 120), "active": "any",
+                      "hunger": 1.0, "stamina": 0.6, "food": "fresh moss",
+                      "about": "a slow tortoise with a garden on its back. A gardener: feeds plants and sets their lights."},
 }
 
 # job: (complexity 1-3, specialization, what it does)
@@ -54,10 +66,18 @@ JOBS = {
     "proofread": (2, "words", "reads the newest writing and suggests one improvement (needs the pet brain)"),
     "scout_topic": (3, "fetch", "searches the uplink for one of today's goals and saves what it finds"),
     "summarize_memories": (3, "careful", "condenses old memories into a tidy note (needs the pet brain)"),
+    "pick_song": (1, "music", "picks one of your creator's favourite songs for the next radio show"),
+    "radio_segment": (3, "music", "writes a short fun segment for the next radio show (needs the pet brain)"),
+    "check_programs": (2, "mechanics", "checks programs waiting for approval for mistakes and risky bits"),
+    "salvage_parts": (1, "mechanics", "salvages scrap around the colony for useful bits"),
+    "sky_survey": (2, "astronomy", "surveys the sky, and sometimes spots a fallen fragment"),
+    "feed_plants": (1, "garden", "feeds greenhouse plants that are due"),
+    "set_lights": (1, "garden", "sets every plant's light to what its species wants"),
 }
 COST = {1: 10, 2: 25, 3: 45}
 BRAIN_JOBS = {"draft_log", "proofread", "summarize_memories"}
-MAX_PETS = 4
+MAX_PETS = 6
+PRICE_STEP = 1.5      # each pet it already has makes the next adoption cost 50% more
 FOOD_PRICE = 5
 RETRAIN_PRICE = 30
 TREAT_PRICE = {"sick": 25, "injured": 60}
@@ -94,6 +114,23 @@ def pet_frames(species):
         elif species == "crystal_snail":
             c.rect(1, 8, 10, 2, "s"); c.px(10 + f, 7, "s"); c.px(11, 6, "S")
             c.disc(5, 5, 3, "c"); c.disc(5, 5, 2, "p"); c.px(5, 4, "w")
+        elif species == "signal_jelly":
+            c.disc(6, 4, 4, "c"); c.disc(6, 4, 2, "w"); c.rect(2, 4, 9, 1, "C")
+            for i, x in enumerate((3, 5, 7, 9)):
+                c.rect(x, 6, 1, 3 + (i + f) % 2 * 2, "p" if i % 2 else "c")
+        elif species == "gear_beetle":
+            c.disc(6, 7, 4, "y"); c.rect(6, 3, 1, 8, "O"); c.disc(6, 7, 1, "o")
+            c.rect(9, 5, 2, 2, "k"); c.px(10, 4 - f, "S"); c.px(11, 3, "S")
+            for x in (3, 6, 9):
+                c.px(x, 11, "k"); c.px(x + f - 1 if x != 6 else x, 11, "k")
+        elif species == "star_owl":
+            c.disc(6, 6, 4, "N"); c.disc(4, 5, 2, "w"); c.disc(8, 5, 2, "w"); c.px(4, 5, "k"); c.px(8, 5, "k")
+            c.px(6, 7, "y"); c.px(3, 2, "N"); c.px(9, 2, "N"); c.px(5, 9, "w"); c.px(7, 9, "w")
+            c.px(2, 7 - f, "s"); c.px(10, 7 - f, "s"); c.rect(5, 11, 1, 1, "y"); c.rect(7, 11, 1, 1, "y")
+        elif species == "moss_tortoise":
+            c.disc(5, 7, 4, "o"); c.disc(5, 6, 3, "E"); c.px(4, 4, "e"); c.px(6, 3, "m"); c.px(3, 6, "e")
+            c.rect(9, 7, 3, 2, "e"); c.px(10, 7, "k")
+            c.rect(2, 10, 2, 2, "e"); c.rect(7, 10, 2, 2 - f, "e")
         elif species == "nebula_axolotl":
             c.rect(2, 6, 8, 3, "m"); c.rect(7, 4, 4, 4, "m"); c.px(9, 5, "k"); c.px(10, 7, "p")
             c.px(7, 3, "P"); c.px(8, 2 + f, "P"); c.px(10, 3, "P"); c.px(11, 2 + f, "P")
@@ -158,9 +195,10 @@ class PetsMixin:
 
     def _pet_save(self, p):
         self.db.x("UPDATE pets SET energy=?, hunger=?, happiness=?, health=?, strain=?, status=?, job=?, shifts=?, "
-                  "runs_today=?, run_day=?, last_run=?, rest_until=?, critical_since=?, updated=? WHERE id=?",
+                  "runs_today=?, run_day=?, last_run=?, rest_until=?, critical_since=?, updated=?, xp=? WHERE id=?",
                   (p["energy"], p["hunger"], p["happiness"], p["health"], p["strain"], p["status"], p["job"], p["shifts"],
-                   p["runs_today"], p["run_day"], p["last_run"], p["rest_until"], p["critical_since"], p["updated"], p["id"]))
+                   p["runs_today"], p["run_day"], p["last_run"], p["rest_until"], p["critical_since"], p["updated"],
+                   p.get("xp") or 0, p["id"]))
 
     def _pet_log(self, p, text, imp=3, memory=True):
         self.db.x("INSERT INTO pet_log(ts, pet_id, text) VALUES(?,?,?)", (time.time(), p["id"], text[:600]))
@@ -175,13 +213,18 @@ class PetsMixin:
         day = 7 <= hour < 19
         return day if act == "day" else not day
 
+    @staticmethod
+    def pet_level(p):
+        return min(10, 1 + int(((p.get("xp") or 0) / 4) ** 0.5))
+
     def pet_cost(self, p, job=None):
         job = job or p["job"]
         cx, spec, _ = JOBS[job]
         sp = SPECIES[p["species"]]
         mult = 0.6 if spec == sp["special"] else 1.3
         age = self.pet_age_stage(p)
-        return COST[cx] * mult / sp["stamina"] * (1.3 if age == "elder" else 1.0)
+        skill = 1 - 0.05 * (self.pet_level(p) - 1)       # practice makes the job easier
+        return COST[cx] * mult / sp["stamina"] * (1.3 if age == "elder" else 1.0) * skill
 
     def pet_age_stage(self, p):
         frac = (time.time() - p["born"]) / (p["lifespan_days"] * 86400)
@@ -246,6 +289,8 @@ class PetsMixin:
         if new == old:
             return
         sp = SPECIES[p["species"]]
+        self.monitor("pets", "alert" if new == "critical" else "warn" if new in ("sick", "injured") else "info",
+                     f"{p['name']} is now {new}", f"Health {p['health']:.0f}, strain {p['strain']:.0f}, hunger {p['hunger']:.0f}.")
         if new == "critical":
             p["critical_since"] = time.time()
             price = self.rescue_price(p)
@@ -272,6 +317,7 @@ class PetsMixin:
         sp = SPECIES[p["species"]]
         fine = self.pet_fine(p)
         p["status"] = "taken"
+        self.monitor("pets", "alert", f"{p['name']} was taken away", f"Fine: {self.pet_fine(p)} credits.")
         self._pet_save(p)
         self.charge(fine, f"Welfare Office fine for neglecting {p['name']}")
         self._pet_log(p, f"was taken away by the Colony Welfare Office because I didn't save it. I was fined {fine} credits. "
@@ -351,6 +397,7 @@ class PetsMixin:
                 if now - p["last_run"] < gap * 0.8:
                     continue
                 due.append(p)
+            self.monitor_pets()
             if not due:
                 self.pet_runner_note = "no jobs due"
                 return
@@ -359,7 +406,13 @@ class PetsMixin:
                 ok, why = self.hardware_idle()
                 if not ok:
                     self.pet_runner_note = f"waiting: {why}"
+                    waits = (self.db.get("pet_waits") or 0) + 1
+                    self.db.set("pet_waits", waits)
+                    if waits >= 12:
+                        self.monitor("pets", "info", "Pets keep waiting for spare computer time", f"Latest reason: {why}.")
+                        self.db.set("pet_waits", 0)
                     return
+            self.db.set("pet_waits", 0)
             self.pet_runner_note = f"{p['name']} is working"
             self.run_pet_job(p)
 
@@ -383,8 +436,14 @@ class PetsMixin:
         else:
             try:
                 result = getattr(self, f"job_{p['job']}")(p)
+                before = self.pet_level(p)
+                p["xp"] = (p.get("xp") or 0) + (2 if JOBS[p["job"]][1] == SPECIES[p["species"]]["special"] else 1)
+                if self.pet_level(p) > before:
+                    result += f" It reached skill level {self.pet_level(p)}!"
+                    self.add_event("pet", f"⭐ {p['name']} reached level {self.pet_level(p)}", f"Better at {p['job'].replace('_', ' ')}.")
             except Exception as e:
                 result = f"got muddled ({e})."
+                self.monitor("pets", "warn", f"{p['name']}'s job failed: {p['job']}", str(e))
         if strained:
             result += f" It was exhausted and worked anyway (strain {p['strain']:.0f})."
         self._pet_status(p)
@@ -511,16 +570,86 @@ class PetsMixin:
         self.db.x("INSERT INTO library(ts, topic, summary, source) VALUES(?,?,?,?)", (time.time(), "memory summary", s, "pet"))
         return "tidied some old memories into a note in the Library."
 
+    def job_pick_song(self, p):
+        favs = self.favourites(10)
+        if not favs:
+            return "listened for your creator's favourite songs, but hasn't heard enough yet."
+        s = random.choice(favs[:5])
+        self.db.set("song_pick", {"title": s["title"], "artist": s["artist"], "by": p["name"], "ts": time.time()})
+        return f"picked \"{s['title']}\" by {s['artist']} for the next radio show."
+
+    def job_radio_segment(self, p):
+        out = self._brain_json("You are a musical jellyfish pet in a space colony. Write a short, playful radio segment "
+                               "(2-3 sentences): a fun space fact or a tiny story. Reply as JSON: {\"segment\": \"...\"}",
+                               "Goals today: " + "; ".join(self.db.get("goals", []) or ["none"]))
+        seg = str(out.get("segment", "")).strip()[:500]
+        if not seg:
+            return "hummed at the mic but nothing came out."
+        self.db.set("show_extra", {"text": seg, "by": p["name"], "ts": time.time()})
+        return f"wrote a segment for the next show: \"{seg[:120]}\""
+
+    def job_check_programs(self, p):
+        rows = self.db.q("SELECT id, name, code FROM programs WHERE status IN ('pending','awaiting_approval') ORDER BY id DESC LIMIT 5")
+        if not rows:
+            return "checked the Fab Hangar. No programs waiting."
+        notes = []
+        for r in rows:
+            try:
+                compile(r["code"] or "", r["name"] or "program", "exec")
+                risky = [w for w in ("import os", "subprocess", "socket", "shutil.rmtree", "eval(", "exec(") if w in (r["code"] or "")]
+                notes.append(f"#{r['id']} {r['name']}: " + (f"looks fine but uses {', '.join(risky)}" if risky else "looks fine"))
+            except SyntaxError as e:
+                notes.append(f"#{r['id']} {r['name']}: syntax error on line {e.lineno}")
+        return "checked programs: " + "; ".join(notes) + "."
+
+    def job_salvage_parts(self, p):
+        r = random.random()
+        if r < 0.06:
+            from . import curios as CU
+            pool = [c for c, v in CU.CATALOG.items() if v["kind"] == "gadget" and v["rarity"] in ("common", "uncommon")]
+            return "dragged home something shiny: " + self.find_curio(f"{p['name']}'s salvage", cid=random.choice(pool))
+        amt = random.randint(1, 4) if r < 0.6 else 0
+        if amt:
+            self.earn(amt, f"{p['name']} sold salvage")
+        return f"salvaged scrap worth {amt} credits." if amt else "rummaged through the scrap heap and found nothing useful."
+
+    def job_sky_survey(self, p):
+        if random.random() < 0.12:
+            return "spotted a fallen fragment and fetched it: " + self.find_curio("the observatory deck, spotted by a star owl")
+        ev = self.space_event()
+        return f"surveyed the sky: {ev['title']} overhead." if ev else "surveyed the sky. Clear, calm and full of stars."
+
+    def job_feed_plants(self, p):
+        now, done = time.time(), []
+        from .plants import SPECIES as PS
+        for pl in self.db.q("SELECT * FROM plants WHERE alive=1"):
+            sp = PS.get(pl["species"])
+            if sp and (now - pl["last_feed"]) / 3600 >= sp["feed_h"] * 0.9:
+                self.db.x("UPDATE plants SET last_feed=?, health=MIN(100, health+2) WHERE id=?", (now, pl["id"]))
+                done.append(pl["nickname"] or pl["species"].replace("_", " "))
+        return f"fed {', '.join(done)}." if done else "checked the plants; nobody was hungry."
+
+    def job_set_lights(self, p):
+        from .plants import SPECIES as PS
+        fixed = []
+        for pl in self.db.q("SELECT * FROM plants WHERE alive=1"):
+            want = PS.get(pl["species"], {}).get("light")
+            if want and pl["light"] != want:
+                self.db.x("UPDATE plants SET light=? WHERE id=?", (want, pl["id"]))
+                fixed.append(pl["nickname"] or pl["species"].replace("_", " "))
+        return f"set the right light for {', '.join(fixed)}." if fixed else "checked the lamps; every plant had the right light."
+
     # ------------------------------------------------------------ the resident's actions at the Pet Shop
     def act_browse_pets(self, a, imp):
         lines = []
         for k, s in SPECIES.items():
             good = [j for j, v in JOBS.items() if v[1] == s["special"]]
-            lines.append(f"{k} ({s['name']}, {s['price']} credits): {s['about']} Lives {s['days'][0]}-{s['days'][1]} days, "
+            lines.append(f"{k} ({s['name']}, {self.adopt_price(k)} credits): {s['about']} Lives {s['days'][0]}-{s['days'][1]} days, "
                          f"works {'by day' if s['active'] == 'day' else 'at night' if s['active'] == 'night' else 'any time'}. "
                          f"Best jobs: {', '.join(good)}.")
         jobs = "; ".join(f"{j} (complexity {v[0]}, {v[1]}): {v[2]}" for j, v in JOBS.items())
-        return (f"Pets for adoption (up to {MAX_PETS}): " + " | ".join(lines) + f" JOBS: {jobs}. Food is {FOOD_PRICE} credits "
+        return (f"Pets for adoption (up to {MAX_PETS}; each pet I have makes the next one cost 50% more): " + " | ".join(lines) +
+                f" JOBS: {jobs}. Food is {FOOD_PRICE} credits "
                 f"a serving. Retraining costs {RETRAIN_PRICE}.")
 
     def act_adopt_pet(self, a, imp):
@@ -532,9 +661,13 @@ class PetsMixin:
         if self.credits() < 0:
             return "The shopkeeper won't let me adopt while I'm in debt."
         sp = SPECIES[sp_id]
-        if not self.spend(sp["price"], f"adopted a {sp['name']}"):
-            return f"I can't afford a {sp['name']} yet ({self.credits()}/{sp['price']} credits)."
-        name = str(a.get("name", "")).strip()[:24] or random.choice(["Pip", "Nova Jr", "Sprocket", "Comet", "Mochi", "Blip", "Luna", "Bolt"])
+        price = self.adopt_price(sp_id)
+        if not self.spend(price, f"adopted a {sp['name']}"):
+            return f"I can't afford a {sp['name']} yet ({self.credits()}/{price} credits)."
+        taken = {p["name"] for p in self.pets()}
+        names = [n for n in ["Pip", "Sprocket", "Comet", "Mochi", "Blip", "Luna", "Bolt", "Nib", "Orbit", "Pixel", "Dusty",
+                             "Fizz", "Juniper", "Tinker", "Echo", "Biscuit", "Zephyr", "Nugget"] if n not in taken]
+        name = str(a.get("name", "")).strip()[:24] or random.choice(names or ["Buddy"])
         now = time.time()
         pid = self.db.x("INSERT INTO pets(name, species, born, lifespan_days, energy, hunger, happiness, health, strain, status, "
                         "job, shifts, runs_today, run_day, last_run, rest_until, critical_since, updated) "
@@ -546,6 +679,9 @@ class PetsMixin:
         art = "an" if sp["name"][0] in "AEIOU" else "a"
         return (f"I adopted {name} (#{pid}), {art} {sp['name']}! It's good at {sp['special']} jobs. Next I should train it "
                 f"(train_pet) with a sensible number of shifts, and keep it fed and happy.")
+
+    def adopt_price(self, sp_id):
+        return int(SPECIES[sp_id]["price"] * PRICE_STEP ** len(self.pets()))
 
     def _arg_pet(self, a):
         p = self.pet(a.get("pet_id"))
@@ -661,7 +797,7 @@ class PetsMixin:
         sp = SPECIES[p["species"]]
         age = (time.time() - p["born"]) / 86400
         job = f"job {p['job']} x{p['shifts']}/day (safe ~{self.safe_shifts(p['species'], p['job'])})" if p["job"] else "no job yet"
-        return (f"#{p['id']} {p['name']} ({sp['name']}, {self.pet_age_stage(p)}, day {age:.0f} of ~{p['lifespan_days']:.0f}): "
+        return (f"#{p['id']} {p['name']} ({sp['name']}, level {self.pet_level(p)}, {self.pet_age_stage(p)}, day {age:.0f} of ~{p['lifespan_days']:.0f}): "
                 f"{p['status']}, health {p['health']:.0f}, energy {p['energy']:.0f}, hunger {p['hunger']:.0f}, "
                 f"happiness {p['happiness']:.0f}, strain {p['strain']:.0f}, {job}, "
                 f"{'on shift' if self.on_shift(p) else 'resting'}")
@@ -693,14 +829,14 @@ class PetsMixin:
             d.update(species_name=sp["name"], special=sp["special"], active=sp["active"],
                      age_days=(time.time() - p["born"]) / 86400, stage=self.pet_age_stage(p),
                      safe=self.safe_shifts(p["species"], p["job"]) if p["job"] else None,
-                     job_about=JOBS[p["job"]][2] if p["job"] else None, on_shift=self.on_shift(p),
+                     job_about=JOBS[p["job"]][2] if p["job"] else None, on_shift=self.on_shift(p), level=self.pet_level(p),
                      frames=pet_frames(p["species"]),
                      rescue=self.rescue_price(p) if p["status"] == "critical" else None,
                      hours_left=(CRITICAL_HOURS - (time.time() - p["critical_since"]) / 3600) if p["status"] == "critical" else None)
             out.append(d)
         log = [dict(r) for r in self.db.q("SELECT l.ts, l.text, p.name FROM pet_log l JOIN pets p ON p.id=l.pet_id ORDER BY l.id DESC LIMIT 30")]
         brain = self.pet_brain() is not None
-        return {"pets": out[::-1], "log": log, "species": SPECIES, "jobs": {k: list(v) for k, v in JOBS.items()},
+        return {"pets": out[::-1], "log": log, "species": {k: dict(v, adopt=self.adopt_price(k)) for k, v in SPECIES.items()}, "jobs": {k: list(v) for k, v in JOBS.items()},
                 "brain": brain, "brain_model": self.cfg.get("pets", {}).get("model", "qwen3:0.6b"),
                 "pull": getattr(self, "_brain_pull", None), "runner": getattr(self, "pet_runner_note", "starting"),
                 "credits": self.credits()}
@@ -714,11 +850,14 @@ class PetsMixin:
         for i, p in enumerate(self.pets()):
             target = None
             if p["last_run"] > recent and p["job"]:
-                where = {"water_plants": "greenhouse", "tend_pets": "pet_shop", "exchange_watch": "exchange", "scout_topic": "internet_cafe",
+                where = {"water_plants": "greenhouse", "feed_plants": "greenhouse", "set_lights": "greenhouse",
+                         "pick_song": "radio_tower", "radio_segment": "radio_tower", "check_programs": "workshop",
+                         "salvage_parts": "workshop", "sky_survey": "library", "tend_pets": "pet_shop", "exchange_watch": "exchange", "scout_topic": "internet_cafe",
                          "summarize_memories": "archive", "tidy_curios": "home", "draft_log": "radio_tower", "proofread": "park"}.get(p["job"])
-                tb = next((b for b in buildings if b.get("id") == where), None) if where else None
+                tb = next((b for b in buildings if b.get("id") == where and b.get("level", 0) == shop.get("level", 0)), None) if where else None
                 target = tb["door_x"] + 6 * (i - 1) if tb else None
-            out.append({"id": p["id"], "name": p["name"], "x": shop["door_x"] - 14 + i * 9, "target_x": target,
+            out.append({"id": p["id"], "name": p["name"], "x": shop["door_x"] - 20 + i * 8, "target_x": target,
+                        "y": shop.get("feet_y", 192) - 12,
                         "status": p["status"], "asleep": not self.on_shift(p) or p["rest_until"] > time.time(),
                         "frames": pet_frames(p["species"])})
         return out

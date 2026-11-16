@@ -82,6 +82,10 @@ class ColonyMixin:
         return (f"{decor}; seeds:<species> by tier (common 3, uncommon 10, rare 25, legendary 60); "
                 f"pots (+2 pots, {POTS_PRICE}){'; ' + unlocks if unlocks else ''}")
 
+    def act_browse_store(self, a, imp):
+        debt = " I'm in debt, so I can't buy anything until it's paid back." if self.credits() < 0 else ""
+        return f"I have {self.credits()} credits.{debt} For sale: {self.shop_text()}"
+
     def act_check_balance(self, a, imp):
         rows = self.db.q("SELECT amount, reason FROM ledger ORDER BY id DESC LIMIT 6")
         recent = "; ".join(f"{'+' if r['amount'] > 0 else ''}{r['amount']} {r['reason']}" for r in rows)

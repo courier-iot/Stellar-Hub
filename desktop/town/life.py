@@ -80,16 +80,37 @@ class LifeMixin:
         placed = set((self.layout() or {}).values()) | set(self.constructions())
         return [bid for bid in self.available_buildings() if bid not in placed]
 
+    def upper_state(self):
+        u = self.db.get("upper_street")
+        if not u:
+            return None
+        return "open" if u["done"] <= time.time() else "construction"
+
+    def plot_ids(self):
+        return list(range(sprites.PLOTS)) + (sprites.upper_plots() if self.upper_state() == "open" else [])
+
     def empty_plots(self):
         lay = self.layout() or {}
         used = set(lay) | {c["plot"] for c in self.constructions().values()}
-        return [i for i in range(sprites.PLOTS) if i not in used]
+        return [i for i in self.plot_ids() if i not in used]
+
+    def act_build_upper_street(self, a, imp):
+        cost = self.cfg.get("upper_street_cost", 1500)
+        if self.upper_state():
+            return "The Upper Street is already " + ("open." if self.upper_state() == "open" else "being built.")
+        if not self.spend(cost, "built the Upper Street"):
+            return f"The Upper Street costs {cost} credits. I have {self.credits()}."
+        self.db.set("upper_street", {"done": time.time() + 8 * 3600, "announced": False})
+        self.add_event("build", f"🏗 {self.name} is building the Upper Street", "An elevated deck with 14 new plots, about 8 hours.")
+        return f"I paid {cost} credits for the Upper Street: a raised deck with 14 more plots (16 to 30). It takes about 8 hours to build."
 
     def map_text(self):
         lay = self.layout() or {}
         cons = {c["plot"]: bid for bid, c in self.constructions().items()}
         parts = []
-        for i in range(sprites.PLOTS):
+        for i in self.plot_ids():
+            if i == sprites.UPPER_BASE:
+                parts.append("UPPER STREET (reached by the lift beside the Home Dome):")
             if i in cons:
                 parts.append(f"{i + 1}: {BUILDINGS[cons[i]]['name']} (being built)")
             elif i in lay:
@@ -99,6 +120,12 @@ class LifeMixin:
         return "; ".join(parts)
 
     def finish_constructions(self):
+        u = self.db.get("upper_street")
+        if u and u["done"] <= time.time() and not u.get("announced"):
+            u["announced"] = True
+            self.db.set("upper_street", u)
+            self.mem.add("observation", "The Upper Street is finished! 14 new plots (16 to 30) up on the deck, reached by the lift.", "home", 8)
+            self.add_event("build", "🌉 The Upper Street is open", "14 new plots up on the deck.")
         cons = self.constructions()
         if not cons:
             return
@@ -123,7 +150,7 @@ class LifeMixin:
             p = int(a.get("plot")) - 1
         except (TypeError, ValueError):
             return None
-        return p if 0 <= p < sprites.PLOTS else None
+        return p if p in self.plot_ids() else None
 
     def plan_colony(self, situation):
         """Lets the resident lay out its colony in one go (first day, or after an upgrade)."""
@@ -150,8 +177,8 @@ class LifeMixin:
                 p = int(placements.get(bid)) - 1
             except (TypeError, ValueError):
                 p = -1
-            if not (0 <= p < sprites.PLOTS) or p in used:
-                free = [i for i in range(sprites.PLOTS) if i not in used]
+            if p not in self.plot_ids() or p in used:
+                free = [i for i in self.plot_ids() if i not in used]
                 p = min(free, key=lambda i: abs(i - sprites.HOME_PLOT))
             lay[p] = bid
             used.add(p)

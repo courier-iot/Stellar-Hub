@@ -136,7 +136,7 @@ def sign_text(c, x, y, color, glyphs):
             "S": ["###", "#..", "###", "..#", "###"], "L": ["#..", "#..", "#..", "#..", "###"],
             "D": ["##.", "#.#", "#.#", "#.#", "##."], "E": ["###", "#..", "##.", "#..", "###"],
             "W": ["#.#", "#.#", "###", "###", "#.#"], "T": ["###", ".#.", ".#.", ".#.", ".#."],
-            "C": ["###", "#..", "#..", "#..", "###"], "P": ["##.", "#.#", "##.", "#..", "#.."], "F": ["###", "#..", "##.", "#..", "#.."],
+            "C": ["###", "#..", "#..", "#..", "###"], "G": ["###", "#..", "#.#", "#.#", "###"], "P": ["##.", "#.#", "##.", "#..", "#.."], "F": ["###", "#..", "##.", "#..", "#.."],
             "Y": ["#.#", "#.#", ".#.", ".#.", ".#."],
             " ": ["...", "...", "...", "...", "..."]}
     for ch in glyphs:
@@ -662,6 +662,65 @@ def r_pet_shop(c, d, L):
             ["pen_left", "pens", "pen_right", "shelves"])
 
 
+def r_store(c, d, L):
+    room(c, "w", "s", "m", "k", "h")
+    airlock(c, L)
+    rnd = random.Random(14)
+    for sx in (30, 86):                                                     # shelving aisles
+        c.rect(sx, 34, 48, 94, "S"); c.rect(sx + 2, 36, 44, 90, "g")
+        for shelf in range(4):
+            y = 40 + shelf * 22
+            x = sx + 4
+            while x < sx + 42:
+                w, h = rnd.randint(3, 6), rnd.randint(6, 14)
+                c.rect(x, y + 16 - h, w, h, rnd.choice("rRcCeEyYmpto"))
+                x += w + 1
+            c.rect(sx + 2, y + 16, 44, 2, "S")
+    c.rect(146, 96, 46, 32, "M"); c.rect(146, 94, 46, 3, "m")               # checkout
+    screen(c, 152, 80, 16, 12, True, "e"); c.rect(174, 88, 10, 6, "y")
+    L.append([174, 88, 10, 6, "Y", 900])
+    sign_text(c, 150, 30, "m", "STORE")
+    for i, col in enumerate("cmyep"):                                        # hanging sale tags
+        c.rect(150 + i * 8, 46, 5, 8, col); c.px(152 + i * 8, 44, "S"); c.px(152 + i * 8, 45, "S")
+    c.rect(204, 70, 30, 58, "S"); c.rect(206, 72, 26, 54, "D")              # furniture showroom
+    c.rect(210, 112, 18, 6, "R"); c.rect(210, 104, 4, 8, "R")
+    c.rect(214, 82, 10, 8, "t"); c.rect(218, 90, 2, 10, "S")
+    return ({"aisle_a": [54, 32, "sparkle"], "aisle_b": [110, 32, "sparkle"], "checkout": [169, 78, "sparkle"],
+             "showroom": [219, 68, "sparkle"]},
+            {"browse_store": "aisle_a", "buy": "checkout"},
+            ["aisle_a", "aisle_b", "showroom"])
+
+
+def r_museum(c, d, L):
+    room(c, "s", "S", "y", "w", "s")
+    airlock(c, L)
+    for x in range(36, IW - 8, 50):                                          # marble columns
+        c.rect(x, WALL_TOP + 2, 6, FLOOR_Y - WALL_TOP - 2, "w"); c.rect(x + 1, WALL_TOP + 2, 1, FLOOR_Y - WALL_TOP - 2, "s")
+    exhibits = d.get("exhibits", [])[:8]
+    spots = {}
+    for i in range(8):                                                       # glass cases
+        col, row = i % 4, i // 4
+        x, y = 46 + col * 48, 30 + row * 46
+        c.rect(x, y, 28, 30, "k"); c.rect(x + 1, y + 1, 26, 28, "D"); c.rect(x + 1, y + 1, 26, 1, "c")
+        c.rect(x - 2, y + 30, 32, 4, "S")
+        if i < len(exhibits):
+            icon = exhibits[i]["icon"]
+            for j, r in enumerate(icon):
+                for k, ch in enumerate(r):
+                    if ch != ".":
+                        c.rect(x + 4 + k * 2, y + 6 + j * 2, 2, 2, ch)
+            c.rect(x + 8, y + 31, 12, 1, "y")
+            spots[f"case_{i + 1}"] = [x + 14, y, "sparkle"]
+    c.rect(206, 98, 28, 30, "o"); c.rect(206, 96, 28, 3, "y")                # curator's desk
+    c.rect(212, 88, 6, 8, "t"); c.rect(222, 90, 8, 6, "S")
+    spots["curator"] = [220, 86, "sparkle"]
+    if not exhibits:
+        spots["hall"] = [120, 40, "sparkle"]
+    cases = [k for k in spots if k.startswith("case_")]
+    return (spots, {"view_museum": cases[0] if cases else "hall", "donate_set": "curator", "sell_set": "curator"},
+            cases or ["hall", "curator"])
+
+
 # ---------------------------------------------------------------- decor the resident places in each building
 # wall: top-left of a 20x16 box; floor: centre x (stands on the floor, 9 wide); ceiling: centre x; rug: centre x
 DECOR_SLOTS = {
@@ -682,6 +741,8 @@ DECOR_SLOTS = {
     "park": {"floor": 161, "rug": 110},
     "exchange": {"wall": (44, 40), "floor": 191, "ceiling": 110, "rug": 110},
     "pet_shop": {"wall": (100, 24), "ceiling": 150, "rug": 140},
+    "store": {"wall": (200, 26), "floor": 140, "ceiling": 168, "rug": 120},
+    "museum": {"floor": 228, "ceiling": 120, "rug": 120},
 }
 
 
@@ -796,7 +857,8 @@ ROOMS = {"home": (r_home, "Home Dome"), "library": (r_library, "Library"), "inte
          "radio_tower": (r_radio, "Radio Tower"), "studio": (r_studio, "Radio Studio"),
          "archive": (r_archive, "Archive Vault"), "spaceport": (r_spaceport, "Spaceport"),
          "station": (r_station, "Orbital Station"), "gallery": (r_gallery, "Gallery"), "park": (r_park, "Park"),
-         "exchange": (r_exchange, "Exchange"), "pet_shop": (r_pet_shop, "Pet Shop")}
+         "exchange": (r_exchange, "Exchange"), "pet_shop": (r_pet_shop, "Pet Shop"),
+         "store": (r_store, "Department Store"), "museum": (r_museum, "Stellar Museum")}
 
 
 def interior_version(bid, data):

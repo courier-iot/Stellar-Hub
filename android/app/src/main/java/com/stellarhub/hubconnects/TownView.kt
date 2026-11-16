@@ -22,7 +22,8 @@ import kotlin.math.sign
  *  When the resident walks into a building, the view can follow it inside: every building has its own room. */
 class TownView(context: Context) : View(context) {
 
-    private class Building(val id: String, val x: Int, val y: Int, val doorX: Int, val bitmap: Bitmap, val door: IntArray?)
+    private class Building(val id: String, val x: Int, val y: Int, val doorX: Int, val bitmap: Bitmap, val door: IntArray?,
+                           val level: Int = 0, val feet: Int = 192)
     private class Spot(val x: Int, val top: Int, val fx: String)
     private class Light(val x: Int, val y: Int, val w: Int, val h: Int, val color: Int, val period: Int)
     private class Room(val id: String, val name: String, val version: String, val w: Int, val h: Int, val bitmap: Bitmap,
@@ -43,7 +44,8 @@ class TownView(context: Context) : View(context) {
     private var floats = true
     private var decor: List<Building> = emptyList()
     private var visitors: List<Building> = emptyList()
-    private class Pet(val id: Int, val homeX: Int, val targetX: Int?, val asleep: Boolean, val unwell: Boolean, val frames: List<Bitmap>, var x: Float)
+    private class Pet(val id: Int, val homeX: Int, val targetX: Int?, val asleep: Boolean, val unwell: Boolean, val frames: List<Bitmap>,
+                      var x: Float, val y: Int)
     private var pets: List<Pet> = emptyList()
     private var listening = false
     private var away = false
@@ -59,6 +61,15 @@ class TownView(context: Context) : View(context) {
     private var stationY = 14
     private var inOrbit = false
     private var palette: Map<Char, Int> = emptyMap()
+    // the Upper Street (a raised deck the resident can buy), and the lift between the levels
+    private var deck: Bitmap? = null
+    private var deckY = 118
+    private var liftX = 432f
+    private var upperFeet = 126
+    private var upperOpen = false
+    private var residentFeet = -1f
+    private var curLevel = 0
+    private var riding = false
 
     private val viewW get() = minOf(worldW, 320)
     private var camX = -1f
@@ -148,8 +159,15 @@ class TownView(context: Context) : View(context) {
             val b = bs.getJSONObject(i)
             val id = b.optString("id").takeIf { it.isNotBlank() && it != "null" } ?: ""
             val d = b.optJSONArray("door")?.let { a -> IntArray(4) { a.optInt(it) } }
-            Building(id, b.getInt("x"), b.getInt("y"), b.getInt("door_x"), bake(b.getJSONArray("sprite"), pal), d)
+            Building(id, b.getInt("x"), b.getInt("y"), b.getInt("door_x"), bake(b.getJSONArray("sprite"), pal), d,
+                b.optInt("level", 0), b.optInt("feet_y", 192))
         }
+        val up = world.optJSONObject("upper")
+        deck = up?.optJSONArray("sprite")?.let { bake(it, pal) }
+        if (up != null) {
+            deckY = up.optInt("y", 118); liftX = up.optInt("lift_x", 432).toFloat(); upperFeet = up.optInt("feet_y", 126)
+        }
+        upperOpen = up?.optString("state") == "open"
         night = world.optBoolean("night", false)
         val ej = world.optJSONObject("emotes")
         val em = HashMap<String, Bitmap>()
@@ -188,7 +206,7 @@ class TownView(context: Context) : View(context) {
             val id = p.getInt("id")
             Pet(id, p.getInt("x"), if (p.isNull("target_x")) null else p.optInt("target_x"), p.optBoolean("asleep"),
                 p.optString("status") in listOf("sick", "injured", "critical"),
-                (0 until fr.length()).map { bake(fr.getJSONArray(it), pal) }, oldX[id] ?: p.getInt("x").toFloat())
+                (0 until fr.length()).map { bake(fr.getJSONArray(it), pal) }, oldX[id] ?: p.getInt("x").toFloat(), p.optInt("y", 180))
         }
         away = world.optBoolean("away", false)
         val tw = world.getJSONArray("twinkle")
@@ -243,6 +261,16 @@ class TownView(context: Context) : View(context) {
     private fun doorOf(id: String): Float {
         val real = aliases[id] ?: id
         return (buildings.firstOrNull { it.id == real }?.doorX ?: worldW / 2).toFloat()
+    }
+
+    private fun feetOf(id: String?): Float = (buildingOf(id)?.feet ?: feetY).toFloat()
+    private fun levelOf(id: String?): Int = buildingOf(id)?.level ?: 0
+
+    /** Puts the resident at a building's door, on the right level. */
+    private fun standAt(id: String) {
+        residentX = doorOf(id)
+        residentFeet = feetOf(id)
+        curLevel = levelOf(id)
     }
 
     private fun buildingOf(id: String?): Building? {
@@ -301,12 +329,12 @@ class TownView(context: Context) : View(context) {
             destId = loc
             val fresh = lastTurn > 0 && (System.currentTimeMillis() / 1000.0 - lastTurn) < 120
             if (fresh && prev != null && prev != loc) {
-                residentX = doorOf(prev)
+                standAt(prev)
                 targetX = doorOf(loc)
                 phase = Phase.EXIT
                 phaseStart = now
             } else {
-                residentX = doorOf(loc)
+                standAt(loc)
                 targetX = residentX
                 arrive(loc, atSpot = true)
             }
@@ -390,10 +418,26 @@ class TownView(context: Context) : View(context) {
     private fun step(now: Long) {
         when (phase) {
             Phase.OUT_WALK -> {
-                val dx = targetX - residentX
+                if (residentFeet < 0) residentFeet = feetY.toFloat()
+                val destLevel = levelOf(destId)
+                riding = false
+                var goal = targetX
+                if (!upperOpen) { curLevel = 0; residentFeet = feetY.toFloat() }
+                else if (curLevel != destLevel) {          // take the lift to the other level
+                    goal = liftX
+                    if (abs(residentX - liftX) < 0.6f) {
+                        val tf = (if (destLevel == 1) upperFeet else feetY).toFloat()
+                        val df = tf - residentFeet
+                        if (abs(df) > 0.6f) { residentFeet += sign(df) * 0.7f; riding = true }
+                        else { residentFeet = tf; curLevel = destLevel }
+                    }
+                }
+                val dx = goal - residentX
                 if (abs(dx) > 0.5f) {
                     residentX += sign(dx) * min(0.9f, abs(dx))
                     faceLeft = dx < 0
+                } else if (riding || curLevel != destLevel) {
+                    // still in the lift
                 } else if (destId != null && !away) {
                     residentX = targetX
                     phase = Phase.ENTER
@@ -416,7 +460,7 @@ class TownView(context: Context) : View(context) {
                     ix += sign(dx) * min(0.9f, abs(dx))
                     faceLeft = dx < 0
                 } else if (!inside || now - phaseStart > 400) {
-                    residentX = doorOf(roomId ?: destId ?: "home")
+                    standAt(roomId ?: destId ?: "home")
                     roomId = null
                     phase = Phase.EXIT
                     phaseStart = now
@@ -665,7 +709,9 @@ class TownView(context: Context) : View(context) {
                 }
             }
         }
-        for (b in buildings) canvas.drawBitmap(b.bitmap, b.x.toFloat(), b.y.toFloat(), pixelPaint)
+        for (b in buildings) if (b.level == 0) canvas.drawBitmap(b.bitmap, b.x.toFloat(), b.y.toFloat(), pixelPaint)
+        deck?.let { canvas.drawBitmap(it, 0f, deckY.toFloat(), pixelPaint) }          // the Upper Street
+        for (b in buildings) if (b.level == 1) canvas.drawBitmap(b.bitmap, b.x.toFloat(), b.y.toFloat(), pixelPaint)
         // the airlock opens while the resident goes in or comes out
         val doorB = when (phase) { Phase.ENTER -> buildingOf(destId); Phase.EXIT -> buildings.minByOrNull { abs(it.doorX - residentX) }; else -> null }
         val dr = doorB?.door
@@ -680,7 +726,7 @@ class TownView(context: Context) : View(context) {
             val moving = abs(d) > 0.5f
             if (moving) p.x += sign(d) * min(0.6f, abs(d))
             val f = if (moving || !p.asleep) ((t / 250).toLong() % 2).toInt() else 0
-            val py = 192f - 12f - (if (moving && f == 1) 1f else 0f)
+            val py = p.y.toFloat() - (if (moving && f == 1) 1f else 0f)
             val bmp = p.frames[f.coerceAtMost(p.frames.size - 1)]
             if (moving && d < 0) {
                 canvas.save(); canvas.scale(-1f, 1f, p.x.roundToInt().toFloat(), 0f)
@@ -717,14 +763,19 @@ class TownView(context: Context) : View(context) {
             canvas.drawRect(0f, 138f, worldW.toFloat(), worldH.toFloat(), fill)
         }
         if (showResident) {
-            val walking = phase == Phase.OUT_WALK && abs(targetX - residentX) > 0.5f
+            val walking = phase == Phase.OUT_WALK && (abs(targetX - residentX) > 0.5f || curLevel != levelOf(destId))
             val p = (now - phaseStart).toFloat()
             val alpha = when (phase) {
                 Phase.ENTER -> (255 * (1 - ((p - 200) / 400f))).roundToInt().coerceIn(0, 255)
                 Phase.EXIT -> (255 * ((p - 150) / 400f)).roundToInt().coerceIn(0, 255)
                 else -> 255
             }
-            drawResident(canvas, residentX, feetY, walking, alpha, t)
+            val feet = (if (residentFeet >= 0) residentFeet else feetY.toFloat()).roundToInt()
+            if (riding) {
+                fill.color = Color.argb(90, 94, 242, 255)
+                canvas.drawRect(residentX.roundToInt() - 5f, feet.toFloat(), residentX.roundToInt() + 5f, feet + 2f, fill)
+            }
+            drawResident(canvas, residentX, feet, walking || riding, alpha, t)
         } else if (!away && !inOrbit && roomId != null && !noRoom) {     // a marker over the building it's in
             buildingOf(roomId)?.let { b ->
                 val mx = b.doorX.toFloat()
@@ -757,10 +808,13 @@ class TownView(context: Context) : View(context) {
         c.scale(scale.toFloat(), scale.toFloat())
         c.drawBitmap(bg, 0f, 0f, pixelPaint)
         station?.let { c.drawBitmap(it, stationX.toFloat(), stationY.toFloat(), pixelPaint) }
-        for (b in buildings) c.drawBitmap(b.bitmap, b.x.toFloat(), b.y.toFloat(), pixelPaint)
+        for (b in buildings) if (b.level == 0) c.drawBitmap(b.bitmap, b.x.toFloat(), b.y.toFloat(), pixelPaint)
+        deck?.let { c.drawBitmap(it, 0f, deckY.toFloat(), pixelPaint) }
+        for (b in buildings) if (b.level == 1) c.drawBitmap(b.bitmap, b.x.toFloat(), b.y.toFloat(), pixelPaint)
         for (d in decor) c.drawBitmap(d.bitmap, d.x.toFloat(), d.y.toFloat(), pixelPaint)
         if (residentX >= 0 && frames.isNotEmpty() && !away && !inOrbit) {
-            c.drawBitmap(frames[0], residentX.roundToInt() - 8f, (feetY - 16).toFloat(), pixelPaint)
+            val feet = if (residentFeet >= 0) residentFeet.roundToInt() else feetY
+            c.drawBitmap(frames[0], residentX.roundToInt() - 8f, (feet - 16).toFloat(), pixelPaint)
         }
         return out
     }

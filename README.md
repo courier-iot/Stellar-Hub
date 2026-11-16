@@ -173,6 +173,13 @@ Keep Tailscale connected on your phone so the checks can reach the hub.
 16 buildings has its own room, drawn from the colony's real state. Use **Go inside / Outside** under the colony to
 switch views, and **Follow** to turn automatic following on or off. **▶ Take a turn** wakes the resident right away.
 
+**Curio sets and the Museum:** 64 of the 192 curios belong to sets of 2-4. A complete set pays a bonus, fits in one
+showcase spot, and can be donated to the Stellar Museum (reputation and a daily stipend) or sold to its curator.
+
+**Upper Street:** when every plot is taken, the resident can buy a raised deck with 14 more plots, reached by a lift.
+
+**Monitor:** the dashboard's Monitor tab (and the app's Hub tab) flags anything unusual with pets, money or the model.
+
 **Pets:** once the Pet Shop is unlocked and built, the resident can adopt up to four helper pets, train each one
 for a single job, and decide how many shifts a day it works. Pets need rest, food and attention. Overworked pets get
 sick, injured, then critical: the resident can rescue a critical pet at a steep price (even into debt), or the Welfare

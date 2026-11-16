@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS gifts(id INTEGER PRIMARY KEY, ts REAL, kind TEXT, ref
 CREATE TABLE IF NOT EXISTS pets(id INTEGER PRIMARY KEY, name TEXT, species TEXT, born REAL, lifespan_days REAL,
     energy REAL, hunger REAL, happiness REAL, health REAL, strain REAL, status TEXT, job TEXT, shifts INTEGER,
     runs_today INTEGER, run_day TEXT, last_run REAL, rest_until REAL, critical_since REAL, updated REAL);
+CREATE TABLE IF NOT EXISTS museum(id INTEGER PRIMARY KEY, ts REAL, set_id TEXT);
+CREATE TABLE IF NOT EXISTS monitor(id INTEGER PRIMARY KEY, ts REAL, track TEXT, level TEXT, title TEXT, detail TEXT);
 CREATE TABLE IF NOT EXISTS pet_log(id INTEGER PRIMARY KEY, ts REAL, pet_id INTEGER, text TEXT);
 CREATE TABLE IF NOT EXISTS visits(id INTEGER PRIMARY KEY, ts REAL, visitor TEXT, building TEXT, talk TEXT, learned TEXT);
 CREATE TABLE IF NOT EXISTS chapters(
@@ -60,6 +62,7 @@ CREATE TABLE IF NOT EXISTS programs(
 
 # Columns added after v0.3.0. Existing databases get them on startup.
 MIGRATIONS = [
+    "ALTER TABLE pets ADD COLUMN xp REAL DEFAULT 0",
     "ALTER TABLE memories ADD COLUMN archived INTEGER DEFAULT 0",
     "ALTER TABLE requests ADD COLUMN building TEXT",
     "ALTER TABLE requests ADD COLUMN extra TEXT",

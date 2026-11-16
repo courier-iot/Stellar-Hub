@@ -51,7 +51,7 @@ VISITORS = {
              "likes": ["gallery", "studio", "park"]},
 }
 
-ALBUM_KINDS = {"milestone", "build", "plant", "space", "visitor", "gift", "unlock", "show"}
+ALBUM_KINDS = {"milestone", "build", "plant", "space", "visitor", "gift", "unlock", "show", "set", "museum"}
 
 SHOW_PROMPT = """You are {name}, a young AI who lives in a little space colony and hosts a short daily radio show
 from its Radio Tower. Write today's show as something you will SAY out loud (about 120-200 words): greet listeners,
@@ -209,7 +209,13 @@ class ExtrasMixin:
         news = [e["title"] for e in self.db.q("SELECT title FROM events WHERE ts > ? ORDER BY id DESC LIMIT 8",
                                                (time.time() - 86400,))]
         favs = [f"{s['title']} by {s['artist']}" for s in self.favourites(6)]
-        ctx = (f"WHO YOU ARE:\n{self.personality()}\n\nTODAY IN THE COLONY: {'; '.join(news) or 'a quiet day'}\n"
+        pick, extra = self.db.get("song_pick"), self.db.get("show_extra")
+        helpers = ""
+        if pick:
+            helpers += f"\nYOUR PET {pick['by']} PICKED A SONG FOR TODAY: {pick['title']} by {pick['artist']}"
+        if extra:
+            helpers += f"\nYOUR PET {extra['by']} WROTE A SEGMENT TO READ OUT (credit them): {extra['text']}"
+        ctx = (f"WHO YOU ARE:\n{self.personality()}{helpers}\n\nTODAY IN THE COLONY: {'; '.join(news) or 'a quiet day'}\n"
                f"YOUR CREATOR'S FAVOURITE SONGS: {'; '.join(favs) or 'unknown yet'}\n"
                f"YOUR OWN SONGS: {', '.join(c['title'] for c in self.db.q('SELECT title FROM compositions ORDER BY id DESC LIMIT 4')) or 'none'}")
         out = self.ask(SHOW_PROMPT.format(name=self.name, creator=self.creator), ctx, "show")
@@ -218,6 +224,8 @@ class ExtrasMixin:
             return "I sat at the mic, but the words didn't come today."
         title = str(out.get("title") or "The Colony Hour")[:80]
         self.db.set("show_date", today)
+        self.db.set("song_pick", None)
+        self.db.set("show_extra", None)
         self.db.x("INSERT INTO broadcasts(ts, text) VALUES(?,?)", (time.time(), f"[{title}] {script}"[:2000]))
         self.speak_async("show", f"📻 {title}", script)
         self.gain_xp("music", 3, "hosted a radio show")
@@ -291,7 +299,8 @@ class ExtrasMixin:
         return None
 
     def maybe_visitor(self):
-        if self.visitor_now() or random.random() > 0.05:     # about two or three visits a week at 30-minute turns
+        chance = 0.05 * (1 + 0.15 * len(self.exhibits()))      # Museum exhibits draw more visitors
+        if self.visitor_now() or random.random() > chance:     # about two or three visits a week at 30-minute turns
             return
         vid = random.choice(list(VISITORS))
         v = VISITORS[vid]
@@ -537,6 +546,11 @@ class ExtrasMixin:
         favs = self.favourites(3)
         if favs:
             news.append("Your creator's favourite songs lately: " + "; ".join(f"{s['title']} by {s['artist']}" for s in favs) + ".")
+        sets = self.sets_text()
+        if sets != "none started":
+            news.append(f"Curio sets in progress: {sets}.")
+        if not self.empty_plots() and not self.upper_state():
+            news.append("Every plot on the walkway is taken. build_upper_street (at Home) adds a raised deck with 14 more plots.")
         last = self.db.q("SELECT MAX(ts) AS t FROM gifts")[0]["t"] or self.db.get("born", time.time())
         if time.time() - last > 7 * 86400:
             news.append("It's been a while since you made your creator a gift (make_gift at home).")
@@ -559,6 +573,9 @@ class ExtrasMixin:
     def daily_extras(self):
         self.give_starting_manuals()
         self.maybe_visitor()
+        self.check_sets()
+        self.museum_stipend()
+        self.money_daily_check()
 
     def world_visitors(self, buildings):
         v = self.visitor_now()
@@ -568,5 +585,5 @@ class ExtrasMixin:
         b = next((b for b in buildings if b.get("id") == real), None)
         if not b:
             return []
-        return [{"id": v["id"], "name": VISITORS[v["id"]]["name"], "x": b["door_x"] + 10, "y": sprites.FEET_Y - 15,
+        return [{"id": v["id"], "name": VISITORS[v["id"]]["name"], "x": b["door_x"] + 10, "y": b.get("feet_y", sprites.FEET_Y) - 15,
                  "sprite": visitor_sprite(VISITORS[v["id"]]["colors"])}]

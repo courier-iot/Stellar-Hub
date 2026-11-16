@@ -2,6 +2,16 @@
 
 Stellar Hub's update manager shows the entries newer than the version you have.
 
+## v0.12.0
+- Added: the Upper Street. When the walkway is full, the resident can buy a raised deck (1500 credits, about 8 hours) with 14 more plots (16-30), reached by a glass lift beside the Home Dome. It rides the lift between levels on the dashboard and in the app.
+- Added: the Department Store (a new building, free to build). Once it's open, all shopping happens there; the Credit Vault keeps your balance and history.
+- Added: 64 new curios in 23 sets of 2, 3 or 4 (192 curios in all). Each set's pieces turn up mostly from one place: expeditions, meteor showers, visitors, the trader, pets, the park, the observatory or the Exchange. Completing a set pays a bonus. A complete set fits in one showcase spot, and taking it down splits it back into pieces.
+- Added: the Stellar Museum (unlock for 400). Donate a complete set to a permanent exhibit (reputation, a daily stipend and more visitors) or sell it to the curator for much more than its pieces.
+- Added: four new pets: Signal Jelly (music: picks songs and writes radio segments for the show), Gear Beetle (mechanics: checks programs, salvages parts), Star Owl (astronomy: sky surveys, spots fragments) and Moss Tortoise (garden: feeds plants and sets their lights). Seven new jobs.
+- Added: pet skill levels (1-10): practice makes each pet's job cheaper.
+- Added: the Monitor (a new dashboard tab and a card in the app's Hub tab). It tracks pets, money and the model separately and flags anything unusual: failed or invalid turns, loops, slow turns, AI-call limits, big spends, debt, spending spikes, quick health drops and overwork. Alerts also come as phone notifications.
+- Changed: up to 6 pets, and each pet it already has makes the next adoption cost 50% more.
+
 ## v0.11.0
 - Added: pets and the Pet Shop (unlock for 250 credits). Six species, each with a speciality, a lifespan and its own hours: Orbit Moth (small repetitive tasks, night), Drone Cat (watching, night), Rover Pup (fetching, day), Comet Finch (words, day), Crystal Snail (careful long jobs, any time, lives longest) and Nebula Axolotl (care, night).
 - Added: the resident trains each pet for one of 10 jobs (watering plants, sorting curios, night watch, Exchange watch, scouting the uplink, drafting logs, proofreading, tidying memories, tending other pets, fetching) and sets its shifts a day. Specialised jobs cost a pet less energy.

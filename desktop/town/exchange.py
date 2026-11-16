@@ -21,6 +21,10 @@ class ExchangeMixin:
             for it in spots.values():
                 if it["type"] == "curio":
                     out.add(it["id"])
+                elif it["type"] == "set":
+                    from .curio_sets import piece_ids, SETS
+                    if it["id"] in SETS:
+                        out.update(piece_ids(it["id"]))
         return out
 
     def spares(self, cid):

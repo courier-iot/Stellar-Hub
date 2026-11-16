@@ -16,6 +16,9 @@ BW, BH = 44, 56            # building sprite size
 GROUND_Y = 138             # where the moon surface starts
 WALK_Y = 186               # top of the walkway
 FEET_Y = 192               # resident stands with feet here
+UPPER_WALK_Y = 120         # top of the Upper Street deck (bought later)
+UPPER_FEET_Y = 126
+UPPER_BASE = 15            # upper plots are numbered 16-30 (index 15-29); the one above the Home Dome stays open sky
 
 PALETTE = {
     "k": "#07080f", "n": "#151a33", "N": "#232a52", "g": "#353e6e", "G": "#56609a",
@@ -137,6 +140,8 @@ def neon_icon(c, x, y, icon, col):
         "note": ["..####.", "..#..#.", "..#..#.", "..#..#.", "###.###", "###.###"],
         "rocket": ["...#...", "..###..", "..#.#..", "..###..", ".#####.", "#.#.#.#"],
         "gavel": [".###...", ".####..", "..###..", "...#.#.", "....#.#", "######."],
+        "bag": ["..###..", ".#...#.", "#######", "#.....#", "#.....#", "#######"],
+        "column": ["#######", ".#.#.#.", ".#.#.#.", ".#.#.#.", ".#.#.#.", "#######"],
         "paw": ["#.#.#..", "#.#.#..", ".......", ".###...", "#####..", ".###..."],
     }
     for j, row in enumerate(shapes[icon]):
@@ -484,6 +489,41 @@ def b_pet_shop(lit):
     return c, d
 
 
+def b_store(lit):
+    c = Canvas(BW, BH)
+    c.box(2, 14, 40, 41, "M")                                                 # tall store front
+    c.rect(2, 14, 40, 2, "m" if lit else "M")
+    for i, x in enumerate(range(4, 40, 6)):                                   # striped awning
+        c.rect(x, 26, 6, 4, ("m" if i % 2 else "w") if lit else ("M" if i % 2 else "g"))
+    for x in (6, 30):                                                         # display windows
+        c.rect(x, 32, 9, 9, "k"); c.rect(x + 1, 33, 7, 7, "t" if lit else "D")
+        c.rect(x + 2, 36, 2, 4, "c" if lit else "C"); c.rect(x + 5, 35, 2, 5, "y" if lit else "o")
+    for x in range(6, 40, 8):
+        window(c, x, 18, 4, 5, lit, "y")
+    d = door(c, 18, 40, 9, 15)
+    sign(c, 22, 3, "bag", "m", lit)
+    c.outline()
+    c.rect(0, 55, BW, 1, "k")
+    return c, d
+
+
+def b_museum(lit):
+    c = Canvas(BW, BH)
+    c.box(3, 26, 38, 29, "s")
+    for i in range(10):                                                       # pediment
+        c.rect(22 - i * 2, 16 + i, i * 4 + 1, 1, "s")
+    c.rect(2, 25, 40, 2, "w" if lit else "S")
+    for x in (5, 12, 30, 37):                                                 # columns
+        c.rect(x, 27, 3, 26, "w" if lit else "S"); c.rect(x - 1, 27, 5, 1, "S"); c.rect(x - 1, 52, 5, 1, "S")
+    c.rect(2, 53, 40, 2, "S")
+    c.disc(22, 21, 2, "y" if lit else "o")
+    d = door(c, 18, 40, 9, 13)
+    sign(c, 22, 2, "column", "y", lit)
+    c.outline()
+    c.rect(0, 55, BW, 1, "k")
+    return c, d
+
+
 STATION = [
     "............kk............",
     "...........kcck...........",
@@ -496,7 +536,7 @@ STATION = [
     "............kk............",
 ]
 
-BUILDERS = {"home": b_home, "gallery": b_gallery, "park": b_park, "exchange": b_exchange, "pet_shop": b_pet_shop, "library": b_library, "internet_cafe": b_cafe, "post_office": b_post,
+BUILDERS = {"home": b_home, "gallery": b_gallery, "park": b_park, "exchange": b_exchange, "pet_shop": b_pet_shop, "store": b_store, "museum": b_museum, "library": b_library, "internet_cafe": b_cafe, "post_office": b_post,
             "salon": b_salon, "bank": b_bank, "workshop": b_workshop, "greenhouse": b_greenhouse,
             "radio_tower": b_radio, "archive": b_archive, "spaceport": b_spaceport}
 ORDER = ["home", "library", "internet_cafe", "post_office", "greenhouse", "radio_tower",
@@ -786,7 +826,54 @@ TRADER_SHIP = [
 
 
 def plot_x(i):
-    return X0 + i * STEP
+    return X0 + (i % PLOTS) * STEP
+
+
+LIFT_X = X0 + HOME_PLOT * STEP + BW + 4       # the lift between the walkway and the Upper Street, right of the Home Dome
+
+
+def upper_plots():
+    return [UPPER_BASE + i for i in range(PLOTS) if i != HOME_PLOT]
+
+
+def upper_deck(state):
+    """The Upper Street: an elevated deck on pylons, with a glass lift beside the Home Dome."""
+    top = UPPER_WALK_Y - 2
+    c = Canvas(W, WALK_Y - top)
+    gap0, gap1 = plot_x(HOME_PLOT) - 4, LIFT_X + 5           # the deck opens around the Home Dome and its lift
+    building = state == "construction"
+    for x in range(W):
+        if gap0 <= x < gap1:
+            continue
+        c.px(x, 2, "s")
+        for y in range(3, 9):
+            c.px(x, y, ("Y" if (x // 4) % 2 else "k") if building and y in (4, 5) else "S")
+        c.px(x, 9, "k")
+        if x % 24 == 0:
+            c.rect(x, 3, 1, 6, "g")
+        if x % 48 == 10 and not building:
+            c.rect(x, 5, 3, 1, "c")
+        if x % 6 == 0:                                          # railing posts
+            c.rect(x, 0, 1, 2, "S")
+    for x in range(W):
+        if not (gap0 <= x < gap1):
+            c.px(x, 0, "g")
+    for i in range(PLOTS - 1):                                  # pylons in the gaps between the buildings below
+        px = plot_x(i) + BW + 2
+        if px >= gap0 - 6 and px < gap1:
+            continue
+        c.rect(px, 10, 5, WALK_Y - top - 10, "L"); c.rect(px + 1, 10, 1, WALK_Y - top - 10, "U")
+        c.rect(px + 2, 24, 1, 2, "c" if not building else "Y")
+    lx = LIFT_X - 3                                             # glass lift tube
+    c.rect(lx, 0, 7, WALK_Y - top, "S"); c.rect(lx + 1, 0, 5, WALK_Y - top, "C")
+    for y in range(4, WALK_Y - top, 8):
+        c.rect(lx + 1, y, 5, 1, "c")
+    c.rect(lx - 1, 8, 9, 2, "S")
+    if building:
+        for x in range(0, W, 30):                               # scaffolding while it's being built
+            if not (gap0 <= x < gap1):
+                c.rect(x, 10, 1, 40, "o"); c.rect(x, 30, 12, 1, "O")
+    return c.rows()
 
 
 def world(layout, building_states, look, extras=None):
@@ -797,18 +884,21 @@ def world(layout, building_states, look, extras=None):
     if _BG is None:
         _BG = background()
     buildings = []
-    for i in range(PLOTS):
+    upper = extras.get("upper")
+    for i in list(range(PLOTS)) + (upper_plots() if upper == "open" else []):
         x = plot_x(i)
+        level = 1 if i >= UPPER_BASE else 0
+        base, feet = (UPPER_WALK_Y, UPPER_FEET_Y) if level else (WALK_Y, FEET_Y)
         bid = layout.get(i) if isinstance(layout, dict) else None
         if bid:
             variant = building_states.get(bid, "open")
             spr, dr = building_sprite(bid, variant, extras, with_door=True)
             h = len(spr)
-            buildings.append({"id": bid, "plot": i, "x": x, "y": WALK_Y - h + 1, "w": BW, "h": h, "variant": variant,
-                              "door_x": x + BW // 2, "door": dr, "sprite": spr})
+            buildings.append({"id": bid, "plot": i, "x": x, "y": base - h + 1, "w": BW, "h": h, "variant": variant,
+                              "door_x": x + BW // 2, "door": dr, "sprite": spr, "level": level, "feet_y": feet})
         else:
-            buildings.append({"id": None, "plot": i, "x": x, "y": WALK_Y - BH + 1, "w": BW, "h": BH, "variant": "empty",
-                              "door_x": x + BW // 2, "sprite": empty_lot(i + 1)})
+            buildings.append({"id": None, "plot": i, "x": x, "y": base - BH + 1, "w": BW, "h": BH, "variant": "empty",
+                              "door_x": x + BW // 2, "sprite": empty_lot(i + 1), "level": level, "feet_y": feet})
     decor = []
     start = plot_x(HOME_PLOT) - 70
     for i, name in enumerate([d for d in extras.get("decor", []) if d in DECOR][:20]):
@@ -822,7 +912,9 @@ def world(layout, building_states, look, extras=None):
             "station": {"sprite": STATION, "x": 520, "y": 14} if extras.get("station") else None,
             "resident": {"frames": resident_frames(look), "form": look.get("form", "star_spirit"),
                          "feet_y": FEET_Y, "floats": look.get("form", "star_spirit") == "star_spirit"},
-            "twinkle": stars_for_twinkle()}
+            "twinkle": stars_for_twinkle(),
+            "upper": {"state": upper, "x": 0, "y": UPPER_WALK_Y - 2, "sprite": upper_deck(upper), "lift_x": LIFT_X,
+                      "feet_y": UPPER_FEET_Y} if upper else None}
     data["version"] = world_version(layout, building_states, look, extras)
     return data
 
