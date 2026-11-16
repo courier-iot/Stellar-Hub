@@ -41,6 +41,17 @@ def load_config(root):
             os.replace(path + ".tmp", path)
         except OSError:
             pass
+    if mine and not mine.get("_migrated_0133"):
+        # v0.13.3: turns every 20 minutes. Only the old automatic values (12 or 30) change.
+        if mine.get("tick_minutes") in (12, 30):
+            mine["tick_minutes"] = 20
+        mine["_migrated_0133"] = True
+        try:
+            with open(path + ".tmp", "w", encoding="utf-8") as f:
+                json.dump(mine, f, indent=2)
+            os.replace(path + ".tmp", path)
+        except OSError:
+            pass
     cfg = _merge(defaults, mine)
     cfg["_config_path"] = path
     return cfg

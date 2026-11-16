@@ -28,15 +28,44 @@ def ago(ts):
 
 
 class Memory:
+    """v0.13.3: every memory's keywords go into an index (memory_words), so recall reaches back through its whole life,
+    not just the newest 1,500 memories."""
+    PER_WORD = 400        # newest matches looked at for each keyword
+    BACKFILL = 5000       # older memories indexed per start-up / turn until the whole history is covered
+
     def __init__(self, db):
         self.db = db
+        self.backfill()
+
+    def _index(self, mid, content):
+        ws = words(content)
+        if ws:
+            self.db.many("INSERT OR IGNORE INTO memory_words(word, mid) VALUES(?,?)", [(w, mid) for w in ws])
+
+    def backfill(self):
+        """Indexes memories from before v0.13.3, newest first, a batch at a time."""
+        upto = self.db.get("memidx_below")
+        if upto is None:
+            upto = self.last_id() + 1
+        if upto <= 1:
+            return 0
+        rows = self.db.q("SELECT id, content FROM memories WHERE id < ? ORDER BY id DESC LIMIT ?", (upto, self.BACKFILL))
+        pairs = [(w, r["id"]) for r in rows for w in words(r["content"])]
+        if pairs:
+            self.db.many("INSERT OR IGNORE INTO memory_words(word, mid) VALUES(?,?)", pairs)
+        self.db.set("memidx_below", rows[-1]["id"] if rows else 0)
+        return len(rows)
 
     def add(self, kind, content, building="", importance=3):
         importance = max(1, min(10, int(importance or 3)))
-        return self.db.x(
+        mid = self.db.x(
             "INSERT INTO memories(ts, kind, building, content, importance) VALUES(?,?,?,?,?)",
             (time.time(), kind, building, content.strip(), importance),
         )
+        if self.db.get("memidx_below") is None:      # first ever memory on a new install: nothing older to index
+            self.db.set("memidx_below", mid)
+        self._index(mid, content)
+        return mid
 
     def recent(self, n=15, kinds=None):
         if kinds:
@@ -52,16 +81,31 @@ class Memory:
         if not q:
             return []
         now = time.time()
-        rows = self.db.q("SELECT * FROM memories ORDER BY id DESC LIMIT 1500")
+        weight, ids = {}, set()
+        for w in list(q)[:24]:
+            hits = [r["mid"] for r in self.db.q("SELECT mid FROM memory_words WHERE word=? ORDER BY mid DESC LIMIT ?",
+                                                 (w, self.PER_WORD))]
+            if not hits:
+                continue
+            # rarer words count for more (a full page of hits means a common word)
+            weight[w] = 1.0 + (1.5 if len(hits) < 40 else 0.6 if len(hits) < self.PER_WORD else 0.0)
+            ids.update(hits)
+        ids.update(r["id"] for r in self.db.q("SELECT id FROM memories ORDER BY id DESC LIMIT 300"))
+        rows = []
+        idl = sorted(ids)
+        for i in range(0, len(idl), 500):
+            chunk = idl[i:i + 500]
+            rows += self.db.q(f"SELECT * FROM memories WHERE id IN ({','.join('?' * len(chunk))})", chunk)
         scored = []
         for r in rows:
             if r["id"] in exclude_ids or r.get("archived"):
                 continue
-            overlap = len(q & words(r["content"]))
-            if not overlap:
+            shared = q & words(r["content"])
+            if not shared:
                 continue
+            overlap = sum(weight.get(w, 1.0) for w in shared)
             hours = (now - r["ts"]) / 3600
-            recency = math.exp(-hours / 72)  # fades over ~3 days
+            recency = math.exp(-hours / 72)  # fades over ~3 days, but old memories still come up when they match well
             score = overlap * 1.0 + r["importance"] * 0.3 + recency * 1.5
             scored.append((score, r))
         scored.sort(key=lambda t: -t[0])

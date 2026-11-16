@@ -147,6 +147,8 @@ class WorkshopMixin:
         # last week's automatic goals that weren't met lower the difficulty a little
         for g in self.db.q("SELECT * FROM goals WHERE status='open' AND source='auto'"):
             self.db.x("UPDATE goals SET status='missed' WHERE id=?", (g["id"],))
+            if g["kind"] == "code" and self.db.get("sandbox_down_week") == last:
+                continue          # it couldn't test anything that week: not its fault, the level stays
             key = "code_level" if g["kind"] == "code" else "mech_level"
             self.db.set(key, max(1, int(self.db.get(key, 1)) - 1))
         if not last and not self.is_built("workshop"):
@@ -231,6 +233,9 @@ class WorkshopMixin:
         g = next((x for x in gs if x["id"] == gid), gs[0] if gs else None)
         if not g:
             return "There's no open coding goal to attempt."
+        if g["tests"] and self.sandbox_problem():
+            self.db.set("sandbox_down_week", week_key())
+            return f"I wanted to try '{g['title']}', but the sandbox can't run tests right now. {self.sandbox_problem()}"
         if self._usage().get("code_tries", 0) >= 4:
             return "I've tried enough code for today. Fresh eyes tomorrow."
         self._bump("code_tries")
@@ -259,9 +264,9 @@ class WorkshopMixin:
 
     def run_tests(self, code, tests):
         """Runs code plus its tests in the sandbox. Tests need no approval: no network, own folder, time-limited."""
-        kind = self.sandbox_kind()
-        if not kind:
-            return None, "no sandbox (Docker on Windows, bubblewrap on Linux)"
+        problem = self.sandbox_problem()
+        if problem:
+            return None, problem
         prog = code + "\n\n# ---- tests ----\n" + tests + "\nprint('ALL_TESTS_PASSED')\n"
         output, rc = self.sandbox_run(prog, "tests")
         return (rc == 0 and "ALL_TESTS_PASSED" in output), output
@@ -493,6 +498,8 @@ class WorkshopMixin:
                 out.append(f"GOAL '{g['title']}' is waiting for your creator's review.")
             elif (g["kind"] == "code" and self.is_built("workshop")) or (g["kind"] == "machine" and self.is_built("mech_shop")):
                 out.append(f"WEEKLY GOAL: {g['title']}. {g['text'][:200]} Work on it at {where}.")
+        if self.is_built("workshop") and any(g["kind"] == "code" and g["tests"] for g in self.goals_open()) and self.sandbox_problem():
+            out.append(f"The Fab Hangar sandbox is offline: {self.sandbox_problem()} Coding challenges wait until it's back (it won't count against you).")
         broken = [MACHINES[m["kind"]][1] for m in self.machines() if m["condition"] < 30]
         if broken:
             out.append(f"Machines that need maintenance: {', '.join(broken)}.")
@@ -508,4 +515,5 @@ class WorkshopMixin:
                 "parts": self.parts(), "part_prices": {k: v[0] for k, v in PARTS.items()},
                 "machines": [dict(m, name=MACHINES[m["kind"]][1], does=MACHINES[m["kind"]][2]) for m in self.machines()],
                 "plans": self.plans_list(), "skills": self.db.q("SELECT COUNT(*) AS n FROM skills")[0]["n"],
-                "sandbox": self.sandbox_kind()}
+                "sandbox": self.sandbox_kind(), "sandbox_status": self.sandbox_status(),
+                "sandbox_problem": self.sandbox_problem()}

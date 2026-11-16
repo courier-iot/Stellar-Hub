@@ -17,6 +17,9 @@ from .monitor import MonitorMixin
 from .workshop import WorkshopMixin
 from .style import StyleMixin
 from .devices import DevicesMixin
+from . import manuals
+from .economy import EconomyMixin
+from .training import TrainingMixin
 from .hobbies import HobbiesMixin, level_for
 from .life import LifeMixin
 from .plants import SPECIES as PLANT_SPECIES
@@ -29,7 +32,7 @@ class BudgetExceeded(Exception):
     pass
 
 
-class Agent(ExtrasMixin, MonitorMixin, DevicesMixin, StyleMixin, WorkshopMixin, MuseumMixin, PetsMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
+class Agent(ExtrasMixin, MonitorMixin, DevicesMixin, EconomyMixin, TrainingMixin, StyleMixin, WorkshopMixin, MuseumMixin, PetsMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
     def __init__(self, cfg, db, llm, data_dir):
         self.cfg, self.db, self.llm = cfg, db, llm
         self.mem = Memory(db)
@@ -59,6 +62,31 @@ class Agent(ExtrasMixin, MonitorMixin, DevicesMixin, StyleMixin, WorkshopMixin, 
 
     def _today(self):
         return datetime.date.today().isoformat()
+
+    def repair_choice(self, bid, action):
+        """Small models often name a building by its title ("uplink cafe"), a plot number, or the wrong place for an
+        action. Fix what can be fixed instead of wasting the turn. Returns (building id, a short note or None)."""
+        raw = bid
+        if bid not in BUILDINGS:
+            bid = self.resolve_building(raw) or bid
+        here = self.db.get("location", "home")
+
+        def can(b):
+            return (b in BUILDINGS and not self.is_locked(b) and self.is_built(b) and b not in self.constructions()
+                    and self.is_available(b) and action in dict(self.offered_actions(b)))
+
+        if action and not can(bid):
+            places = [b for b in BUILDINGS if can(b)]
+            if places:
+                best = here if here in places else (bid if bid in places else places[0])
+                if self.walkway_closed() and here not in places:
+                    best = bid        # stuck where it is: let the normal checks explain
+                else:
+                    name = BUILDINGS[best]["name"]
+                    return best, f"I meant the {name}: '{action}' is done there, and its id is {best}"
+        if bid != raw and bid in BUILDINGS:
+            return bid, f"the {BUILDINGS[bid]['name']}'s id is {bid}"
+        return bid, None
 
     def tick_scale(self):
         """Per-turn amounts were tuned for 30-minute turns; shorter turns scale them down."""
@@ -219,6 +247,14 @@ class Agent(ExtrasMixin, MonitorMixin, DevicesMixin, StyleMixin, WorkshopMixin, 
         recent_ids = {r["id"] for r in recent}
         query = " ".join(r["content"] for r in recent[-4:]) + " " + " ".join(self.db.get("goals", []))
         related = self.mem.relevant(query, 6, exclude_ids=recent_ids)
+        # the library's manual shelf: a page from the manual that best fits what it's been doing (or just got wrong)
+        last = (self.db.get("last_act") or {})
+        trouble = last.get("building") if any(w in (recent[-1]["content"] if recent else "").lower() for w in
+                                              ("isn't something i can do", "no such building", "locked", "i meant the")) else None
+        shelf_bid = trouble if trouble in manuals.MANUALS else manuals.best_match(query)
+        here = self.db.get("location", "home")
+        pages = [p for p in (manuals.page(shelf_bid), manuals.page(here, 1) if here != shelf_bid else None) if p]
+        shelf = "\n".join(f"- {p}" for p in pages) or "- (nothing matched)"
         topics = [r["topic"] for r in self.db.q("SELECT DISTINCT topic FROM library ORDER BY id DESC LIMIT 25")]
         story = "\n".join(f"- {c['title']}: {c['text'][:300]}" for c in self.relevant_chapters(query)) or "- (none yet)"
         inv = self.inventory()
@@ -247,7 +283,7 @@ class Agent(ExtrasMixin, MonitorMixin, DevicesMixin, StyleMixin, WorkshopMixin, 
                     "{skins}", ", ".join(sprites.SKIN_CHOICES)).replace("{shop}", self.shop_text()).replace(
                     "{move_cost}", str(self.cfg.get("move_cost", 1500)))
                 about = b["about"].replace("{colour_price}", str(COLOUR_PRICE)).replace("{form_price}", str(FORM_PRICE))
-                bl.append(f"- {bid}: {about} Actions: {acts}")
+                bl.append(f"- {bid} ({b['name']}): {about} Actions: {acts}")
         return f"""TIME: {now}, day {day} of your life.
 YOU ARE AT: {self.db.get('location', 'home')}
 HOW YOU LOOK: {self.describe_look()}
@@ -274,6 +310,9 @@ RECENT MEMORIES (oldest first):
 
 OLDER MEMORIES THAT MIGHT BE RELATED:
 {Memory.fmt(related)}
+
+FROM THE LIBRARY'S MANUAL SHELF (every building's manual is kept at the library: browse_manuals or read_manual there):
+{shelf}
 
 FROM YOUR LIFE STORY (archive):
 {story}
@@ -328,7 +367,8 @@ What do you do now?"""
                                 self.build_context(needs), "decide")
             thought = str(decision.get("thought", ""))[:500]
             bid = str(decision.get("building", "home")).strip().lower().replace(" ", "_")
-            action = str(decision.get("action", "")).strip().lower()
+            action = str(decision.get("action", "")).strip().lower().replace(" ", "_")
+            bid, fixed = self.repair_choice(bid, action)
             args = decision.get("args") or {}
             if not isinstance(args, dict):
                 args = {}
@@ -367,6 +407,8 @@ What do you do now?"""
                     self.earn_capped("cr_actions", 1, "kept up daily routines", 20)
                 self.satisfy(action)
 
+            if fixed:
+                result = f"{result} ({fixed})"
             where = BUILDINGS.get(bid, {}).get("name", bid)
             if thought:
                 self.mem.add("thought", thought, bid, max(1, importance - 1))

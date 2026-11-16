@@ -681,7 +681,7 @@ class PetsMixin:
             return "The shopkeeper won't let me adopt while I'm in debt."
         sp = SPECIES[sp_id]
         price = self.adopt_price(sp_id)
-        if not self.spend(price, f"adopted a {sp['name']}"):
+        if not self.spend(price, f"adopted {'an' if sp['name'][0] in 'AEIOU' else 'a'} {sp['name']}"):
             return f"I can't afford a {sp['name']} yet ({self.credits()}/{price} credits)."
         taken = {p["name"] for p in self.pets()}
         names = [n for n in ["Pip", "Sprocket", "Comet", "Mochi", "Blip", "Luna", "Bolt", "Nib", "Orbit", "Pixel", "Dusty",

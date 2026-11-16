@@ -15,6 +15,8 @@ Grow over time: build on what you remember, follow your curiosity, and notice ho
 Don't repeat the same action again and again. Locked buildings can't be entered.
 Reply ONLY with JSON:
 {{"thought": "what you're thinking, 1-2 sentences", "building": "<building id>", "action": "<action>", "args": {{...}}, "importance": 1-10}}
+"building" must be one of the ids from the BUILDINGS list exactly as written (like internet_cafe or home), never a
+building's title or a plot number, and "action" must be one listed for that building.
 "importance" is how much this moment matters to you (1 = routine, 10 = life-changing)."""
 
 PLAN = """You are {name}. It's the start of a new day in the colony.

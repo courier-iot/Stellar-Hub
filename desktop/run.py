@@ -138,6 +138,7 @@ def main():
     try:
         threading.Thread(target=lambda: agent.updater.check(), daemon=True).start()
         threading.Thread(target=pet_loop, daemon=True).start()
+        threading.Thread(target=lambda: agent.sandbox_status(fresh=True), daemon=True).start()   # gets Docker's image ready
         while True:
             if time.time() - (db.get("update") or {}).get("checked", 0) > 12 * 3600:
                 threading.Thread(target=lambda: agent.updater.check(), daemon=True).start()

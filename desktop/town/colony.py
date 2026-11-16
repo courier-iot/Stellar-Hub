@@ -197,16 +197,29 @@ class ColonyMixin:
 
     # ================================================================ buildings / unlocking
     def resolve_building(self, text):
-        t = str(text or "").lower().replace("_", " ")
+        import unicodedata
+        t = unicodedata.normalize("NFKD", str(text or "")).encode("ascii", "ignore").decode().lower()
+        t = re.sub(r"[_\-]+", " ", t).strip()
         if not t:
             return None
+
+        def plain(s):
+            return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
         for bid, b in BUILDINGS.items():
-            if t == bid.replace("_", " ") or t == b["name"].lower():
+            if t == bid.replace("_", " ") or t == plain(b["name"]):
                 return bid
         for bid, b in BUILDINGS.items():
-            if bid.replace("_", " ") in t or b["name"].lower() in t:
+            if bid.replace("_", " ") in t or plain(b["name"]) in t:
                 return bid
-        aliases = {"salon": "salon", "greenhouse": "greenhouse", "garden": "greenhouse", "radio": "radio_tower",
+        if re.fullmatch(r"(plot\s*)?#?\d{1,2}", t):          # a plot number: whatever stands on that plot
+            n = int(re.sub(r"\D", "", t))
+            return (self.layout() or {}).get(n - 1)
+        aliases = {"uplink": "internet_cafe", "cafe": "internet_cafe", "internet": "internet_cafe", "coffee": "internet_cafe",
+                   "dome": "home", "house": "home", "post": "post_office", "mail": "post_office", "letters": "post_office",
+                   "library": "library", "books": "library", "studio": "studio", "gallery": "gallery", "art": "gallery",
+                   "observatory": "station", "station": "station", "orbital": "station", "telescope": "station",
+                   "exchange": "exchange", "market": "exchange", "trading": "exchange", "store": "store", "shop": "store",
+                   "department": "store", "museum": "museum", "park": "park", "fountain": "park", "chess": "park","salon": "salon", "greenhouse": "greenhouse", "garden": "greenhouse", "radio": "radio_tower",
                    "archive": "archive", "spaceport": "spaceport", "rocket": "spaceport", "hangar": "workshop",
                    "workshop": "workshop", "fabrication": "workshop", "vault": "bank", "bank": "bank",
                    "pet": "pet_shop", "pets": "pet_shop", "mechanical": "mech_shop", "mech": "mech_shop", "machine": "mech_shop"}
@@ -757,6 +770,54 @@ class ColonyMixin:
     def sandbox_available(self):
         return self.sandbox_kind() is not None
 
+    SANDBOX_IMAGE = "python:3.12-slim"
+
+    def sandbox_status(self, fresh=False):
+        """ready / missing / not_running / preparing / no_image. Docker is checked at most every 5 minutes."""
+        kind = self.sandbox_kind()
+        if kind == "bwrap":
+            return "ready"
+        if not kind:
+            return "missing"
+        cache = getattr(self, "_sb_cache", None)
+        if cache and not fresh and time.time() - cache[0] < 300 and cache[1] != "preparing":
+            return cache[1]
+        if getattr(self, "_sb_pulling", False):
+            return "preparing"
+        exe = find_exe("docker")
+        rc, _ = run_quiet([exe, "info", "--format", "{{.ServerVersion}}"], 25)
+        if rc != 0:
+            st = "not_running"
+        else:
+            rc, _ = run_quiet([exe, "image", "inspect", self.SANDBOX_IMAGE], 20)
+            st = "ready" if rc == 0 else "no_image"
+            if st == "no_image":
+                self.prepare_sandbox()
+                st = "preparing"
+        self._sb_cache = (time.time(), st)
+        return st
+
+    def prepare_sandbox(self):
+        """Downloads the small Python image the Docker sandbox uses, in the background (once)."""
+        if getattr(self, "_sb_pulling", False) or self.sandbox_kind() != "docker":
+            return
+        self._sb_pulling = True
+
+        def pull():
+            try:
+                run_quiet([find_exe("docker"), "pull", self.SANDBOX_IMAGE], 1800)
+            finally:
+                self._sb_pulling = False
+                self._sb_cache = None
+        threading.Thread(target=pull, daemon=True).start()
+
+    def sandbox_problem(self):
+        """A plain sentence when the sandbox can't run code right now, otherwise None."""
+        return {"missing": "There's no sandbox on this computer (Docker Desktop on Windows, bubblewrap on Linux).",
+                "not_running": "Docker is installed but not running. Start Docker Desktop and the sandbox comes back.",
+                "preparing": "The sandbox is downloading its Python image. It'll be ready soon.",
+                "no_image": "The sandbox is missing its Python image."}.get(self.sandbox_status())
+
     def _bwrap_cmd(self, work):
         bw = shutil.which("bwrap")
         py = "/usr/bin/python3" if os.path.exists("/usr/bin/python3") else (shutil.which("python3") or "python3")
@@ -778,6 +839,9 @@ class ColonyMixin:
 
     def sandbox_run(self, code, folder="sandbox"):
         """Runs code in the locked sandbox (no network, own folder, time and size limits). Returns (output, exit code)."""
+        problem = self.sandbox_problem()
+        if problem:
+            return f"(sandbox not available: {problem})", -2
         kind = self.sandbox_kind()
         work = os.path.join(self.workshop_dir, folder)
         os.makedirs(work, exist_ok=True)

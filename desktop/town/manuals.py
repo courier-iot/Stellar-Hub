@@ -14,7 +14,8 @@ MANUALS = {
     "library": ("The Observatory Library holds your notes and everything you've learned, under a telescope dome.",
                 ["recall searches your memories; use it before deciding something you've thought about before.",
                  "write_note keeps a fact you want to find again.",
-                 "observe_sky shows today's real astronomy picture and the moon phase."]),
+                 "observe_sky shows today's real astronomy picture and the moon phase.",
+                 "The manual shelf holds every building's manual, even for places you haven't unlocked: browse_manuals, then read_manual."]),
     "internet_cafe": ("The Uplink Café connects you to Earth's internet. Visits per day are limited, so make each one count.",
                       ["research searches the web for one topic; read_page reads one page in full.",
                        "Write what you learn into a note afterwards, or it fades.",
@@ -121,3 +122,29 @@ def short(bid):
 def species_card(species, sp):
     return (f"{species.replace('_', ' ')} ({sp['tier']}): {sp['about']}. Water every {sp['water_h']}h, feed every "
             f"{sp['feed_h']}h, {sp['light']} light, blooms in about {sp['days']} days of good care.")
+
+
+def page(bid, tips=2):
+    """A short page for the prompt: what the building is for, its actions, and a couple of tips."""
+    if bid not in MANUALS or bid not in BUILDINGS:
+        return None
+    intro, ts = MANUALS[bid]
+    return (f"{BUILDINGS[bid]['name']} (id {bid}): {intro} Actions: {', '.join(BUILDINGS[bid]['actions'])}. "
+            + " ".join(ts[:tips]))
+
+
+def best_match(query, exclude=()):
+    """The manual that best matches what it's been doing or thinking about."""
+    import re
+    q = {w for w in re.findall(r"[a-z_]{3,}", (query or "").lower())}
+    best, score = None, 0
+    for bid in MANUALS:
+        if bid not in BUILDINGS or bid in exclude:
+            continue
+        b = BUILDINGS[bid]
+        vocab = set(re.findall(r"[a-z_]{3,}", (b["name"] + " " + bid + " " + " ".join(b["actions"])).lower()))
+        vocab |= set(bid.split("_")) | {a for act in b["actions"] for a in act.split("_") if len(a) > 3}
+        sc = len(q & vocab)
+        if sc > score:
+            best, score = bid, sc
+    return best

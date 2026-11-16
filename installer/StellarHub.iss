@@ -54,9 +54,31 @@ Filename: "{group}\Stellar Hub dashboard.url"; Section: "InternetShortcut"; Key:
 
 [Run]
 Filename: "{app}\python\python.exe"; Parameters: """{app}\setup_hub.py"" --pause"; WorkingDir: "{app}"; Description: "Check my hardware and choose an AI model (recommended)"; Flags: postinstall skipifsilent
+Filename: "{app}\python\python.exe"; Parameters: """{app}\sandbox_check.py"" --pause"; WorkingDir: "{app}"; Description: "Check Docker and get the coding sandbox ready"; Flags: postinstall skipifsilent; Check: DockerFound
 Filename: "{app}\python\python.exe"; Parameters: """{app}\run.py"" --open"; WorkingDir: "{app}"; Description: "Start Stellar Hub now"; Flags: postinstall skipifsilent nowait unchecked
 ; After a quiet update started from the dashboard, start Stellar Hub again in the background.
 Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\run.py"""; WorkingDir: "{app}"; Flags: nowait; Check: WizardSilent
+
+[Code]
+// v0.13.3: the Fab Hangar's coding sandbox needs Docker Desktop on Windows.
+function DockerFound(): Boolean;
+begin
+  Result := FileExists(ExpandConstant('{commonpf64}\Docker\Docker\resources\bin\docker.exe'))
+    or FileExists(ExpandConstant('{commonpf64}\Docker\Docker\Docker Desktop.exe'));
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ErrorCode: Integer;
+begin
+  if (CurStep = ssPostInstall) and (not WizardSilent) and (not DockerFound()) then
+  begin
+    if MsgBox('Docker Desktop wasn''t found on this PC.' + #13#10 + #13#10 +
+              'Stellar Hub works without it, but the Fab Hangar''s weekly coding challenges and programs need Docker ' +
+              'to run code safely. Open the Docker Desktop download page now?', mbConfirmation, MB_YESNO) = IDYES then
+      ShellExec('open', 'https://www.docker.com/products/docker-desktop/', '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
+  end;
+end;
 
 [UninstallRun]
 Filename: "{app}\python\python.exe"; Parameters: """{app}\stop.py"""; WorkingDir: "{app}"; Flags: runhidden waituntilterminated; RunOnceId: "StopHub"

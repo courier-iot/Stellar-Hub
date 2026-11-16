@@ -626,7 +626,46 @@ class MainActivity : Activity() {
         loading()
         bgTask({ Triple(Triple(it.getObject("/api/colony"), it.getArray("/api/milestones"), it.getObject("/api/gallery")), it.getObject("/api/visitors"), it.getObject("/api/pets")) }) { (t, vis, pets) ->
             val (col, ms, gal) = t
-            if (tab == "colony") { renderDigests(gal); renderPets(pets); renderVisitors(vis); renderColony(col, false); renderMilestones(ms); renderStudies(gal) }
+            if (tab == "colony") { renderDigests(gal); renderEconomyCard(); renderPets(pets); renderVisitors(vis); renderColony(col, false); renderMilestones(ms); renderStudies(gal) }
+        }
+    }
+
+    /** v0.13.3: the colony economy: this week's money in and out by category, plus warnings. */
+    private fun renderEconomyCard() {
+        val c = section("Colony economy")
+        c.addView(label("Loading…", 12f, dim))
+        bgTask({ it.getObject("/api/economy") }) { e ->
+            c.removeViews(1, c.childCount - 1)
+            val w = e.optJSONObject("week") ?: JSONObject()
+            c.addView(label("◈ ${e.optInt("balance")} · this week +${w.optInt("in")} / −${w.optInt("out")}", 15f, textCol, true))
+            val warns = e.optJSONArray("warnings") ?: JSONArray()
+            for (i in 0 until warns.length()) c.addView(label("⚠ ${warns.getString(i)}", 13f, warn))
+            if (warns.length() == 0) c.addView(label("Nothing unusual.", 12f, good))
+            val days = e.optJSONArray("days") ?: JSONArray()
+            val n = days.length()
+            if (n > 0) {         // a little 14-day picture: earned (green) and spent (red) per day
+                val rowV = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
+                var top = 10
+                for (i in maxOf(0, n - 14) until n) days.getJSONObject(i).let { top = maxOf(top, it.optInt("in"), it.optInt("out")) }
+                for (i in maxOf(0, n - 14) until n) {
+                    val d = days.getJSONObject(i)
+                    for ((v, col) in listOf(d.optInt("in") to good, d.optInt("out") to bad)) {
+                        val bar = View(this).apply { setBackgroundColor(col) }
+                        rowV.addView(bar, LinearLayout.LayoutParams(dp(7), maxOf(dp(1), dp(48) * v / top)).apply { marginEnd = dp(2) })
+                    }
+                    rowV.addView(View(this), LinearLayout.LayoutParams(dp(4), 1))
+                }
+                c.addView(spaced(rowV))
+                c.addView(label("Last 14 days: earned (green) and spent (red)", 11f, dim))
+            }
+            val cats = w.optJSONObject("categories")
+            val keys = ArrayList<String>()
+            cats?.keys()?.forEach { keys.add(it) }
+            keys.sortByDescending { k -> cats!!.getJSONObject(k).let { it.optInt("in") + it.optInt("out") } }
+            for (k in keys) {
+                val v = cats!!.getJSONObject(k)
+                c.addView(label("$k · +${v.optInt("in")} / −${v.optInt("out")}", 13f, textCol))
+            }
         }
     }
 

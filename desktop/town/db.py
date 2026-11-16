@@ -35,6 +35,11 @@ CREATE TABLE IF NOT EXISTS pets(id INTEGER PRIMARY KEY, name TEXT, species TEXT,
     runs_today INTEGER, run_day TEXT, last_run REAL, rest_until REAL, critical_since REAL, updated REAL);
 CREATE TABLE IF NOT EXISTS goals(id INTEGER PRIMARY KEY, ts REAL, week TEXT, kind TEXT, ref TEXT, title TEXT, text TEXT,
     tests TEXT, source TEXT, status TEXT, attempts INTEGER DEFAULT 0, result TEXT, last_code TEXT);
+CREATE TABLE IF NOT EXISTS training_review(src TEXT, ref INTEGER, status TEXT, corrected TEXT, note TEXT, ts REAL,
+    PRIMARY KEY(src, ref));
+CREATE TABLE IF NOT EXISTS corrections(id INTEGER PRIMARY KEY, ts REAL, wrong TEXT, right TEXT, question TEXT);
+CREATE TABLE IF NOT EXISTS exam(id INTEGER PRIMARY KEY, ts REAL, question TEXT, expect TEXT);
+CREATE TABLE IF NOT EXISTS memory_words(word TEXT, mid INTEGER, PRIMARY KEY(word, mid)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS devices(id INTEGER PRIMARY KEY, name TEXT, token_hash TEXT UNIQUE, role TEXT, status TEXT,
     created REAL, last_seen REAL, platform TEXT);
 CREATE TABLE IF NOT EXISTS skills(id INTEGER PRIMARY KEY, ts REAL, kind TEXT, title TEXT, tags TEXT, content TEXT);
@@ -102,6 +107,11 @@ class DB:
             cur = self.conn.execute(sql, args)
             self.conn.commit()
             return cur.lastrowid
+
+    def many(self, sql, rows):
+        with self.lock:
+            self.conn.executemany(sql, rows)
+            self.conn.commit()
 
     def get(self, key, default=None):
         rows = self.q("SELECT value FROM state WHERE key=?", (key,))

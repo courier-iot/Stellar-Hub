@@ -9,13 +9,15 @@ Ideas saved for later. Nothing here is built yet.
 - [ ] **Pet host computer.** A second computer on Tailscale runs the pets' small model, so pet work doesn't touch the main PC at all.
 
 ## Planned next (v0.14.0)
-- [ ] Real training: a LoRA adapter trained on the resident's journals, life story, passed challenges and machines. Ollama loads it; older versions are kept so you can roll back. Training lives in its own folder (PyTorch), on the RTX 2060 machine, with a slow CPU overnight fallback.
+- [ ] Real training: a LoRA adapter trained on the resident's journals, life story, passed challenges and machines. Ollama loads it; older versions are kept so you can roll back. Training lives in its own folder (PyTorch), on the RTX 2060 machine, with a slow CPU overnight fallback. It uses the v0.13.3 training controls: only reviewed/allowed items, corrections first, the exam as the gate, automatic rollback.
 
 ## Later
 - [ ] Pet host computer: a second machine on Tailscale that runs the pets (or training).
 - [ ] Home-screen widget for Hub Connect S.
 
 ## Done
+- v0.13.3: whole-life memory recall, the library's manual shelf, Docker checks, economy tracker, training controls and exam, automatic tests, 20-minute turns
+- v0.13.2: usernames, more than one phone, roles
 - v0.13.0: Mechanical Workshop and machines, weekly coding and machine goals with auto-tested challenges, your own goals, real-world project plans, the skill notebook, space weather, idle animations, traffic and building life, accessories and paint jobs, 12-minute turns
 - v0.12.0: the Upper Street, Department Store, 64 set curios, Stellar Museum, four new pets with skill levels, the Monitor
 - v0.11.0: pets and the Pet Shop: six species, one trained job each, needs and strain, rescue or fines, debt, lifespans, spare-hardware runner

@@ -126,14 +126,31 @@ class ExtrasMixin:
                 self.give_manual(bid)
                 self.give_manual(bid, opened=True, quiet=True)
 
+    def act_browse_manuals(self, a, imp):
+        """The library keeps every building's manual, including ones for places not unlocked yet."""
+        rows = []
+        for bid in BUILDINGS:
+            if bid not in manuals.MANUALS:
+                continue
+            state = ("locked" if self.is_locked(bid) else "built" if self.is_built(bid) else "blueprint")
+            rows.append(f"{BUILDINGS[bid]['name']} ({bid}, {state}): {manuals.MANUALS[bid][0]}")
+        return "The library's manual shelf: " + " | ".join(rows) + " (read_manual with a building id to read one.)"
+
     def act_read_manual(self, a, imp):
-        bid = str(a.get("building", "")).strip().lower().replace(" ", "_")
+        bid = self.resolve_building(str(a.get("building", ""))) or str(a.get("building", "")).strip().lower().replace(" ", "_")
+        at_library = self.db.get("location", "home") == "library"
         if bid not in BUILDINGS:
+            if at_library:
+                return self.act_browse_manuals(a, imp)
             got = self.db.get("manuals") or {}
             return "Manuals I have: " + ", ".join(BUILDINGS[b]["name"] + f" ({b})" for b in got if b in BUILDINGS)
-        if bid not in (self.db.get("manuals") or {}) and self.is_locked(bid):
-            return f"I don't have the manual for the {BUILDINGS[bid]['name']} yet. It comes with its blueprint."
+        if not at_library and bid not in (self.db.get("manuals") or {}) and self.is_locked(bid):
+            return (f"I don't have the manual for the {BUILDINGS[bid]['name']} yet. It comes with its blueprint, "
+                    f"and the library keeps a copy of every manual.")
         text = manuals.manual(bid)
+        if self.is_locked(bid):
+            b = BUILDINGS[bid]
+            text += f" (Not unlocked yet: {b.get('unlock_price', '?')} credits, or ask {self.creator}.)"
         slots = interiors.DECOR_SLOTS.get(bid, {})
         if slots:
             text += f" Decor spots inside: {', '.join(slots)}."
@@ -530,7 +547,7 @@ class ExtrasMixin:
         return "calm"
 
     def extra_news(self):
-        news = list(self.pet_news()) + list(self.workshop_news()) + list(self.people_news())
+        news = list(self.pet_news()) + list(self.workshop_news()) + list(self.people_news()) + list(self.money_news())
         w = self.weather()
         if w == "dust_storm":
             news.append("WEATHER: a dust storm has closed the walkway. You can only do things where you are until it clears.")
@@ -579,6 +596,8 @@ class ExtrasMixin:
         return out
 
     def daily_extras(self):
+        if (self.db.get("memidx_below") or 0) > 1:
+            self.mem.backfill()                 # finish indexing old memories, a batch per turn
         self.give_starting_manuals()
         self.ensure_weekly_goals()
         self.machines_daily()

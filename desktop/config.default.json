@@ -8,7 +8,7 @@
   },
   "creator_name": "Creator",
   "resident_name": null,
-  "tick_minutes": 12,
+  "tick_minutes": 20,
   "reflect_threshold": 30,
   "limits": {
     "llm_calls_per_day": 500,
@@ -43,5 +43,6 @@
     "max_gpu": 30,
     "tick_minutes": 5
   },
-  "_migrated_0130": true
+  "_migrated_0130": true,
+  "_migrated_0133": true
 }

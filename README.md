@@ -33,7 +33,7 @@ Remove it with `sh install-service.sh remove`. Logs: `journalctl --user -u stell
 Stop a running hub from anywhere with `python3 stop.py`.
 
 On its first turn the resident is born as a little **star spirit** and picks its own name.
-It wakes every 12 minutes. Press **Take a turn now** to watch it right away.
+It wakes every 20 minutes. Press **Take a turn now** to watch it right away.
 
 ## 1b. Or run Stellar Hub on Windows (10 or 11)
 
@@ -206,6 +206,18 @@ own accessories and paints its buildings at the Department Store.
 **More than one phone:** each phone joins with the pair code and its own username, then waits until you approve it on
 the dashboard (Hub tab → People & devices). Roles: **Owner** (everything), **Member** (watch, chat, give goals and
 letters, take a turn) and **Viewer** (watch only). The resident knows each person by name and can write them letters.
+
+**Memory and manuals:** recall searches everything it has ever remembered. The library keeps every building's
+manual, and a page from the most useful one sits next to its memories each turn.
+
+**Economy and training:** the Monitor tab tracks where credits come from and go, with warnings when things drift.
+The Training tab decides what it will learn from when real training arrives (v0.14): review, correct, set the
+risks, and keep an exam it must pass.
+
+**Coding sandbox:** on Windows, the Fab Hangar runs code in Docker Desktop. The installer checks for it; you can also
+run `python sandbox_check.py --pause` in the install folder any time.
+
+**Tests:** `python -m unittest discover -s desktop/tests -v` (GitHub runs them before every release).
 
 **Phone music (app + Stellar Disc):** in the Hub tab, tap **Share my music**. Only song titles, artists and albums go
 to your hub. At the Radio Tower the resident can then pick one of your songs, and Stellar Disc plays it on your phone,

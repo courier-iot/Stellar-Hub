@@ -25,7 +25,7 @@ BUILDINGS = {
             "remove_showcase": "{\"floor\": <n>, \"spot\": <n>}  take something off display",
             "upgrade_home": "{}  add a floor to your Home Dome (floor 2: 150, floor 3: 300, floor 4: 600 credits)",
             "view_collection": "{}  look through your curio collection",
-            "read_manual": "{\"building\": \"<id>\"}  reread a building's instruction manual",
+            "read_manual": "{\"building\": \"<id>\"}  read a building's instruction manual",
             "build_upper_street": "{}  build the Upper Street: a raised deck with 14 more plots (1500 credits, about 8 hours)",
             "make_gift": ("{\"kind\": \"painting|song|poem|curio\", \"id\": <optional id>, \"note\": \"a message\"}  "
                           "make your creator a gift (every few days at most)"),
@@ -37,7 +37,8 @@ BUILDINGS = {
         "actions": {
             "recall": "{\"topic\": \"...\"}  look through your notes, memories and life story on a topic",
             "write_note": "{\"topic\": \"...\", \"text\": \"...\"}  write or add to a note",
-            "read_manual": "{\"building\": \"<id>\"}  reread a building's instruction manual",
+            "read_manual": "{\"building\": \"<id>\"}  read a building's instruction manual",
+            "browse_manuals": "{}  look along the shelf that holds every building's manual (even locked ones)",
             "observe_sky": "{}  use the observatory telescope: moon phase, today's sky picture, events",
         },
     },
@@ -262,7 +263,7 @@ SATISFIES = {
     "write": ("creativity", 45), "compose": ("creativity", 50), "play_composition": ("rest", 30),
     "observe_sky": ("curiosity", 35), "station_study": ("curiosity", 40), "solve_puzzle": ("curiosity", 25),
     "showcase": ("creativity", 15), "hang_painting": ("creativity", 15), "upgrade_home": ("creativity", 30),
-    "view_collection": ("rest", 15), "attempt_challenge": ("curiosity", 40), "design_machine": ("creativity", 45),
+    "view_collection": ("rest", 15), "browse_manuals": ("curiosity", 15), "attempt_challenge": ("curiosity", 40), "design_machine": ("creativity", 45),
     "design_plan": ("creativity", 50), "maintain_machine": ("rest", 10), "view_workshop": ("curiosity", 10),
     "wear": ("creativity", 15), "buy_accessory": ("creativity", 20), "paint_building": ("creativity", 30), "check_exchange": ("curiosity", 15), "sell_curio": ("connection", 15),
     "trade_up": ("creativity", 20), "auction_curio": ("connection", 20), "build": ("creativity", 40), "move_building": ("creativity", 30), "play_music": ("rest", 45), "water": ("rest", 10), "check_plants": ("rest", 10),

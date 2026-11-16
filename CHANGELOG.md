@@ -2,6 +2,18 @@
 
 Stellar Hub's update manager shows the entries newer than the version you have.
 
+## v0.13.3
+- Added: memory that reaches back through its whole life. Every memory's keywords now go into an index, so recall finds a fitting memory from months ago instead of only the newest 1,500 (about five days at the old pace). Memories from before this update are indexed automatically in the background.
+- Added: the library's manual shelf. It holds every building's manual, even for places not unlocked yet (browse_manuals, then read_manual). Each turn, a short page from the manual that best fits what it's doing, or just got wrong, appears next to its memories.
+- Added: a Docker check. The installer looks for Docker Desktop (and offers the download page if it's missing), then can check Docker is running and download the sandbox's Python image. The hub checks again at start-up and before each coding test, and the Workshop tab shows the sandbox's status with a "Check again" button.
+- Added: the colony economy tracker, for you and the resident. The Monitor tab has a 30-day chart (earned, spent, balance), totals by category, the biggest items this week, and warnings (debt, weeks of overspending, one thing eating most of the budget, credits piling up). The app's Colony tab has a short version, and the resident gets a money note every Monday.
+- Added: training controls, ready for v0.14 (new Training tab). Review what it would learn from (keep, skip or correct each item; risky ones are flagged automatically), teach corrections, set what it learns from and how much of its own writing to use, the pass mark, how many old versions to keep, and how strongly to train. The exam is a fixed set of questions with expected answers that a new version must pass (or it's rolled back); you can run it on today's model now. "Preview the training set" downloads exactly what it would train on.
+- Added: automatic tests (22 of them, covering turns, memory, the workshop, devices and roles, money, training, pictures and updates). GitHub runs them before every build; if one fails, nothing is released.
+- Changed: turns every 20 minutes. If your setting was 12 or 30 (the old automatic values), it moves to 20 once; anything else you set stays.
+- Changed: when the resident names a building by its title ("uplink_cafe") or a plot number ("10"), or picks an action that's done somewhere else, the hub works out what it meant and does it, and tells it the right id. The building list shows each id next to its name.
+- Changed: if the sandbox is offline, coding challenges wait, and a missed week doesn't lower its level.
+- Fixed: building names with accents (Uplink Café) didn't match when written without them, and "adopted a Orbit Moth" now reads "an".
+
 ## v0.13.2
 - Added: more than one phone, each with its own username. In Hub Connect S you enter the address and pair code, create a username (3-20 characters, unique; "This is another device of mine" adds a second phone to your name), then wait for the owner to approve it.
 - Added: roles. Owner: everything. Member: watch, chat, give goals, write letters, take a turn, play chess. Viewer: watch only. Approve, change or remove devices on the dashboard (Hub tab → People & devices) or in the owner's app (Hub tab).

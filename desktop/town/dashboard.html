@@ -34,6 +34,7 @@
   button { background:var(--accent); color:#05060d; border:0; border-radius:8px; padding:7px 12px; font-weight:600; cursor:pointer; }
   button:disabled { opacity:.5; cursor:default; }
   button.ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
+  input[type=checkbox] { width:auto !important; display:inline-block; margin:0 6px 0 0; vertical-align:middle; }
   a.btn { display:inline-block; text-decoration:none; border-radius:8px; padding:7px 12px; font-weight:600; }
   a.btn.ghost { color:var(--text); border:1px solid var(--line); }
   select { background:#080a18; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:7px; font:inherit; }
@@ -94,6 +95,7 @@
   <button data-tab="mind">🧠 Mind</button>
   <button data-tab="pets">🐾 Pets</button>
   <button data-tab="workshop">🔧 Workshop</button>
+  <button data-tab="training">🎓 Training</button>
   <button data-tab="monitor">🩺 Monitor</button>
   <button data-tab="hub">⚙️ Hub</button>
 </nav>
@@ -301,7 +303,56 @@
   </section>
 </main>
 
+<main class="pane" data-pane="training">
+  <section>
+    <h2>Training readiness</h2>
+    <div class="meta">Real training arrives in v0.14. Until then, this decides what it will learn from, and how carefully.
+      Training on its own writing can amplify its mistakes, so you stay in the loop.</div>
+    <div id="trsummary" style="margin-top:8px">Loading…</div>
+    <h2 class="sub">Settings</h2>
+    <div id="trsettings"></div>
+    <div class="row"><button onclick="saveTraining()">Save settings</button><a class="btn ghost" href="/api/training/export.jsonl" download>⬇ Preview the training set</a><span id="trmsg" class="meta"></span></div>
+  </section>
+  <section>
+    <h2>The exam</h2>
+    <div class="meta">Fixed questions with the words a right answer must contain (comma = all of these, | = any one of these).
+      A new adapter has to reach the pass mark, or it's rolled back.</div>
+    <div class="row"><button onclick="api('/api/training/exam/run', {}).then(() => setTimeout(loadTraining, 1500))">Run the exam on today's model</button></div>
+    <div id="trexam" style="margin-top:8px"></div>
+    <input id="exq" placeholder="Question" style="width:100%; margin-top:8px">
+    <input id="exa" placeholder="Expected words, like: internet_cafe" style="width:100%; margin-top:6px">
+    <div class="row"><button class="ghost" onclick="addExam()">Add question</button></div>
+  </section>
+  <section>
+    <h2>Corrections</h2>
+    <div class="meta">When it gets something wrong, teach it the right thing. Each correction becomes a training example,
+      and an exam question if you add one.</div>
+    <textarea id="crw" rows="2" placeholder="What it got wrong (optional)" style="width:100%; margin-top:6px"></textarea>
+    <textarea id="crr" rows="2" placeholder="What's right" style="width:100%; margin-top:6px"></textarea>
+    <input id="crq" placeholder="Optional exam question to check it learned this" style="width:100%; margin-top:6px">
+    <div class="row"><button onclick="addCorrection()">Teach it</button><span id="crmsg" class="meta"></span></div>
+    <div id="trcorr" style="margin-top:8px"></div>
+  </section>
+  <section class="wide">
+    <h2>Review what it'll learn from</h2>
+    <div class="row" id="trfilter">
+      <button class="ghost" data-s="flagged">⚠ Flagged</button><button class="ghost" data-s="">All</button>
+      <button class="ghost" data-s="keep">Kept</button><button class="ghost" data-s="corrected">Corrected</button><button class="ghost" data-s="skip">Skipped</button>
+    </div>
+    <div id="tritems" style="margin-top:8px"></div>
+    <div class="row"><button class="ghost" onclick="trOffset += 40; loadTrItems(true)">Show more</button></div>
+  </section>
+</main>
+
 <main class="pane" data-pane="monitor">
+  <section class="wide" style="padding:14px">
+    <h2>Colony economy</h2>
+    <div class="meta">Where the credits come from and where they go. Your resident gets a short version every Monday.</div>
+    <div id="econwarn" style="margin-top:6px"></div>
+    <canvas id="econchart" width="900" height="200" style="width:100%; height:200px; margin-top:8px; image-rendering:auto"></canvas>
+    <div class="meta"><span style="color:#4fe0a5">■</span> earned <span style="color:#ff5d73">■</span> spent <span style="color:#5ef2ff">━</span> balance · last 30 days</div>
+    <div id="econcats" style="margin-top:8px"></div>
+  </section>
   <section class="wide" style="padding:14px">
     <h2>Monitor</h2>
     <div class="meta">Watches pets, money and the model, and flags anything unusual. Alerts are also sent to your phone.</div>
@@ -1174,7 +1225,9 @@ async function loadWorkshop() {
   const key = JSON.stringify(d); if (key === loadWorkshop.last) return; loadWorkshop.last = key;
   const icon = {code: "💻", machine: "⚙️", plan: "📐"}, tag = {open: "pending", review: "pending", passed: "approved", missed: "denied", cancelled: "denied"};
   document.getElementById("wsgoals").innerHTML =
-    `<div class="meta">Coding level ${d.code_level} · machine level ${d.mech_level} · skill notebook: ${d.skills} entries · sandbox: ${esc(d.sandbox || "not installed")}</div>` +
+    `<div class="meta">Coding level ${d.code_level} · machine level ${d.mech_level} · skill notebook: ${d.skills} entries · sandbox: <b style="color:${d.sandbox_status === "ready" ? "var(--good, #4fe0a5)" : "var(--warn)"}">${esc(d.sandbox_status || "?")}</b>
+    <button class="ghost" onclick="api('/api/sandbox/check', {}).then(() => { loadWorkshop.last = null; loadWorkshop(); })">Check again</button></div>` +
+    (d.sandbox_problem ? `<div class="err" style="margin:6px 0">${esc(d.sandbox_problem)} Coding challenges wait until it's back, and missed weeks don't count against it.</div>` : "") +
     ((d.goals || []).map(g => `<div class="item"><b>${icon[g.kind] || ""} ${esc(g.title)}</b> <span class="tag ${tag[g.status] || ""}">${esc(g.status)}</span>
       <span class="meta">${g.source === "creator" ? "your goal" : "weekly"} · ${esc(g.week)} · ${g.attempts} tries</span>
       <div class="meta">${esc(g.text)}</div>
@@ -1213,6 +1266,100 @@ Town._wave = true; document.addEventListener("visibilitychange", () => { if (!do
 
 setTimeout(loadMuseum, 1800); setInterval(loadMuseum, 20000);
 loadMonitor(); setInterval(loadMonitor, 15000);
+
+async function loadEconomy() {
+  const e = await api("/api/economy");
+  const key = JSON.stringify(e); if (key === loadEconomy.last) return; loadEconomy.last = key;
+  document.getElementById("econwarn").innerHTML = (e.warnings || []).map(w => `<div class="err">⚠ ${esc(w)}</div>`).join("") ||
+    `<div class="meta" style="color:var(--good, #4fe0a5)">Nothing unusual. Balance ${e.balance} ◈</div>`;
+  const cv = document.getElementById("econchart"), c = cv.getContext("2d"), W = cv.width, H = cv.height, d = e.days || [];
+  c.clearRect(0, 0, W, H);
+  const maxBar = Math.max(10, ...d.map(x => Math.max(x.in, x.out)));
+  const bals = d.map(x => x.balance), bmin = Math.min(0, ...bals), bmax = Math.max(10, ...bals);
+  const bw = W / Math.max(1, d.length), mid = H * 0.55;
+  c.strokeStyle = "rgba(167,176,211,.25)"; c.beginPath(); c.moveTo(0, mid); c.lineTo(W, mid); c.stroke();
+  d.forEach((x, i) => {
+    const hi = (x.in / maxBar) * (mid - 8), ho = (x.out / maxBar) * (H - mid - 8);
+    c.fillStyle = "#4fe0a5"; c.fillRect(i * bw + 2, mid - hi, bw * 0.4, hi);
+    c.fillStyle = "#ff5d73"; c.fillRect(i * bw + 2 + bw * 0.42, mid, bw * 0.4, ho);
+  });
+  c.strokeStyle = "#5ef2ff"; c.lineWidth = 2; c.beginPath();
+  d.forEach((x, i) => { const y = H - 6 - ((x.balance - bmin) / (bmax - bmin || 1)) * (H - 12); i ? c.lineTo(i * bw + bw / 2, y) : c.moveTo(bw / 2, y); });
+  c.stroke(); c.fillStyle = "#a7b0d3"; c.font = "12px sans-serif"; c.fillText(`balance ${bmin}…${bmax}`, 6, 14);
+  const cats = Object.entries(e.categories || {}).sort((a, b) => (b[1].in + b[1].out) - (a[1].in + a[1].out));
+  const wk = (e.week || {}).categories || {};
+  document.getElementById("econcats").innerHTML = `<table style="width:100%; border-collapse:collapse"><tr class="meta"><td>Category</td><td>This week</td><td>30 days</td></tr>` +
+    cats.map(([k, v]) => `<tr><td>${esc(k)}</td><td><span style="color:#4fe0a5">+${(wk[k] || {}).in || 0}</span> / <span style="color:#ff5d73">−${(wk[k] || {}).out || 0}</span></td>
+      <td><span style="color:#4fe0a5">+${v.in}</span> / <span style="color:#ff5d73">−${v.out}</span></td></tr>`).join("") +
+    `<tr><td><b>Total this week</b></td><td><b>+${e.week.in} / −${e.week.out}</b></td><td></td></tr></table>` +
+    ((e.biggest || []).length ? `<div class="meta" style="margin-top:8px">Biggest this week: ${e.biggest.slice(0, 5).map(b => `${b.amount > 0 ? "+" : ""}${b.amount} ${esc(b.reason)}`).join(" · ")}</div>` : "");
+}
+loadEconomy(); setInterval(loadEconomy, 30000);
+let trStatus = "flagged", trOffset = 0;
+async function loadTraining() {
+  const t = await api("/api/training"), ex = await api("/api/training/exam"), cr = await api("/api/training/corrections");
+  const st = t.settings, last = (ex.runs || []).slice(-1)[0];
+  document.getElementById("trsummary").innerHTML =
+    `<div><b>${t.usable}</b> of ${t.candidates} items would be used · ${t.reviewed} reviewed · <span style="color:var(--warn)">${t.flagged} flagged</span>
+     · ${t.corrections} corrections · ${t.exam_questions} exam questions</div>` +
+    (last ? `<div class="meta">Last exam (${esc(last.label)}, ${when(last.ts)}): <b style="color:${last.passed ? "var(--good, #4fe0a5)" : "var(--bad, #ff5d73)"}">${last.score}%</b> (pass mark ${st.pass_mark}%)</div>` : `<div class="meta">The exam hasn't been run yet.</div>`);
+  if (!loadTraining.drawn) {
+    loadTraining.drawn = true;
+    document.getElementById("trsettings").innerHTML =
+      `<div class="meta">Learn from:</div>` + Object.entries(t.sources).map(([k, v]) =>
+        `<label style="display:block"><input type="checkbox" class="trsrc" value="${k}" ${st.sources.includes(k) ? "checked" : ""}> ${esc(v)}</label>`).join("") +
+      `<label style="display:block; margin-top:6px"><input type="checkbox" id="trreq" ${st.require_review ? "checked" : ""}> Only use items I marked Keep or corrected</label>
+       <label style="display:block"><input type="checkbox" id="trflag" ${st.skip_flagged ? "checked" : ""}> Leave out flagged items I haven't reviewed</label>
+       <label style="display:block"><input type="checkbox" id="trroll" ${st.auto_rollback ? "checked" : ""}> Roll back automatically if a new version fails the exam</label>
+       <div class="row">Its own writing: at most <input id="trshare" type="number" min="10" max="100" value="${st.self_share}" style="width:70px">% of the examples</div>
+       <div class="row">Pass mark <input id="trpass" type="number" min="30" max="100" value="${st.pass_mark}" style="width:70px">% · keep <input id="trkeep" type="number" min="1" max="20" value="${st.keep_versions}" style="width:60px"> old versions</div>
+       <div class="row">Training strength <select id="trstr">${["gentle", "normal", "strong"].map(x => `<option ${x === st.strength ? "selected" : ""}>${x}</option>`).join("")}</select>
+       <span class="meta">gentle changes it least; start there</span></div>`;
+  }
+  document.getElementById("trexam").innerHTML = (ex.questions || []).map(q => {
+    const r = last && last.results.find(x => x.id === q.id);
+    return `<div class="item">${r ? (r.ok ? "✅" : "❌") : "·"} ${esc(q.question)} <span class="meta">→ ${esc(q.expect)}</span>
+      ${r ? `<div class="meta">It said: ${esc(r.answer)}</div>` : ""} <button class="ghost" onclick="api('/api/training/exam/remove', {id: ${q.id}}).then(loadTraining)">Remove</button></div>`; }).join("") +
+    (ex.running ? `<div class="meta">The exam is running…</div>` : "");
+  if (ex.running) setTimeout(loadTraining, 4000);
+  document.getElementById("trcorr").innerHTML = (cr.corrections || []).map(c => `<div class="item">${c.wrong ? `<span class="meta">Not:</span> ${esc(c.wrong)}<br>` : ""}<span class="meta">Right:</span> ${esc(c.right)}
+    ${c.question ? `<div class="meta">Exam: ${esc(c.question)}</div>` : ""}</div>`).join("") || `<div class="meta">No corrections yet.</div>`;
+  loadTrItems();
+}
+async function loadTrItems(more) {
+  if (!more) trOffset = 0;
+  const r = await api(`/api/training/items?status=${trStatus}&limit=40&offset=${trOffset}`);
+  const html = (r.items || []).map(i => `<div class="item" id="tr-${i.src}-${i.ref}"><b>${esc(i.src)}</b> <span class="tag ${i.status === "skip" ? "denied" : i.status === "auto" ? "" : "approved"}">${esc(i.status)}</span>
+      <span class="meta">${when(i.ts)}</span> ${i.flags.map(f => `<span class="tag pending">⚠ ${esc(f)}</span>`).join(" ")}
+      <div style="white-space:pre-wrap">${esc(i.text.slice(0, 900))}</div>
+      <div class="row"><button class="ok" onclick="trReview('${i.src}', ${i.ref}, 'keep')">Keep</button><button class="deny" onclick="trReview('${i.src}', ${i.ref}, 'skip')">Skip</button>
+      <button class="ghost" onclick="trEdit('${i.src}', ${i.ref})">Correct it</button>${i.status !== "auto" ? `<button class="ghost" onclick="trReview('${i.src}', ${i.ref}, 'auto')">Undo</button>` : ""}</div></div>`).join("");
+  const box = document.getElementById("tritems");
+  box.innerHTML = more ? box.innerHTML + html : (html || `<div class="meta">Nothing here.</div>`);
+}
+async function trReview(src, ref, status, corrected) { await api("/api/training/review", {src, ref, status, corrected}); loadTraining(); }
+function trEdit(src, ref) {
+  const el = document.getElementById(`tr-${src}-${ref}`), text = el.querySelector("div[style]").textContent;
+  el.insertAdjacentHTML("beforeend", `<textarea rows="4" style="width:100%; margin-top:6px">${esc(text)}</textarea><button onclick="trReview('${src}', ${ref}, 'corrected', this.previousElementSibling.value)">Save correction</button>`);
+}
+async function saveTraining() {
+  const r = await api("/api/training/settings", {sources: [...document.querySelectorAll(".trsrc:checked")].map(x => x.value),
+    require_review: document.getElementById("trreq").checked, skip_flagged: document.getElementById("trflag").checked,
+    auto_rollback: document.getElementById("trroll").checked, self_share: +document.getElementById("trshare").value,
+    pass_mark: +document.getElementById("trpass").value, keep_versions: +document.getElementById("trkeep").value,
+    strength: document.getElementById("trstr").value});
+  document.getElementById("trmsg").textContent = r.settings ? "Saved ✓" : "Couldn't save"; loadTraining.drawn = false; loadTraining();
+}
+async function addExam() { await api("/api/training/exam/add", {question: document.getElementById("exq").value, expect: document.getElementById("exa").value});
+  document.getElementById("exq").value = document.getElementById("exa").value = ""; loadTraining(); }
+async function addCorrection() {
+  const r = await api("/api/training/correction", {wrong: document.getElementById("crw").value, right: document.getElementById("crr").value, question: document.getElementById("crq").value});
+  document.getElementById("crmsg").textContent = r.ok ? "Taught ✓" : "Write what's right first";
+  if (r.ok) { ["crw", "crr", "crq"].forEach(i => document.getElementById(i).value = ""); loadTraining(); }
+}
+document.getElementById("trfilter").addEventListener("click", e => { if (e.target.dataset.s !== undefined) { trStatus = e.target.dataset.s; loadTrItems(); } });
+setTimeout(loadTraining, 2200);
+
 </script>
 </body>
 </html>

@@ -300,9 +300,30 @@ def make_server(agent, host, port, pair_code):
                       "/api/pets": agent.pets_overview,
                       "/api/museum": agent.museum_overview,
                       "/api/workshop": agent.workshop_overview,
+                      "/api/economy": agent.economy,
+                      "/api/training": agent.training_summary,
+                      "/api/training/exam": lambda: {"questions": agent.exam(), "runs": (agent.db.get("exam_runs") or [])[-5:],
+                                                     "running": getattr(agent, "_exam_running", False)},
+                      "/api/training/corrections": lambda: {"corrections": agent.corrections()},
+                      "/api/sandbox": lambda: {"status": agent.sandbox_status(), "problem": agent.sandbox_problem()},
                       "/api/monitor": lambda: agent.monitor_overview((qs.get("track") or [None])[0])}
             if u.path in simple:
                 return self._json(simple[u.path]())
+            if u.path in ("/api/training/items", "/api/training/export.jsonl") and self.role != "owner":
+                return self._json({"error": "only the owner can see this"}, 403)
+            if u.path == "/api/training/items":
+                return self._json({"items": agent.training_items((qs.get("src") or [None])[0], (qs.get("status") or [None])[0],
+                                                                 min(200, int((qs.get("limit") or ["60"])[0])),
+                                                                 int((qs.get("offset") or ["0"])[0]))})
+            if u.path == "/api/training/export.jsonl":
+                body = agent.export_training_set().encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+                self.send_header("Content-Disposition", 'attachment; filename="stellar_training_preview.jsonl"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return None
             m = re.fullmatch(r"/api/plans/(\d+)\.(md|code|scad)", u.path)
             if m:
                 pid, part = int(m.group(1)), m.group(2)
@@ -409,6 +430,24 @@ def make_server(agent, host, port, pair_code):
                     if k in body:
                         save_setting(agent.cfg, "voice", k, body[k])
                 return self._json(agent.voice().status())
+            if path == "/api/training/settings":
+                return self._json({"settings": agent.set_training_settings(body)})
+            if path == "/api/training/review":
+                return self._json({"ok": agent.review_item(str(body.get("src")), int(body.get("ref") or 0), str(body.get("status")),
+                                                            body.get("corrected"), body.get("note"))})
+            if path == "/api/training/correction":
+                cid = agent.add_correction(body.get("wrong"), body.get("right"), body.get("question"))
+                return self._json({"ok": bool(cid), "id": cid})
+            if path == "/api/training/exam/add":
+                return self._json({"ok": bool(agent.add_exam_question(body.get("question", ""), body.get("expect", "")))})
+            if path == "/api/training/exam/remove":
+                agent.remove_exam_question(int(body.get("id") or 0))
+                return self._json({"ok": True})
+            if path == "/api/training/exam/run":
+                agent.run_exam_async()
+                return self._json({"ok": True})
+            if path == "/api/sandbox/check":
+                return self._json({"status": agent.sandbox_status(fresh=True), "problem": agent.sandbox_problem()})
             if path == "/api/goals":
                 title, text = str(body.get("title", "")).strip(), str(body.get("text", "")).strip()
                 if not title or not text:

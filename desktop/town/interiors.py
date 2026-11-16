@@ -218,7 +218,7 @@ def r_library(c, d, L):
     c.rect(222, 84, 2, 44, "S"); c.rect(218, 126, 10, 2, "S"); c.rect(214, 78, 18, 5, "s"); c.rect(212, 79, 2, 3, "c")
     return ({"shelf_a": [60, 20, "sparkle"], "desk": [118, 94, "write"], "shelf_b": [178, 20, "sparkle"],
              "telescope": [224, 76, "sparkle"]},
-            {"recall": "shelf_a", "write_note": "desk", "observe_sky": "telescope"},
+            {"recall": "shelf_a", "write_note": "desk", "observe_sky": "telescope", "read_manual": "shelf_b", "browse_manuals": "shelf_b"},
             ["shelf_a", "shelf_b", "desk", "telescope"])
 
 
