@@ -444,6 +444,7 @@ class MainActivity : Activity() {
             sb.append("\n♪ ").append(np.optString("title")).append(" by ").append(np.optString("artist"))
         }
         if (s.optBoolean("busy")) sb.append("\n(thinking…)")
+        if (!s.has("interior")) sb.append("\n⚠ Your hub is older than this app. Update Stellar Hub on your PC (dashboard → Check for updates) to see inside buildings and share music.")
         caption.text = sb.toString()
     }
 
@@ -615,6 +616,28 @@ class MainActivity : Activity() {
         if (clear) {
             content.removeAllViews()
             content.addView(button("Refresh", panel) { loadColony() }.apply { setTextColor(textCol) })
+        }
+
+        // Space events: start one, or stop the one that's happening
+        val evc = section("SPACE EVENTS")
+        val ev = lastStatus?.optJSONObject("event")
+        evc.addView(label(if (ev != null) "${ev.optString("title")} until ${fmt(ev.optDouble("end", 0.0))}" else "Clear skies.", 14f, if (ev != null) warn else dim))
+        if (ev != null) {
+            evc.addView(rowOf(button("⏹ Stop event", bad) {
+                bgTask({ it.post("/api/space_event/stop") }) { toast("The skies clear"); pollStatus(); main.postDelayed({ if (tab == "colony") loadColony() }, 800) }
+            }))
+        } else {
+            val starts = listOf("meteor_shower" to "☄️ Meteors", "solar_storm" to "☀️ Storm", "eclipse" to "🌑 Eclipse", "trader" to "🛸 Trader")
+            for (pair in starts.chunked(2)) {
+                evc.addView(rowOf(*pair.map { (type, title) ->
+                    button(title, cyan) {
+                        bgTask({ it.post("/api/space_event", JSONObject().put("type", type)) }) { r ->
+                            toast(if (r.optBoolean("ok", true)) "$title started" else "Another event is already happening")
+                            pollStatus(); main.postDelayed({ if (tab == "colony") loadColony() }, 800)
+                        }
+                    }
+                }.toTypedArray()))
+            }
         }
 
         // Credit Vault
@@ -1236,7 +1259,15 @@ class MainActivity : Activity() {
                     pollStatusThenHub()
                 }
             } catch (e: Exception) {
-                main.post { if (!isFinishing) toast("Couldn't share your music: ${e.message}") }
+                val why = if (e.message?.contains("404") == true)
+                    "your hub is older than this app. Update Stellar Hub on your PC (dashboard → Check for updates), then tap Share again."
+                else explain(e)
+                main.post {
+                    if (isFinishing) return@post
+                    prefs.edit().putBoolean("share_music", false).apply()
+                    Toast.makeText(this, "Couldn't share your music: $why", Toast.LENGTH_LONG).show()
+                    if (tab == "hub") showTab("hub")
+                }
             }
         }
     }

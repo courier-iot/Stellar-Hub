@@ -2,6 +2,12 @@
 
 Stellar Hub's update manager shows the entries newer than the version you have.
 
+## v0.9.1
+- Fixed: Check for updates could miss new versions, because it trusted GitHub's "Latest" label, which was stuck on an old release. The hub now looks through all releases and picks the newest one that has a file for your install. The dashboard also shows the newest version it found on GitHub.
+- Added: Stop event, in the dashboard and in the app's Colony tab. The app can now start space events too.
+- Fixed: with a hub older than the app, the resident vanished from the colony view. It now stands at its building's door until the hub can send the room.
+- Changed: the app says plainly when the hub on your PC needs updating, including when sharing music fails for that reason.
+
 ## v0.9.0
 - Added: follow your resident inside. Every one of the 16 buildings has its own room in Hub Connect S, showing real things from the colony: the paintings hung in the Gallery, the plants in the Greenhouse, the Home Dome showcase, the Exchange's best curios and more. The resident walks to the easel, the bed, the telescope or a painting on the wall depending on what it's doing, and wanders around between turns.
 - Added: walking in and out of buildings. Airlocks open, the resident steps inside or back out, and little effects show what it's doing (notes, paint, water, sleep).

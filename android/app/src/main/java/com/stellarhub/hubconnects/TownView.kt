@@ -550,7 +550,10 @@ class TownView(context: Context) : View(context) {
     private fun drawColony(canvas: Canvas, now: Long, t: Double) {
         val bg = background ?: return
         val scale = width.toFloat() / viewW
-        val showResident = residentX >= 0 && !away && !inOrbit && (phase == Phase.OUT_WALK || phase == Phase.ENTER || phase == Phase.EXIT)
+        // inside a building whose room hasn't arrived (or an older hub without rooms): stand at its door as before
+        val noRoom = (phase == Phase.INSIDE || phase == Phase.LEAVE) && rooms[roomId] == null
+        val showResident = residentX >= 0 && !away && !inOrbit &&
+            (phase == Phase.OUT_WALK || phase == Phase.ENTER || phase == Phase.EXIT || noRoom)
         // camera: follow the resident (or the spaceport while it's away) unless you're dragging
         val focus = when {
             away || inOrbit -> doorOf("spaceport")
@@ -661,7 +664,7 @@ class TownView(context: Context) : View(context) {
                 else -> 255
             }
             drawResident(canvas, residentX, feetY, walking, alpha, t)
-        } else if (!away && !inOrbit && roomId != null) {     // a marker over the building it's in
+        } else if (!away && !inOrbit && roomId != null && !noRoom) {     // a marker over the building it's in
             buildingOf(roomId)?.let { b ->
                 val mx = b.doorX.toFloat()
                 val my = b.y - 6f + (sin(t / 300) * 1.5).roundToInt()

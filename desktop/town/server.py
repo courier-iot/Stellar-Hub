@@ -306,6 +306,11 @@ def make_server(agent, host, port, pair_code):
                     return self._json({"error": f"{agent.name} couldn't answer: {e}"}, 503)
             if path == "/api/chat/end":
                 return self._json({"summary": agent.chat_end()})
+            if path == "/api/space_event/stop":
+                ev = agent.space_event()
+                if ev:
+                    agent.end_space_event(ev)
+                return self._json({"ok": True, "stopped": bool(ev)})
             if path == "/api/space_event":
                 ev = agent.start_space_event(str(body.get("type", "")))
                 return self._json({"ok": ev is not None, "event": ev})

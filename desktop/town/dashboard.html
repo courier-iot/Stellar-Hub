@@ -172,6 +172,7 @@
       <button class="ghost" onclick="spaceEvent('solar_storm')">☀️ Storm</button>
       <button class="ghost" onclick="spaceEvent('eclipse')">🌑 Eclipse</button>
       <button class="ghost" onclick="spaceEvent('trader')">🛸 Trader</button>
+      <button class="ghost" id="stopevent" style="display:none" onclick="stopEvent()">⏹ Stop event</button>
     </div>
     <h2 class="sub">Updates</h2>
     <div id="updateinfo" class="meta"></div>
@@ -433,6 +434,7 @@ async function refreshInner() {
   document.getElementById("plan").innerHTML = s.map ? esc(s.map).replace(/; /g, "<br>") +
     (s.blueprints && s.blueprints.length ? `<br><br>Blueprints waiting to be built: ${esc(s.blueprints.map(b => NAMES[b] || b).join(", "))}` : "") +
     `<br><br>Sleeps ${s.sleep.bed}:00 to ${s.sleep.wake}:00` : "";
+  document.getElementById("stopevent").style.display = s.event ? "" : "none";
   document.getElementById("eventnow").innerHTML = s.event ? `<b>${esc(s.event.title)}</b> until ${when(s.event.end)}<br>${esc(s.event.about)}<br><br>Start one yourself:` : "Clear skies. Start one yourself:";
   const up = await api("/api/update");
   lastVersion = up.current;
@@ -451,7 +453,7 @@ async function refreshInner() {
   } else upd.style.display = "none";
   document.getElementById("updateinfo").innerHTML = `You have v${esc(up.current || "?")}` +
     (up.checked ? ` · last checked ${when(up.checked)}` : "") + (up.error ? `<div class="err">${esc(up.error)}</div>` : "") +
-    (!up.available && up.latest ? " · up to date ✓" : "");
+    (up.latest ? ` · newest on GitHub: v${esc(up.latest)}` : "") + (!up.available && up.latest ? " · up to date ✓" : "");
   const lb = s.last_backup;
   document.getElementById("backup").innerHTML = lb ? (lb.error ? `Last backup failed: ${esc(lb.error)}` : `Last backup ${when(lb.ts)}<br>${esc(lb.file)}`) : "No backup yet (runs nightly after 4:00).";
   if (!chatBusy) renderChat(await api("/api/chat"), s.chat);
@@ -726,7 +728,13 @@ async function chatSend() {
 document.getElementById("chatin").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); chatSend(); } });
 async function chatEnd() { await api("/api/chat/end", {}); refresh(); }
 async function spaceEvent(type) { const r = await api("/api/space_event", {type}); if (!r.ok) alert("Another event is already happening."); refresh(); }
-async function updateCheck() { document.getElementById("updateinfo").textContent = "Checking…"; await api("/api/update/check", {}); refresh(); }
+async function updateCheck() {
+  document.getElementById("updateinfo").textContent = "Checking…";
+  const r = await api("/api/update/check", {});
+  document.getElementById("updateinfo").textContent = r.error ? r.error : r.available ? `v${r.latest} is available` : `Up to date (newest on GitHub: v${r.latest || "?"})`;
+  setTimeout(refresh, 1500);
+}
+async function stopEvent() { await api("/api/space_event/stop", {}); refresh(); }
 async function updateNow() {
   if (!confirm("Update Stellar Hub now? Your resident is backed up first, and the hub restarts by itself.")) return;
   const r = await api("/api/update/apply", {});

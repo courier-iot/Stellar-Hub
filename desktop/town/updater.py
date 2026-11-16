@@ -133,7 +133,7 @@ Start-Process -FilePath '{q(pyw)}' -ArgumentList '"{q(os.path.join(self.root, "r
         if not self.cfg.get("update", {}).get("check", True) and not force:
             return self.state()
         try:
-            rel = json.loads(_get(f"https://api.github.com/repos/{self.repo}/releases/latest").decode())
+            rel = self._newest_release()
             tag = rel.get("tag_name", "")
             assets = {a["name"]: a["browser_download_url"] for a in rel.get("assets", [])}
             st = {"checked": time.time(), "latest": tag.lstrip("v"), "tag": tag, "assets": assets,
@@ -148,6 +148,18 @@ Start-Process -FilePath '{q(pyw)}' -ArgumentList '"{q(os.path.join(self.root, "r
             st = {**st, "checked": time.time(), "error": f"Couldn't check for updates: {e}"}
         self.db.set("update", st)
         return self.state()
+
+    def _newest_release(self):
+        """The highest version on GitHub. Doesn't trust the "Latest" label, which GitHub can leave on an old release."""
+        rels = json.loads(_get(f"https://api.github.com/repos/{self.repo}/releases?per_page=30").decode())
+        if not isinstance(rels, list):
+            raise ValueError(f"GitHub answered: {str(rels)[:200]}")
+        want = ".exe" if self.install_kind() == "installer" else ".zip"
+        good = [r for r in rels if not r.get("draft") and not r.get("prerelease") and parse_version(r.get("tag_name")) > (0, 0, 0)
+                and any(a.get("name", "").endswith(want) for a in r.get("assets", []))]
+        if not good:
+            raise ValueError(f"no finished release with a {want} file found on GitHub yet")
+        return max(good, key=lambda r: parse_version(r.get("tag_name")))
 
     def _changelog(self, tag):
         """The CHANGELOG.md entries newer than the running version."""
