@@ -121,6 +121,12 @@ def make_server(agent, host, port, pair_code):
             self.end_headers()
             self.wfile.write(data)
 
+        def handle_one_request(self):
+            try:
+                super().handle_one_request()
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                self.close_connection = True   # the browser or phone closed the page mid-reply: nothing to do
+
         def _json(self, obj, code=200):
             self._send(json.dumps(obj), code=code)
 

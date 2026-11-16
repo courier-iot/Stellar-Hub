@@ -2,6 +2,11 @@
 
 Stellar Hub's update manager shows the entries newer than the version you have.
 
+## v0.12.1
+- Fixed: on Windows an update could get stuck on "Installing": the helper waited for the restarted Stellar Hub as well as the installer. It now waits for the installer only (at most 10 minutes) and closes any other copy of Stellar Hub that would block it.
+- Fixed: "ConnectionAbortedError" tracebacks in the console when a page or the phone closed mid-reply.
+- Changed: the dashboard suggests running the installer yourself if an update takes too long, and says so after a restart if the last update didn't finish.
+
 ## v0.12.0
 - Added: the Upper Street. When the walkway is full, the resident can buy a raised deck (1500 credits, about 8 hours) with 14 more plots (16-30), reached by a glass lift beside the Home Dome. It rides the lift between levels on the dashboard and in the app.
 - Added: the Department Store (a new building, free to build). Once it's open, all shopping happens there; the Credit Vault keeps your balance and history.

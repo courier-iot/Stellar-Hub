@@ -49,6 +49,10 @@ class Updater:
 
     def read_watchdog_result(self):
         """After a Windows update, the watchdog leaves a note saying whether the installer succeeded."""
+        prog = self.db.get("update_progress") or {}
+        if str(prog.get("stage", "")).startswith("Installing") and not os.path.exists(self.result_path):
+            self._progress("The last update didn't finish", "Stellar Hub restarted on v" + self.current() + ". You can try "
+                           "again, or run the installer from the latest release yourself (your resident and settings are kept).")
         try:
             with open(self.result_path, encoding="utf-8-sig") as f:
                 r = json.load(f)
@@ -75,10 +79,15 @@ class Updater:
         script = f"""$ErrorActionPreference = 'SilentlyContinue'
 $hubPid = {os.getpid()}
 for ($i = 0; $i -lt 120 -and (Get-Process -Id $hubPid -ErrorAction SilentlyContinue); $i++) {{ Start-Sleep -Milliseconds 500 }}
+# any other copy of Stellar Hub still running from this folder would block the install: close it
+$appDir = '{q(self.root)}'
+Get-Process python, pythonw -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -and $_.Path.StartsWith($appDir, [StringComparison]::OrdinalIgnoreCase) }} | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 1
 $code = 1
 try {{
-  $p = Start-Process -FilePath '{q(exe)}' -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LOG="{q(os.path.join(logs, "install.log"))}"' -PassThru -Wait
-  $code = $p.ExitCode
+  $p = Start-Process -FilePath '{q(exe)}' -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LOG="{q(os.path.join(logs, "install.log"))}"' -PassThru
+  # wait for the installer itself only (not the Stellar Hub it starts afterwards), at most 10 minutes
+  if ($p.WaitForExit(600000)) {{ $code = $p.ExitCode }} else {{ $code = 98; try {{ $p.Kill() }} catch {{ }} }}
 }} catch {{ $code = 99 }}
 $ts = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 Set-Content -Path '{q(self.result_path)}' -Value ('{{"version": "{q(version)}", "code": ' + $code + ', "ts": ' + $ts + '}}') -Encoding UTF8
@@ -112,6 +121,7 @@ Start-Process -FilePath '{q(pyw)}' -ArgumentList '"{q(os.path.join(self.root, "r
         st = dict(self.db.get("update") or {})
         st["current"] = self.current()
         st["kind"] = self.install_kind()
+        st["repo"] = self.repo
         st["progress"] = self.db.get("update_progress")
         st["available"] = parse_version(st.get("latest")) > parse_version(st["current"])
         return st

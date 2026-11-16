@@ -555,6 +555,9 @@ async function refreshInner() {
     upd.style.display = "";
     upd.innerHTML = prog
       ? `<b>${esc(prog.stage)}</b>${prog.error ? `<div class="err">${esc(prog.error)}</div>` : ""}
+         ${!prog.error && /^Installing/.test(prog.stage) && Date.now() / 1000 - prog.ts > 240 ? `<div class="warnbox">This is taking longer than it should.
+           Close Stellar Hub (Start menu → Stop Stellar Hub), then run the installer from
+           <a href="https://github.com/${esc(up.repo || "courier-iot/Stellar-Hub")}/releases/latest" target="_blank">the latest release</a> yourself. Your resident and settings are kept.</div>` : ""}
          ${prog.error && up.available ? `<div class="row"><button onclick="updateNow()">Try again</button></div>` : ""}`
       : `<b>⬆️ Stellar Hub v${esc(up.latest)} is available</b> <span class="meta">(you have v${esc(up.current)})</span>
          ${up.changelog ? `<pre class="meta" style="margin-top:6px">${esc(up.changelog)}</pre>` : ""}
