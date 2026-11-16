@@ -2,6 +2,11 @@
 
 Stellar Hub's update manager shows the entries newer than the version you have.
 
+## v0.13.4
+- Fixed: installing an update by hand (downloading the installer) stopped the hub and didn't start it again, and could stop halfway. The installer now stops the hub properly before replacing files, "Start Stellar Hub now" is ticked and runs first, and the hardware check is no longer forced on every update (it's unticked on updates and still in the Start menu).
+- Changed: the resident can only answer with buildings it can actually go to right now and actions that exist there. Ollama holds its answer to that list (Ollama 0.5 or newer), so misspelled ids and made-up places ("observatory_library", "10") can't happen. With an older Ollama the hub falls back to correcting mistakes like before.
+- Changed: the app tells you when the hub is behind it ("Your hub (v0.13.2) is behind this app (v0.13.4)"), and a page the older hub doesn't have yet no longer shows as "Can't reach Stellar Hub". The Colony tab's economy card says to update the hub instead.
+
 ## v0.13.3
 - Added: memory that reaches back through its whole life. Every memory's keywords now go into an index, so recall finds a fitting memory from months ago instead of only the newest 1,500 (about five days at the old pace). Memories from before this update are indexed automatically in the background.
 - Added: the library's manual shelf. It holds every building's manual, even for places not unlocked yet (browse_manuals, then read_manual). Each turn, a short page from the manual that best fits what it's doing, or just got wrong, appears next to its memories.

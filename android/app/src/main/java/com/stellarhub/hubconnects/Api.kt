@@ -30,6 +30,7 @@ class Api(address: String, private val pairCode: String, private val foreground:
             if (code == 401) throw ApiException(if ("\"join\"" in text) "Not signed in" else (errorOf(text) ?: "Wrong pair code"))
             if (code == 403 && "\"pending\"" in text) throw ApiException("Waiting for approval")
             if (code == 403) throw ApiException(errorOf(text) ?: "Your account can't do that")
+            if (code == 404) throw ApiException("NEEDS_NEWER_HUB")
             if (code !in 200..299) throw ApiException(errorOf(text) ?: "Hub answered with error $code")
             return text
         } finally {

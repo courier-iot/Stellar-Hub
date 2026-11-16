@@ -29,7 +29,8 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-CloseApplications=force
+; The hub is stopped in PrepareToInstall (below), so Windows doesn't have to force anything closed.
+CloseApplications=no
 MinVersion=10.0
 
 [Tasks]
@@ -53,13 +54,52 @@ Name: "{userdesktop}\Stellar Hub"; Filename: "{app}\python\python.exe"; Paramete
 Filename: "{group}\Stellar Hub dashboard.url"; Section: "InternetShortcut"; Key: "URL"; String: "http://localhost:8080"
 
 [Run]
-Filename: "{app}\python\python.exe"; Parameters: """{app}\setup_hub.py"" --pause"; WorkingDir: "{app}"; Description: "Check my hardware and choose an AI model (recommended)"; Flags: postinstall skipifsilent
-Filename: "{app}\python\python.exe"; Parameters: """{app}\sandbox_check.py"" --pause"; WorkingDir: "{app}"; Description: "Check Docker and get the coding sandbox ready"; Flags: postinstall skipifsilent; Check: DockerFound
-Filename: "{app}\python\python.exe"; Parameters: """{app}\run.py"" --open"; WorkingDir: "{app}"; Description: "Start Stellar Hub now"; Flags: postinstall skipifsilent nowait unchecked
+; v0.13.3: starting the hub comes first and is ticked, so a manual update always brings it back.
+Filename: "{app}\python\python.exe"; Parameters: """{app}\run.py"" --open"; WorkingDir: "{app}"; Description: "Start Stellar Hub now"; Flags: postinstall skipifsilent nowait
+; The hardware check is offered ticked on a first install only (it's in the Start menu any time).
+Filename: "{app}\python\python.exe"; Parameters: """{app}\setup_hub.py"" --pause"; WorkingDir: "{app}"; Description: "Check my hardware and choose an AI model (recommended)"; Flags: postinstall skipifsilent nowait; Check: not IsUpgrade
+Filename: "{app}\python\python.exe"; Parameters: """{app}\setup_hub.py"" --pause"; WorkingDir: "{app}"; Description: "Check my hardware and AI model"; Flags: postinstall skipifsilent nowait unchecked; Check: IsUpgrade
+Filename: "{app}\python\python.exe"; Parameters: """{app}\sandbox_check.py"" --pause"; WorkingDir: "{app}"; Description: "Check Docker and get the coding sandbox ready"; Flags: postinstall skipifsilent nowait; Check: DockerFound
 ; After a quiet update started from the dashboard, start Stellar Hub again in the background.
 Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\run.py"""; WorkingDir: "{app}"; Flags: nowait; Check: WizardSilent
 
 [Code]
+const
+  UninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{6E1B2C9A-4F7D-4B8E-9A3C-2D5F7E1A9B40}_is1';
+
+var
+  WasInstalled: Boolean;
+
+// Read before anything is installed: was Stellar Hub already here (so this is an update)?
+function InitializeSetup(): Boolean;
+begin
+  WasInstalled := RegKeyExists(HKCU, UninstallKey) or RegKeyExists(HKLM, UninstallKey);
+  Result := True;
+end;
+
+function IsUpgrade(): Boolean;
+begin
+  Result := WasInstalled;
+end;
+
+// v0.13.3: before any files are replaced, stop the running hub properly (stop.py), then make sure nothing
+// started from the install folder is still holding files. Without this a manual update could stop halfway.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  App, Ps: String;
+  Code: Integer;
+begin
+  Result := '';
+  App := ExpandConstant('{app}');
+  if FileExists(App + '\python\python.exe') and FileExists(App + '\stop.py') then
+    Exec(App + '\python\python.exe', '"' + App + '\stop.py"', App, SW_HIDE, ewWaitUntilTerminated, Code);
+  Ps := '-NoProfile -ExecutionPolicy Bypass -Command "' +
+        'Get-Process python,pythonw -ErrorAction SilentlyContinue | ' +
+        'Where-Object { $_.Path -and $_.Path.StartsWith(''' + App + ''', [StringComparison]::OrdinalIgnoreCase) } | ' +
+        'Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2"';
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Ps, '', SW_HIDE, ewWaitUntilTerminated, Code);
+end;
+
 // v0.13.3: the Fab Hangar's coding sandbox needs Docker Desktop on Windows.
 function DockerFound(): Boolean;
 begin

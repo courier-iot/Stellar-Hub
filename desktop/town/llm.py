@@ -66,7 +66,9 @@ class OllamaLLM:
                            f"Models you have: {', '.join(names) or 'none'}")
         return True, "ok"
 
-    def chat(self, system, user, json_mode=False, task=None):
+    schema_ok = True      # Ollama 0.5+ can hold the answer to a JSON schema (the exact building ids and actions)
+
+    def chat(self, system, user, json_mode=False, task=None, schema=None):
         payload = {
             "model": self.model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -74,12 +76,16 @@ class OllamaLLM:
             "options": {"temperature": self.temperature, "num_ctx": self.num_ctx},
         }
         if json_mode:
-            payload["format"] = "json"
+            payload["format"] = schema if (schema and self.schema_ok) else "json"
         if self.think_param:
             payload["think"] = False   # thinking models: answer directly (faster, cleaner JSON)
         try:
             out = self._post("/api/chat", payload)
         except LLMError as e:
+            if isinstance(payload.get("format"), dict) and "Ollama error 4" in str(e):
+                self.schema_ok = False        # an older Ollama: plain JSON mode, and the hub repairs mistakes instead
+                payload["format"] = "json"
+                return self.chat(system, user, json_mode, task, None)
             if self.think_param and "think" in str(e).lower():
                 self.think_param = False
                 payload.pop("think", None)
@@ -88,11 +94,11 @@ class OllamaLLM:
                 raise
         return out.get("message", {}).get("content", "")
 
-    def chat_json(self, system, user, task=None):
+    def chat_json(self, system, user, task=None, schema=None):
         last = None
         for _ in range(2):
             try:
-                return _extract_json(self.chat(system, user, json_mode=True, task=task))
+                return _extract_json(self.chat(system, user, json_mode=True, task=task, schema=schema))
             except LLMError as e:
                 last = e
                 if "reach Ollama" in str(e):
@@ -151,7 +157,9 @@ class MockLLM:
     def check(self):
         return True, "mock"
 
-    def chat_json(self, system, user, task=None):
+    def chat_json(self, system, user, task=None, schema=None):
+        if schema:
+            self.last_schema = schema
         if task == "code":
             return {"code": "def count_stars(sky):\n    return sky.count('*')\n", "notes": "Counting is easy with str.count."}
         if task == "machine_design":

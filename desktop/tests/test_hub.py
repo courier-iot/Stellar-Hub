@@ -42,6 +42,16 @@ class TurnsAndChoices(unittest.TestCase):
         self.assertEqual(bid, "home")
         self.assertIn("home", note)
 
+    def test_answers_are_held_to_real_buildings_and_actions(self):
+        self.a.take_turn()
+        sch = self.a.llm.last_schema
+        places = sch["properties"]["building"]["enum"]
+        self.assertIn("home", places)
+        self.assertTrue(all(b in BUILDINGS for b in places))
+        self.assertIn("journal", sch["properties"]["action"]["enum"])
+        self.a.start_space_event("dust_storm")
+        self.assertEqual(self.a.decision_schema()["properties"]["building"]["enum"], [self.a.db.get("location", "home")])
+
     def test_prompt_stays_a_sensible_size(self):
         ctx = self.a.build_context(self.a.db.get("needs") or {})
         self.assertLess(len(ctx) // 4, 7000, "the turn prompt is close to the model's 8,192-token window")

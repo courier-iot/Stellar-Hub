@@ -88,6 +88,16 @@ class Agent(ExtrasMixin, MonitorMixin, DevicesMixin, EconomyMixin, TrainingMixin
             return bid, f"the {BUILDINGS[bid]['name']}'s id is {bid}"
         return bid, None
 
+    def hub_version(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for p in (os.path.join(root, "VERSION"), os.path.join(root, "..", "VERSION")):
+            try:
+                with open(p, encoding="utf-8") as f:
+                    return f.read().strip()
+            except OSError:
+                continue
+        return None
+
     def tick_scale(self):
         """Per-turn amounts were tuned for 30-minute turns; shorter turns scale them down."""
         return max(0.1, min(2.0, float(self.cfg.get("tick_minutes", 30)) / 30.0))
@@ -103,11 +113,31 @@ class Agent(ExtrasMixin, MonitorMixin, DevicesMixin, EconomyMixin, TrainingMixin
         u[key] = u.get(key, 0) + 1
         self.db.set("usage", u)
 
-    def ask(self, system, user, task):
+    def ask(self, system, user, task, schema=None):
         if self._usage()["llm_calls"] >= self.cfg["limits"]["llm_calls_per_day"]:
             raise BudgetExceeded("Daily AI-call limit reached.")
         self._bump("llm_calls")
+        if schema:
+            try:
+                return self.llm.chat_json(system, user, task=task, schema=schema)
+            except TypeError:             # a model backend without schema support
+                pass
         return self.llm.chat_json(system, user, task=task)
+
+    def decision_schema(self):
+        """The answer's shape for this turn: "building" can only be a place it can go right now, and "action" only
+        something offered there. The model can't misspell an id or invent a place."""
+        here = self.db.get("location", "home")
+        places = [b for b in BUILDINGS if not self.is_locked(b) and self.is_built(b) and b not in self.constructions()
+                  and self.is_available(b) and (not self.walkway_closed() or b == here)] or [here]
+        actions = sorted({a for b in places for a, _ in self.offered_actions(b)})
+        return {"type": "object",
+                "properties": {"thought": {"type": "string"},
+                               "building": {"type": "string", "enum": places},
+                               "action": {"type": "string", "enum": actions},
+                               "args": {"type": "object"},
+                               "importance": {"type": "integer", "minimum": 1, "maximum": 10}},
+                "required": ["thought", "building", "action", "args", "importance"]}
 
     def closed_buildings(self):
         return set(self.db.get("closed_buildings", []))
@@ -364,7 +394,7 @@ What do you do now?"""
             self.daily_extras()
             needs = self.grow_needs()
             decision = self.ask(prompts.DECIDE.format(name=self.name, creator=self.creator),
-                                self.build_context(needs), "decide")
+                                self.build_context(needs), "decide", schema=self.decision_schema())
             thought = str(decision.get("thought", ""))[:500]
             bid = str(decision.get("building", "home")).strip().lower().replace(" ", "_")
             action = str(decision.get("action", "")).strip().lower().replace(" ", "_")
@@ -954,6 +984,7 @@ What do you do now?"""
                              + ((self.visitor_now() or {}).get("id") or "")
                              + "".join(f"{p['id']}{p['status'][0]}{int(p['last_run'] > time.time() - 600)}{int(self.on_shift(p))}" for p in self.pets()),
             "emote": self.emote() if self.db.get("name") else None, "asleep": self.is_asleep(),
+            "hub_version": self.hub_version(),
             "mood": self.mood_word() if self.db.get("name") else None, "creator": self.creator, "listening": bool(self.listening_now()),
             "hour": datetime.datetime.now().hour,
             "sleep": self.bedtime(), "night": self.is_night(), "daylight": self.daylight(),

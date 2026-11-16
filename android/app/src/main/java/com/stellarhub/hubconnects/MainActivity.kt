@@ -403,9 +403,22 @@ class MainActivity : Activity() {
                 val r = work(a)
                 main.post { if (!isFinishing) done(r) }
             } catch (e: Exception) {
-                main.post { if (!isFinishing) { val m = explain(e); toast(m); caption.text = m } }
+                // a missing page on an older hub isn't a lost connection: say so without taking over the status line
+                main.post { if (!isFinishing) { val m = explain(e); toast(m); if (e.message != "NEEDS_NEWER_HUB") caption.text = m } }
             }
         }
+    }
+
+    /** Newer than the hub? Compares "0.13.3"-style versions. */
+    private fun older(a: String, b: String): Boolean {
+        val x = a.split(".").map { it.toIntOrNull() ?: 0 }
+        val y = b.split(".").map { it.toIntOrNull() ?: 0 }
+        for (i in 0 until maxOf(x.size, y.size)) {
+            val p = x.getOrElse(i) { 0 }
+            val q = y.getOrElse(i) { 0 }
+            if (p != q) return p < q
+        }
+        return false
     }
 
     // ------------------------------------------------------------------ status + town
@@ -436,6 +449,7 @@ class MainActivity : Activity() {
         e.message == "Wrong pair code" -> "Wrong pair code. Check it on the dashboard and join again."
         e.message == "Waiting for approval" -> "Waiting for the owner to approve “${prefs.getString("username", "")}” on the Stellar Hub dashboard…"
         e.message == "Not signed in" -> "This phone isn't signed in (or was removed). Open the Hub tab and join again."
+        e.message == "NEEDS_NEWER_HUB" -> "This part needs a newer Stellar Hub. Update the hub on your PC (dashboard → Hub → Check for updates)."
         e is java.net.SocketTimeoutException || e is java.net.ConnectException || e is java.net.NoRouteToHostException ->
             "Can't reach Stellar Hub at ${api?.base}.\nCheck: hub running · Tailscale on (phone and PC) · Windows Firewall rule (run Setup on the PC)."
         e is java.net.UnknownHostException -> "That address doesn't exist. Use the 100.x.x.x address from the dashboard."
@@ -494,7 +508,10 @@ class MainActivity : Activity() {
             sb.append("\n♪ ").append(np.optString("title")).append(" by ").append(np.optString("artist"))
         }
         if (s.optBoolean("busy")) sb.append("\n(thinking…)")
-        if (!s.has("interior")) sb.append("\n⚠ Your hub is older than this app. Update Stellar Hub on your PC (dashboard → Check for updates) to see inside buildings and share music.")
+        val appV = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (e: Exception) { "" }
+        val hubV = s.optString("hub_version").takeIf { it.isNotBlank() && it != "null" }
+        if (hubV == null || (appV.isNotBlank() && older(hubV, appV)))
+            sb.append("\n⚠ Your hub (${hubV?.let { "v$it" } ?: "an older version"}) is behind this app (v$appV). Update Stellar Hub on your PC: dashboard → Hub → Check for updates.")
         caption.text = sb.toString()
     }
 
@@ -634,7 +651,21 @@ class MainActivity : Activity() {
     private fun renderEconomyCard() {
         val c = section("Colony economy")
         c.addView(label("Loading…", 12f, dim))
-        bgTask({ it.getObject("/api/economy") }) { e ->
+        val a = api ?: return
+        io.execute {
+            val e = try { a.getObject("/api/economy") } catch (ex: Exception) {
+                main.post {
+                    c.removeViews(1, c.childCount - 1)
+                    c.addView(label(if (ex.message == "NEEDS_NEWER_HUB") "Update the hub to v0.13.3 or later to see this." else explain(ex), 12f, dim))
+                }
+                return@execute
+            }
+            main.post { if (!isFinishing) showEconomy(c, e) }
+        }
+    }
+
+    private fun showEconomy(c: LinearLayout, e: JSONObject) {
+        run {
             c.removeViews(1, c.childCount - 1)
             val w = e.optJSONObject("week") ?: JSONObject()
             c.addView(label("◈ ${e.optInt("balance")} · this week +${w.optInt("in")} / −${w.optInt("out")}", 15f, textCol, true))
