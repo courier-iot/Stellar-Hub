@@ -33,6 +33,11 @@ CREATE TABLE IF NOT EXISTS gifts(id INTEGER PRIMARY KEY, ts REAL, kind TEXT, ref
 CREATE TABLE IF NOT EXISTS pets(id INTEGER PRIMARY KEY, name TEXT, species TEXT, born REAL, lifespan_days REAL,
     energy REAL, hunger REAL, happiness REAL, health REAL, strain REAL, status TEXT, job TEXT, shifts INTEGER,
     runs_today INTEGER, run_day TEXT, last_run REAL, rest_until REAL, critical_since REAL, updated REAL);
+CREATE TABLE IF NOT EXISTS goals(id INTEGER PRIMARY KEY, ts REAL, week TEXT, kind TEXT, ref TEXT, title TEXT, text TEXT,
+    tests TEXT, source TEXT, status TEXT, attempts INTEGER DEFAULT 0, result TEXT, last_code TEXT);
+CREATE TABLE IF NOT EXISTS skills(id INTEGER PRIMARY KEY, ts REAL, kind TEXT, title TEXT, tags TEXT, content TEXT);
+CREATE TABLE IF NOT EXISTS machines(id INTEGER PRIMARY KEY, ts REAL, kind TEXT, design TEXT, condition REAL, last_maint REAL);
+CREATE TABLE IF NOT EXISTS plans(id INTEGER PRIMARY KEY, ts REAL, kind TEXT, title TEXT, plan TEXT);
 CREATE TABLE IF NOT EXISTS museum(id INTEGER PRIMARY KEY, ts REAL, set_id TEXT);
 CREATE TABLE IF NOT EXISTS monitor(id INTEGER PRIMARY KEY, ts REAL, track TEXT, level TEXT, title TEXT, detail TEXT);
 CREATE TABLE IF NOT EXISTS pet_log(id INTEGER PRIMARY KEY, ts REAL, pet_id INTEGER, text TEXT);

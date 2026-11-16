@@ -2,6 +2,22 @@
 
 Stellar Hub's update manager shows the entries newer than the version you have.
 
+## v0.13.0
+- Added: the Mechanical Workshop (unlock for 300). The resident buys parts at the Department Store (frames, wheels, gears, motors, sensors, circuits, batteries, solar panels…), designs machines, and a simulator checks every design: required parts, power and frame space. Parts are only used when it passes.
+- Added: 10 machines with daily colony bonuses: Watering Bot, Seed Sorter, Telescope Tracker, Music Box Bot, Cleaning Drone, Solar Array, Delivery Drone (5% store discount), Pet Feeder, Repair Bot (halves wear) and Comet Catcher. Machines wear down slowly; a broken machine does nothing until it's serviced (maintain_machine, one spare gear).
+- Added: weekly goals. A coding challenge at the Fab Hangar every week (16 challenges in 6 levels), checked by automatic tests that run in the sandbox straight away with no approval needed. Any other program still waits for you. A machine to build at the Mechanical Workshop every week. Passing makes the next goal harder; missing a week makes it easier.
+- Added: your own goals, from the dashboard's new Workshop tab or the app's new Build tab. Coding goals with tests are checked automatically; anything else comes back to you to review.
+- Added: real-world project plans, about once a week: ESP32/Arduino builds, 3D prints (OpenSCAD), hand-tools and crafts, and smart-home gadgets. Each has a parts list, tools, steps and code or files, downloadable from the dashboard and the app. Electronics stay low-voltage (USB or batteries), and every plan carries a "Check this before you build" note.
+- Added: the skill notebook. Passing code, working machines and finished plans are saved, and the best matching examples go into the resident's prompt next time, so it gets better at things over time. A new "building" skill joins coding.
+- Added: space weather with light gameplay effects: stardust drift (common; a few credits swept up), dust storms (the walkway closes for a few hours, so it stays where it is) and comet passes (rare and slow; the tail drops set pieces, more with a Comet Catcher). All three can be started from the Hub tab too.
+- Added: idle animations on the dashboard and in the app: looking around, stretching, yawning and dozing, waving when you open it, sitting and reading, and dancing while you listen together. They're picked by mood, time of day and place.
+- Added: colony traffic that grows with the colony (maintenance bots, delivery drones from the store to whoever just shopped, a cargo shuttle once the Spaceport is built, and the lift car), plus building life: windows switching on and off at night and blinking roof beacons.
+- Added: customization the resident chooses itself: six accessories (antenna cap, beanie, crown, bubble helmet, scarf, comet trail) and building paint jobs (8 colours) with roof lights (6 colours), all from the Department Store.
+- Added: the Gear Beetle's new job, maintain_machines (services the most worn machine), and its salvage now turns up spare parts.
+- Changed: turns every 12 minutes instead of 30. If your settings still had the old defaults, they move to 12 minutes and 500 AI calls a day once (anything you set yourself is kept). Needs and visitors are scaled so a day feels the same.
+- Changed: when a pet slot opens up (a pet passes away or is taken), the adoption price goes back to the base price.
+- Fixed: "The last update didn't finish" showed after an update that had worked, or after running the installer yourself. If the hub is already on the version it was updating to, it now shows "Updated ✓".
+
 ## v0.12.1
 - Fixed: on Windows an update could get stuck on "Installing": the helper waited for the restarted Stellar Hub as well as the installer. It now waits for the installer only (at most 10 minutes) and closes any other copy of Stellar Hub that would block it.
 - Fixed: "ConnectionAbortedError" tracebacks in the console when a page or the phone closed mid-reply.

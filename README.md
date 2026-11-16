@@ -33,7 +33,7 @@ Remove it with `sh install-service.sh remove`. Logs: `journalctl --user -u stell
 Stop a running hub from anywhere with `python3 stop.py`.
 
 On its first turn the resident is born as a little **star spirit** and picks its own name.
-It wakes every 30 minutes. Press **Take a turn now** to watch it right away.
+It wakes every 12 minutes. Press **Take a turn now** to watch it right away.
 
 ## 1b. Or run Stellar Hub on Windows (10 or 11)
 
@@ -180,11 +180,28 @@ showcase spot, and can be donated to the Stellar Museum (reputation and a daily 
 
 **Monitor:** the dashboard's Monitor tab (and the app's Hub tab) flags anything unusual with pets, money or the model.
 
-**Pets:** once the Pet Shop is unlocked and built, the resident can adopt up to four helper pets, train each one
+**Pets:** once the Pet Shop is unlocked and built, the resident can adopt up to six helper pets (each costs 50% more than the last, back to the base price whenever a slot opens), train each one
 for a single job, and decide how many shifts a day it works. Pets need rest, food and attention. Overworked pets get
 sick, injured, then critical: the resident can rescue a critical pet at a steep price (even into debt), or the Welfare
 Office takes it away with a fine. Simple jobs are plain code; thinking jobs use a small "pet brain" model
 (download it from the dashboard's Pets tab) and only run when your PC is idle, so pets never slow down your games.
+
+**Workshop and weekly goals:** every week there's a coding challenge at the Fab Hangar, checked by automatic tests in
+the sandbox (no approval needed for those; any other program still waits for you), and a machine to build at the
+Mechanical Workshop. Parts come from the Department Store, a simulator checks each design, and working machines help
+the colony until they wear out and need servicing. Goals get harder as it passes and easier after misses. Add your own
+goals in the dashboard's **Workshop** tab or the app's **Build** tab.
+
+**Real-world plans:** about once a week the resident designs a small low-voltage project for you to build for real
+(ESP32/Arduino, 3D prints with OpenSCAD, hand tools and crafts, smart home). Download the plan, code and files from the
+Workshop/Build tab. They're made by a small local model, so **check every plan before you build it**.
+
+**Skill notebook:** everything that worked (passing code, machines, plans) is saved, and the best matching examples
+are shown to the resident next time, so it improves over time.
+
+**Weather, traffic and style:** stardust drifts, dust storms close the walkway for a few hours, and comets drop set
+pieces. Bots, drones, a cargo shuttle and the lift car move around the colony, more as it grows. The resident buys its
+own accessories and paints its buildings at the Department Store.
 
 **Phone music (app + Stellar Disc):** in the Hub tab, tap **Share my music**. Only song titles, artists and albums go
 to your hub. At the Radio Tower the resident can then pick one of your songs, and Stellar Disc plays it on your phone,

@@ -343,8 +343,41 @@ def r_workshop(c, d, L):
         if i < n:
             L.append([x + 2, y + 2, 2, 2, "e" if i % 2 else "c", 500 + i * 97])
     return ({"bench": [60, 80, "type"], "chamber": [126, 38, "sparkle"], "rack": [199, 24, "type"]},
-            {"write_program": "bench", "list_programs": "rack"},
+            {"write_program": "bench", "list_programs": "rack", "view_challenge": "rack", "attempt_challenge": "chamber"},
             ["bench", "chamber", "rack"])
+
+
+def r_mech_shop(c, d, L):
+    room(c, "U", "O", "Y", "K", "O")
+    airlock(c, L)
+    for x in range(0, IW, 10):                                  # riveted beams
+        c.rect(x, WALL_TOP, 1, FLOOR_Y - WALL_TOP, "o")
+    c.rect(40, WALL_TOP + 2, 60, 26, "h")                        # parts wall: bins of bolts and gears
+    for i in range(12):
+        x, y = 43 + (i % 6) * 9, WALL_TOP + 5 + (i // 6) * 11
+        c.rect(x, y, 8, 8, "S"); c.rect(x + 1, y + 1, 6, 4, "o")
+        c.px(x + 3, y + 2, "y" if i % 3 else "c"); c.px(x + 4, y + 3, "s")
+    table(c, 36, 60, 108, "O", "o")                              # workbench
+    c.rect(44, 96, 10, 4, "S"); c.rect(46, 92, 2, 4, "S")        # vice
+    c.rect(62, 98, 6, 6, "Y"); c.rect(72, 100, 14, 2, "s")       # wrench + toolbox
+    screen(c, 112, 52, 34, 24, True, "c")                       # the simulator
+    c.rect(115, 70, 28, 1, "e" if d.get("sim_ok", True) else "r")
+    L.append([140, 55, 2, 2, "e", 700])
+    c.rect(150, 94, 76, 2, "Y")                                 # machine bay floor markings
+    machines = (d.get("machines") or [])[:4]
+    for i, m in enumerate(machines):
+        x = 154 + i * 18
+        c.rect(x, 104, 14, 14, "S"); c.rect(x + 1, 105, 12, 3, "g")
+        c.rect(x + 3, 110, 8, 6, "N"); c.disc(x + 3, 118, 2, "k"); c.disc(x + 11, 118, 2, "k")
+        ok = m.get("condition", 0) > 0
+        L.append([x + 6, 102, 2, 2, ("e" if m.get("condition", 0) >= 30 else "Y") if ok else "r", 600 + i * 131])
+    c.rect(196, 58, 30, 22, "t"); c.rect(196, 58, 30, 1, "S")    # drafting board for real-world plans
+    for y in range(62, 78, 4):
+        c.rect(199, y, 22, 1, "C")
+    c.rect(209, 80, 2, 14, "S")
+    return ({"bench": [64, 82, "type"], "sim": [128, 82, "read"], "bay": [186, 86, "sparkle"], "board": [208, 86, "type"]},
+            {"view_workshop": "bench", "design_machine": "sim", "maintain_machine": "bay", "design_plan": "board"},
+            ["bench", "sim", "bay", "board"])
 
 
 def r_greenhouse(c, d, L):
@@ -743,6 +776,7 @@ DECOR_SLOTS = {
     "pet_shop": {"wall": (100, 24), "ceiling": 150, "rug": 140},
     "store": {"wall": (200, 26), "floor": 140, "ceiling": 168, "rug": 120},
     "museum": {"floor": 228, "ceiling": 120, "rug": 120},
+    "mech_shop": {"wall": (160, 20), "floor": 30, "ceiling": 120, "rug": 100},
 }
 
 
@@ -858,7 +892,8 @@ ROOMS = {"home": (r_home, "Home Dome"), "library": (r_library, "Library"), "inte
          "archive": (r_archive, "Archive Vault"), "spaceport": (r_spaceport, "Spaceport"),
          "station": (r_station, "Orbital Station"), "gallery": (r_gallery, "Gallery"), "park": (r_park, "Park"),
          "exchange": (r_exchange, "Exchange"), "pet_shop": (r_pet_shop, "Pet Shop"),
-         "store": (r_store, "Department Store"), "museum": (r_museum, "Stellar Museum")}
+         "store": (r_store, "Department Store"), "museum": (r_museum, "Stellar Museum"),
+         "mech_shop": (r_mech_shop, "Mechanical Workshop")}
 
 
 def interior_version(bid, data):

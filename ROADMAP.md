@@ -8,12 +8,15 @@ Ideas saved for later. Nothing here is built yet.
 
 - [ ] **Pet host computer.** A second computer on Tailscale runs the pets' small model, so pet work doesn't touch the main PC at all.
 
-## Planned next (v0.13.0)
-- [ ] Mechanical Workshop: parts, in-game machines checked by a simulator, colony bonuses, and real-world project plans now and then.
-- [ ] Weekly goals: building goals at the Mechanical Workshop, programming challenges with tests at the Fab Hangar, plus goals you set.
-- [ ] More life: idle animations, weather, walkway traffic, new sprites and more customization.
+## Planned next (v0.14.0)
+- [ ] Real training: a LoRA adapter trained on the resident's journals, life story, passed challenges and machines. Ollama loads it; older versions are kept so you can roll back. Training lives in its own folder (PyTorch), on the RTX 2060 machine, with a slow CPU overnight fallback.
+
+## Later
+- [ ] Pet host computer: a second machine on Tailscale that runs the pets (or training).
+- [ ] Home-screen widget for Hub Connect S.
 
 ## Done
+- v0.13.0: Mechanical Workshop and machines, weekly coding and machine goals with auto-tested challenges, your own goals, real-world project plans, the skill notebook, space weather, idle animations, traffic and building life, accessories and paint jobs, 12-minute turns
 - v0.12.0: the Upper Street, Department Store, 64 set curios, Stellar Museum, four new pets with skill levels, the Monitor
 - v0.11.0: pets and the Pet Shop: six species, one trained job each, needs and strain, rescue or fines, debt, lifespans, spare-hardware runner
 - v0.10.0: tabbed dashboard, building and plant manuals, voice (spoken logs, daily radio show, chat voice) sent to the phone, decorating every building, visitors, room moods, photo album, gifts, music taste and listening together with Stellar Disc

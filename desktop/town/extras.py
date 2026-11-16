@@ -299,7 +299,7 @@ class ExtrasMixin:
         return None
 
     def maybe_visitor(self):
-        chance = 0.05 * (1 + 0.15 * len(self.exhibits()))      # Museum exhibits draw more visitors
+        chance = 0.05 * self.tick_scale() * (1 + 0.15 * len(self.exhibits()))      # Museum exhibits draw more visitors
         if self.visitor_now() or random.random() > chance:     # about two or three visits a week at 30-minute turns
             return
         vid = random.choice(list(VISITORS))
@@ -530,7 +530,15 @@ class ExtrasMixin:
         return "calm"
 
     def extra_news(self):
-        news = list(self.pet_news())
+        news = list(self.pet_news()) + list(self.workshop_news())
+        w = self.weather()
+        if w == "dust_storm":
+            news.append("WEATHER: a dust storm has closed the walkway. You can only do things where you are until it clears.")
+        elif w == "stardust":
+            news.append("WEATHER: stardust is drifting over the colony. Now and then you sweep up a little to sell.")
+        elif w == "comet":
+            news.append("WEATHER: a comet is passing! Its tail sometimes drops curio set pieces" +
+                        (" and your Comet Catcher is out catching them." if self.machine_working("comet_catcher") else "."))
         got = self.db.get("manuals") or {}
         for bid, m in got.items():
             if m.get("opened") and time.time() - m["opened"] < 72 * 3600 and bid in BUILDINGS:
@@ -572,6 +580,9 @@ class ExtrasMixin:
 
     def daily_extras(self):
         self.give_starting_manuals()
+        self.ensure_weekly_goals()
+        self.machines_daily()
+        self.weather_turn()
         self.maybe_visitor()
         self.check_sets()
         self.museum_stipend()

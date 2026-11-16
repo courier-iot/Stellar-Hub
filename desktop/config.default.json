@@ -8,10 +8,10 @@
   },
   "creator_name": "Creator",
   "resident_name": null,
-  "tick_minutes": 30,
+  "tick_minutes": 12,
   "reflect_threshold": 30,
   "limits": {
-    "llm_calls_per_day": 300,
+    "llm_calls_per_day": 500,
     "cafe_visits_per_day": 8,
     "max_pending_requests": 5
   },
@@ -42,5 +42,6 @@
     "max_cpu": 55,
     "max_gpu": 30,
     "tick_minutes": 5
-  }
+  },
+  "_migrated_0130": true
 }

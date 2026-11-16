@@ -69,7 +69,8 @@ JOBS = {
     "pick_song": (1, "music", "picks one of your creator's favourite songs for the next radio show"),
     "radio_segment": (3, "music", "writes a short fun segment for the next radio show (needs the pet brain)"),
     "check_programs": (2, "mechanics", "checks programs waiting for approval for mistakes and risky bits"),
-    "salvage_parts": (1, "mechanics", "salvages scrap around the colony for useful bits"),
+    "salvage_parts": (1, "mechanics", "salvages scrap around the colony for useful bits (sometimes a spare part)"),
+    "maintain_machines": (2, "mechanics", "services the most worn machine at the Mechanical Workshop (no spare gear needed)"),
     "sky_survey": (2, "astronomy", "surveys the sky, and sometimes spots a fallen fragment"),
     "feed_plants": (1, "garden", "feeds greenhouse plants that are due"),
     "set_lights": (1, "garden", "sets every plant's light to what its species wants"),
@@ -250,6 +251,7 @@ class PetsMixin:
             if now - p["born"] > p["lifespan_days"] * 86400:          # a long life, well lived
                 p["status"] = "passed"
                 self._pet_save(p)
+                self.pet_slot_opened()
                 self._pet_log(p, f"passed away peacefully of old age after {p['lifespan_days']:.0f} days.", 8)
                 self.add_event("pet", f"🕯 {p['name']} passed away", f"{p['name']} the {sp['name']} lived a full life.")
                 continue
@@ -317,6 +319,7 @@ class PetsMixin:
         sp = SPECIES[p["species"]]
         fine = self.pet_fine(p)
         p["status"] = "taken"
+        self.pet_slot_opened()
         self.monitor("pets", "alert", f"{p['name']} was taken away", f"Fine: {self.pet_fine(p)} credits.")
         self._pet_save(p)
         self.charge(fine, f"Welfare Office fine for neglecting {p['name']}")
@@ -608,10 +611,26 @@ class PetsMixin:
             from . import curios as CU
             pool = [c for c, v in CU.CATALOG.items() if v["kind"] == "gadget" and v["rarity"] in ("common", "uncommon")]
             return "dragged home something shiny: " + self.find_curio(f"{p['name']}'s salvage", cid=random.choice(pool))
+        if r < 0.16:
+            part = random.choice(["gear", "frame", "wheel", "circuit"])
+            ps = self.parts()
+            ps[part] = ps.get(part, 0) + 1
+            self.db.set("parts", ps)
+            return f"salvaged a usable {part} for the workshop."
         amt = random.randint(1, 4) if r < 0.6 else 0
         if amt:
             self.earn(amt, f"{p['name']} sold salvage")
         return f"salvaged scrap worth {amt} credits." if amt else "rummaged through the scrap heap and found nothing useful."
+
+    def job_maintain_machines(self, p):
+        ms = [m for m in self.machines() if m["condition"] < 95]
+        if not ms:
+            return "checked the machines. All running smoothly."
+        m = min(ms, key=lambda x: x["condition"])
+        from .workshop import MACHINES
+        new = min(100.0, m["condition"] + 25)
+        self.db.x("UPDATE machines SET condition=?, last_maint=? WHERE id=?", (new, time.time(), m["id"]))
+        return f"serviced the {MACHINES[m['kind']][1]} ({m['condition']:.0f}% → {new:.0f}%)."
 
     def job_sky_survey(self, p):
         if random.random() < 0.12:
@@ -669,6 +688,7 @@ class PetsMixin:
                              "Fizz", "Juniper", "Tinker", "Echo", "Biscuit", "Zephyr", "Nugget"] if n not in taken]
         name = str(a.get("name", "")).strip()[:24] or random.choice(names or ["Buddy"])
         now = time.time()
+        self.db.set("pet_price_steps", self.price_steps() + 1)
         pid = self.db.x("INSERT INTO pets(name, species, born, lifespan_days, energy, hunger, happiness, health, strain, status, "
                         "job, shifts, runs_today, run_day, last_run, rest_until, critical_since, updated) "
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -680,8 +700,16 @@ class PetsMixin:
         return (f"I adopted {name} (#{pid}), {art} {sp['name']}! It's good at {sp['special']} jobs. Next I should train it "
                 f"(train_pet) with a sensible number of shifts, and keep it fed and happy.")
 
+    def price_steps(self):
+        """Each adoption makes the next one 50% dearer; the count goes back to zero whenever a pet slot opens up."""
+        n = self.db.get("pet_price_steps")
+        return len(self.pets()) if n is None else int(n)
+
+    def pet_slot_opened(self):
+        self.db.set("pet_price_steps", 0)
+
     def adopt_price(self, sp_id):
-        return int(SPECIES[sp_id]["price"] * PRICE_STEP ** len(self.pets()))
+        return int(SPECIES[sp_id]["price"] * PRICE_STEP ** self.price_steps())
 
     def _arg_pet(self, a):
         p = self.pet(a.get("pet_id"))

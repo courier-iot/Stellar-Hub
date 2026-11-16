@@ -14,6 +14,8 @@ from .extras import ExtrasMixin
 from .pets import PetsMixin
 from .museum import MuseumMixin
 from .monitor import MonitorMixin
+from .workshop import WorkshopMixin
+from .style import StyleMixin
 from .hobbies import HobbiesMixin, level_for
 from .life import LifeMixin
 from .plants import SPECIES as PLANT_SPECIES
@@ -26,7 +28,7 @@ class BudgetExceeded(Exception):
     pass
 
 
-class Agent(ExtrasMixin, MonitorMixin, MuseumMixin, PetsMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
+class Agent(ExtrasMixin, MonitorMixin, StyleMixin, WorkshopMixin, MuseumMixin, PetsMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
     def __init__(self, cfg, db, llm, data_dir):
         self.cfg, self.db, self.llm = cfg, db, llm
         self.mem = Memory(db)
@@ -56,6 +58,10 @@ class Agent(ExtrasMixin, MonitorMixin, MuseumMixin, PetsMixin, ColonyMixin, Life
 
     def _today(self):
         return datetime.date.today().isoformat()
+
+    def tick_scale(self):
+        """Per-turn amounts were tuned for 30-minute turns; shorter turns scale them down."""
+        return max(0.1, min(2.0, float(self.cfg.get("tick_minutes", 30)) / 30.0))
 
     def _usage(self):
         u = self.db.get("usage", {})
@@ -137,8 +143,9 @@ class Agent(ExtrasMixin, MonitorMixin, MuseumMixin, PetsMixin, ColonyMixin, Life
 
     def grow_needs(self):
         needs = self.db.get("needs", {k: 30 for k in NEED_GROWTH})
+        scale = self.tick_scale()
         for k, g in NEED_GROWTH.items():
-            needs[k] = min(100, needs.get(k, 30) + g)
+            needs[k] = min(100, round(needs.get(k, 30) + g * scale, 1))
         self.db.set("needs", needs)
         return needs
 
@@ -340,6 +347,9 @@ What do you do now?"""
             elif bid == "internet_cafe" and self.storm():
                 result = "The Uplink Café is dark: the solar storm knocked out the uplink."
                 self.set_location(bid)
+            elif self.walkway_closed() and bid != self.db.get("location", "home"):
+                here = BUILDINGS.get(self.db.get("location", "home"), {}).get("name", "here")
+                result = f"A dust storm has closed the walkway, so I can't get to the {BUILDINGS[bid]['name']}. I'll stay at the {here} until it clears."
             elif not self.is_available(bid):
                 result = f"The {BUILDINGS[bid]['name']} is closed right now."
             elif action not in dict(self.offered_actions(bid)):
@@ -695,7 +705,8 @@ What do you do now?"""
         return {"plants": plants, "playing": bool(self.now_playing()), "away": bool(self.expedition()),
                 "decor": self.inventory()["decor"], "night": self.is_night(),
                 "floors": self.floors(), "featured": self.featured_painting(),
-                "studio": self.is_built("studio"), "station": self.is_built("station"), "upper": self.upper_state()}
+                "studio": self.is_built("studio"), "station": self.is_built("station"), "upper": self.upper_state(),
+                "paints": self.paints(), "wearing": self.wearing(), "weather": self.weather(), "traffic": self.traffic()}
 
     def gallery_overview(self):
         from . import curios as CU
@@ -799,6 +810,9 @@ What do you do now?"""
                     "memories": self.db.q("SELECT COUNT(*) AS n FROM memories")[0]["n"]}
         if bid == "workshop":
             return {"programs": self.db.q("SELECT COUNT(*) AS n FROM programs")[0]["n"]}
+        if bid == "mech_shop":
+            return {"machines": [{"kind": m["kind"], "condition": round(m["condition"])} for m in self.machines()][:4],
+                    "sim_ok": self.db.get("last_sim", True)}
         if bid == "spaceport":
             return {"away": bool(self.expedition())}
         if bid == "internet_cafe":
@@ -893,6 +907,8 @@ What do you do now?"""
                              + ((self.visitor_now() or {}).get("id") or "")
                              + "".join(f"{p['id']}{p['status'][0]}{int(p['last_run'] > time.time() - 600)}{int(self.on_shift(p))}" for p in self.pets()),
             "emote": self.emote() if self.db.get("name") else None, "asleep": self.is_asleep(),
+            "mood": self.mood_word() if self.db.get("name") else None, "listening": bool(self.listening_now()),
+            "hour": datetime.datetime.now().hour,
             "sleep": self.bedtime(), "night": self.is_night(), "daylight": self.daylight(),
             "chat": bool(self.chat_state()), "event": self.space_event(),
             "blueprints": self.blueprints(), "map": self.map_text(),

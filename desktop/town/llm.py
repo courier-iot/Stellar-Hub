@@ -152,6 +152,18 @@ class MockLLM:
         return True, "mock"
 
     def chat_json(self, system, user, task=None):
+        if task == "code":
+            return {"code": "def count_stars(sky):\n    return sky.count('*')\n", "notes": "Counting is easy with str.count."}
+        if task == "machine_design":
+            return {"parts": {"frame": 1, "wheel": 2, "pump": 1, "sensor": 1, "circuit": 1, "battery": 1},
+                    "notes": "One battery covers the pump, sensor and circuit."}
+        if task == "project_plan":
+            return {"title": "Desk Plant Moisture Light", "summary": "An ESP32 reads a soil sensor and lights an LED when the plant is thirsty.",
+                    "difficulty": "easy", "parts": [{"item": "ESP32 dev board", "qty": 1, "note": "any"},
+                                                    {"item": "capacitive soil sensor", "qty": 1, "note": "3.3V"}],
+                    "tools": ["USB cable"], "steps": ["Wire the sensor to 3V3, GND and GPIO34.", "Upload the code."],
+                    "code": "void setup(){ pinMode(2, OUTPUT); }\nvoid loop(){ digitalWrite(2, analogRead(34) > 2000); delay(1000); }",
+                    "scad": "", "tips": "Calibrate dry and wet readings first."}
         if task == "identity":
             return {"name": "Nova", "personality": "I am Nova. I'm curious, gentle, and a little dramatic about stars.",
                     "first_curiosity": "why the sky changes colour", "bed_hour": 23, "wake_hour": 7}

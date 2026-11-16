@@ -21,6 +21,12 @@ EVENT_TYPES = {
                       "about": "A meteor shower is streaking over the colony! Stargazing from Home now might turn up stardust or a rare seed."},
     "eclipse": {"title": "🌑 Eclipse", "hours": (1, 2), "weight": 2,
                 "about": "The planet is passing in front of the star. The greenhouse lamps flicker and plants pause their growth."},
+    "stardust": {"title": "✨ Stardust drift", "hours": (3, 6), "weight": 5,
+                 "about": "Glittering stardust is drifting over the colony. Now and then a little can be swept up and sold."},
+    "dust_storm": {"title": "🌪️ Dust storm", "hours": (2, 4), "weight": 2,
+                   "about": "A dust storm has closed the walkway. Everyone stays where they are until it clears."},
+    "comet": {"title": "☄️ Comet pass", "hours": (5, 9), "weight": 1,
+              "about": "A comet is sliding slowly across the sky. Its tail sometimes drops curio set pieces."},
     "trader": {"title": "🛸 Visiting trader", "hours": (5, 8), "weight": 2,
                "about": "A travelling trader has landed in the colony with rare goods. Buy with buy {\"item\": \"trader:<item>\"} at the Credit Vault."},
 }
@@ -370,7 +376,7 @@ class LifeMixin:
     def maybe_space_event(self):
         if self.space_event():
             return
-        per_week = self.cfg.get("events_per_week", 3)
+        per_week = self.cfg.get("events_per_week", 4)
         turns_per_week = 7 * 16 * 60 / max(5, self.cfg["tick_minutes"])
         if random.random() < per_week / turns_per_week:
             self.start_space_event(random.choices(list(EVENT_TYPES), [e["weight"] for e in EVENT_TYPES.values()])[0])

@@ -66,6 +66,13 @@ MANUALS = {
               ["browse_store shows what's for sale and your balance; buy with kind:name, like furniture:neon_sign.",
                "Furniture goes into any building's decor spots with decorate.",
                "In debt, nothing can be bought until it's paid back."]),
+    "mech_shop": ("The Mechanical Workshop is where you build machines, and design real projects for your creator.",
+                  ["view_workshop shows your parts, this week's machine goal and how your machines are holding up.",
+                   "Buy parts at the Department Store with buy parts:<name> (frame, wheel, gear, motor, sensor, circuit, battery...).",
+                   "design_machine sends your design through the simulator. It checks parts, power and frame space; parts are only used when it passes.",
+                   "Working machines help every day. They wear down slowly: maintain_machine (one spare gear) keeps them going; a broken machine does nothing until fixed.",
+                   "design_plan is different: about once a week, design a REAL low-voltage project (electronics, a 3D print, crafts or a smart-home gadget) for your creator to build.",
+                   "Every machine and plan that works goes into your skill notebook, and you'll see the best examples next time."]),
     "museum": ("The Stellar Museum is for complete curio sets.",
                ["view_museum shows your sets, what each would sell for, and how much reputation a donation gives.",
                 "donate_set puts a set on permanent display: reputation brings a daily stipend and more visitors.",
@@ -84,7 +91,10 @@ MANUALS = {
     "workshop": ("The Fabrication Hangar runs small Python programs you write.",
                  ["write_program saves a program; your creator approves it before it runs.",
                   "Programs run in a sandbox with no internet and only their own folder.",
-                  "list_programs shows results and what's still waiting for approval."]),
+                  "list_programs shows results and what's still waiting for approval.",
+                  "Every week there's a coding challenge (view_challenge). attempt_challenge writes code and runs its automatic tests right away, no approval needed.",
+                  "Passing makes the next challenge harder; missing a week makes it easier. Your creator can set coding goals too.",
+                  "Passing code goes into your skill notebook, and you'll see your best matching examples next time."]),
 }
 
 PLANT_GUIDE = ("Greenhouse care guide: 1) check_plants before caring, so you only water or feed what's due. "

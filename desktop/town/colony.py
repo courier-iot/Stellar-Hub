@@ -79,7 +79,7 @@ class ColonyMixin:
             "; furniture for inside any building: " + self.decor_shop_text()
         unlocks = ", ".join(f"unlock:{bid} ({b['unlock_price']})" for bid, b in BUILDINGS.items()
                             if b.get("unlockable") and self.is_locked(bid))
-        return (f"{decor}; seeds:<species> by tier (common 3, uncommon 10, rare 25, legendary 60); "
+        return (f"{decor}; {self.style_shop_text()}; seeds:<species> by tier (common 3, uncommon 10, rare 25, legendary 60); "
                 f"pots (+2 pots, {POTS_PRICE}){'; ' + unlocks if unlocks else ''}")
 
     def act_browse_store(self, a, imp):
@@ -123,6 +123,10 @@ class ColonyMixin:
             del stock[key]
             self.db.set("space_event", ev)
             return f"I bought {name.replace('_', ' ')} from the travelling trader for {price} credits!"
+        if kind == "parts" or (not kind and name in self.parts_catalog()):
+            return self.buy_part(name) or f"The store doesn't sell a '{name}' part."
+        if kind == "accessory":
+            return self.act_buy_accessory({"item": name}, imp)
         if kind == "furniture" or (not kind and name in self.decor_items_catalog()):
             return self.buy_decor_item(name) or f"The vault clerk doesn't sell '{name}' furniture."
         if kind == "decor" or (not kind and name in sprites.DECOR_PRICES):
@@ -205,7 +209,7 @@ class ColonyMixin:
         aliases = {"salon": "salon", "greenhouse": "greenhouse", "garden": "greenhouse", "radio": "radio_tower",
                    "archive": "archive", "spaceport": "spaceport", "rocket": "spaceport", "hangar": "workshop",
                    "workshop": "workshop", "fabrication": "workshop", "vault": "bank", "bank": "bank",
-                   "pet": "pet_shop", "pets": "pet_shop"}
+                   "pet": "pet_shop", "pets": "pet_shop", "mechanical": "mech_shop", "mech": "mech_shop", "machine": "mech_shop"}
         for word, bid in aliases.items():
             if re.search(rf"\b{word}\b", t):
                 return bid
@@ -772,6 +776,29 @@ class ColonyMixin:
                 "--pids-limit", "64", "--read-only", "--tmpfs", "/tmp", "-v", f"{os.path.abspath(work)}:/work",
                 "-w", "/work", "-e", "HOME=/work", "python:3.12-slim", "python", "-I", "/work/program.py"]
 
+    def sandbox_run(self, code, folder="sandbox"):
+        """Runs code in the locked sandbox (no network, own folder, time and size limits). Returns (output, exit code)."""
+        kind = self.sandbox_kind()
+        work = os.path.join(self.workshop_dir, folder)
+        os.makedirs(work, exist_ok=True)
+        with open(os.path.join(work, "program.py"), "w", encoding="utf-8") as f:
+            f.write(code)
+        cmd = self._bwrap_cmd(work) if kind == "bwrap" else self._docker_cmd(work)
+
+        def limits():
+            resource.setrlimit(resource.RLIMIT_CPU, (20, 20))
+            resource.setrlimit(resource.RLIMIT_FSIZE, (20_000_000, 20_000_000))
+
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=45 if kind == "bwrap" else 120,
+                               preexec_fn=limits if (kind == "bwrap" and resource) else None, creationflags=NO_WINDOW)
+            output, rc = (r.stdout + ("\n[errors]\n" + r.stderr if r.stderr.strip() else "")).strip(), r.returncode
+        except subprocess.TimeoutExpired:
+            output, rc = "(stopped: took too long)", -1
+        except Exception as e:
+            output, rc = f"(sandbox error: {e})", -1
+        return output[-4000:] or "(no output)", rc
+
     def run_program(self, pid):
         rows = self.db.q("SELECT * FROM programs WHERE id=?", (pid,))
         if not rows:
@@ -785,24 +812,7 @@ class ColonyMixin:
                              f"so it can't run. I'll install it.")
             return
         self.db.x("UPDATE programs SET status='running' WHERE id=?", (pid,))
-        work = os.path.join(self.workshop_dir, "sandbox")
-        with open(os.path.join(work, "program.py"), "w", encoding="utf-8") as f:
-            f.write(prog["code"])
-        cmd = self._bwrap_cmd(work) if kind == "bwrap" else self._docker_cmd(work)
-
-        def limits():
-            resource.setrlimit(resource.RLIMIT_CPU, (20, 20))
-            resource.setrlimit(resource.RLIMIT_FSIZE, (20_000_000, 20_000_000))
-
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=45 if kind == "bwrap" else 120,
-                               preexec_fn=limits if (kind == "bwrap" and resource) else None, creationflags=NO_WINDOW)
-            output, code = (r.stdout + ("\n[errors]\n" + r.stderr if r.stderr.strip() else "")).strip(), r.returncode
-        except subprocess.TimeoutExpired:
-            output, code = "(stopped: took too long)", -1
-        except Exception as e:
-            output, code = f"(sandbox error: {e})", -1
-        output = output[-4000:] or "(no output)"
+        output, code = self.sandbox_run(prog["code"])
         status = "done" if code == 0 else "failed"
         self.db.x("UPDATE programs SET status=?, output=?, exit_code=? WHERE id=?", (status, output, code, pid))
         if code == 0:

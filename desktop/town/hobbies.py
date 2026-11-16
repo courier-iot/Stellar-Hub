@@ -14,7 +14,7 @@ from .memory import Memory, words
 
 HOBBIES = {
     "painting": "🎨", "writing": "✍️", "composing": "🎼", "astronomy": "🔭",
-    "collecting": "🧺", "games": "♟️", "gardening": "🌱", "coding": "🛠",
+    "collecting": "🧺", "games": "♟️", "gardening": "🌱", "coding": "🛠", "building": "🔧",
 }
 LEVELS = [0, 10, 30, 60, 100, 150, 210, 280, 360, 450, 550]   # xp needed for level 1..11
 PAINT_PALETTE = {"k": "black", "w": "white", "s": "silver", "S": "grey", "n": "navy", "N": "dusk blue",

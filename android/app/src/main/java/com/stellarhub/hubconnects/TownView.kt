@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.os.SystemClock
 import android.view.MotionEvent
@@ -23,7 +24,8 @@ import kotlin.math.sign
 class TownView(context: Context) : View(context) {
 
     private class Building(val id: String, val x: Int, val y: Int, val doorX: Int, val bitmap: Bitmap, val door: IntArray?,
-                           val level: Int = 0, val feet: Int = 192)
+                           val level: Int = 0, val feet: Int = 192, val plot: Int = 0, val open: Boolean = true,
+                           val windows: List<IntArray> = emptyList(), val beacon: IntArray? = null, val roofLight: Int? = null)
     private class Spot(val x: Int, val top: Int, val fx: String)
     private class Light(val x: Int, val y: Int, val w: Int, val h: Int, val color: Int, val period: Int)
     private class Room(val id: String, val name: String, val version: String, val w: Int, val h: Int, val bitmap: Bitmap,
@@ -48,6 +50,20 @@ class TownView(context: Context) : View(context) {
                       var x: Float, val y: Int)
     private var pets: List<Pet> = emptyList()
     private var listening = false
+    // v0.13: what it's wearing, the mood and hour that pick its idle animations, and the colony's traffic
+    private var accessory: String? = null
+    private var mood: String? = null
+    private var hour = 12
+    private var asleep = false
+    private var idleKind = "none"
+    private var idleStart = 0L
+    private var idleUntil = 0L
+    private var waveNext = true
+    private var bots = 0
+    private var drones = 0
+    private var shuttle = false
+    private var liftCar = false
+    private var deliveryTo: String? = null
     private var away = false
     private var night = false
     private var emotes: Map<String, Bitmap> = emptyMap()
@@ -159,8 +175,13 @@ class TownView(context: Context) : View(context) {
             val b = bs.getJSONObject(i)
             val id = b.optString("id").takeIf { it.isNotBlank() && it != "null" } ?: ""
             val d = b.optJSONArray("door")?.let { a -> IntArray(4) { a.optInt(it) } }
+            val wj = b.optJSONArray("windows")
+            val wins = if (wj == null) emptyList() else (0 until wj.length()).map { k -> wj.getJSONArray(k).let { a -> IntArray(4) { a.optInt(it) } } }
+            val bc = b.optJSONArray("beacon")?.let { a -> IntArray(2) { a.optInt(it) } }
+            val rl = b.optString("roof_light").takeIf { it.isNotBlank() && it != "null" }
+                ?.let { world.optJSONObject("roof_lights")?.optString(it) }?.takeIf { it.startsWith("#") }?.let { Color.parseColor(it) }
             Building(id, b.getInt("x"), b.getInt("y"), b.getInt("door_x"), bake(b.getJSONArray("sprite"), pal), d,
-                b.optInt("level", 0), b.optInt("feet_y", 192))
+                b.optInt("level", 0), b.optInt("feet_y", 192), b.optInt("plot", 0), b.optString("variant") == "open", wins, bc, rl)
         }
         val up = world.optJSONObject("upper")
         deck = up?.optJSONArray("sprite")?.let { bake(it, pal) }
@@ -188,6 +209,13 @@ class TownView(context: Context) : View(context) {
         frames = (0 until fr.length()).map { bake(fr.getJSONArray(it), pal) }
         feetY = r.getInt("feet_y")
         floats = r.getBoolean("floats")
+        accessory = r.optString("accessory").takeIf { it.isNotBlank() && it != "null" }
+        val tr = world.optJSONObject("traffic")
+        bots = tr?.optInt("bots", 0) ?: 0
+        drones = tr?.optInt("drones", 0) ?: 0
+        shuttle = tr?.optBoolean("shuttle") ?: false
+        liftCar = tr?.optBoolean("lift") ?: false
+        deliveryTo = tr?.optString("delivery")?.takeIf { it.isNotBlank() && it != "null" }
         val dj = world.optJSONArray("decor")
         decor = if (dj == null) emptyList() else (0 until dj.length()).map { i ->
             val d = dj.getJSONObject(i)
@@ -297,6 +325,14 @@ class TownView(context: Context) : View(context) {
     fun setListening(on: Boolean) {
         listening = on
     }
+
+    /** Mood, hour and sleep pick the idle animations (looking around, stretching, dozing, reading, waving, dancing). */
+    fun setMood(m: String?, h: Int, isAsleep: Boolean) {
+        mood = m; hour = h; asleep = isAsleep
+    }
+
+    /** Waves the next time it's standing still (when you open the app). */
+    fun wave() { waveNext = true; idleUntil = 0L }
 
     fun setLife(emoteName: String?, light: Double?, event: String?) {
         emote = emoteName
@@ -473,26 +509,99 @@ class TownView(context: Context) : View(context) {
     }
 
     // ------------------------------------------------------------------ drawing
+    private fun px(c: Canvas, x: Float, y: Float, w: Float, h: Float, color: Int) {
+        fill.color = color
+        c.drawRect(x.roundToInt().toFloat(), y.roundToInt().toFloat(), x.roundToInt() + w, y.roundToInt() + h, fill)
+    }
+
+    private fun hash(a: Int, b: Long): Double { val n = sin(a * 127.1 + b * 311.7) * 43758.5453; return n - kotlin.math.floor(n) }
+
+    private fun pickIdle(now: Long) {
+        if (now < idleUntil) return
+        val pick = ArrayList<String>()
+        if (listening) repeat(3) { pick.add("dance") }
+        if (hour >= 21 || hour < 7 || mood == "low") { pick.add("doze"); pick.add("yawn") }
+        if (location in listOf("library", "archive", "station")) { pick.add("read"); pick.add("read") }
+        if (mood == "happy" || mood == "joyful") { pick.add("wave"); pick.add("stretch") }
+        pick.addAll(listOf("look", "look", "stretch", "none", "none"))
+        if (waveNext) { pick.clear(); pick.add("wave"); waveNext = false }
+        idleKind = pick[rnd.nextInt(pick.size)]
+        idleStart = now
+        idleUntil = now + 6000 + rnd.nextInt(6000)
+    }
+
+    private fun drawAccessory(c: Canvas, fx: Float, fy: Float, t: Double, flip: Boolean) {
+        val k = accessory ?: return
+        when (k) {
+            "antenna_cap" -> { px(c, fx + 7, fy - 3, 1f, 4f, Color.parseColor("#A7B0D3"))
+                px(c, fx + 6, fy - 5, 3f, 2f, Color.parseColor(if ((t / 400).toLong() % 2 == 1L) "#FF5D73" else "#FFD86B"))
+                px(c, fx + 4, fy + 1, 8f, 1f, Color.parseColor("#FF5D73")) }
+            "beanie" -> { px(c, fx + 4, fy + 1, 8f, 3f, Color.parseColor("#FF5D73")); px(c, fx + 4, fy + 3, 8f, 1f, Color.parseColor("#9A2A44"))
+                px(c, fx + 7, fy - 1, 2f, 2f, Color.parseColor("#EEF1FF")) }
+            "crown" -> { for (o in intArrayOf(4, 7, 10)) px(c, fx + o, fy - 1, 2f, 3f, Color.parseColor("#FFD86B"))
+                px(c, fx + 4, fy + 2, 8f, 1f, Color.parseColor("#FFD86B")); px(c, fx + 7, fy + 1, 2f, 1f, Color.parseColor("#FF4FD8")) }
+            "bubble_helmet" -> { val ring = Paint().apply { style = Paint.Style.STROKE; strokeWidth = 1f; color = Color.argb(180, 94, 242, 255); isAntiAlias = false }
+                c.drawCircle(fx + 8, fy + 8, 10f, ring); px(c, fx + 3, fy + 2, 2f, 1f, Color.WHITE) }
+            "scarf" -> { px(c, fx + 3, fy + 10, 10f, 2f, Color.parseColor("#4FE0A5"))
+                px(c, if (flip) fx + 3 else fx + 11, fy + 12, 2f, 4f + ((t / 300).toLong() % 2), Color.parseColor("#4FE0A5")) }
+            "comet_trail" -> for (i in 1 until 9) {
+                val a = (255 * (1 - i / 9.0)).toInt()
+                val col = if (i % 2 == 1) Color.argb(a, 255, 79, 216) else Color.argb(a, 94, 242, 255)
+                px(c, if (flip) fx + 16 + i * 2 else fx - i * 2, (fy + 8 + sin(t / 150 + i) * 2).toFloat(), 1f, 1f, col)
+            }
+        }
+    }
+
     private fun drawResident(c: Canvas, x: Float, feet: Int, walking: Boolean, alpha: Int, t: Double) {
         if (frames.isEmpty()) return
-        val bob = if (floats) (sin(t / 380) * 2).roundToInt() - 3 else if (walking && ((t / 160).toLong() % 2 == 1L)) -1 else 0
+        val now = System.currentTimeMillis()
+        if (walking || asleep) { idleKind = "none"; idleUntil = 0L } else pickIdle(now)
+        val k = idleKind
+        val it = (now - idleStart).toDouble()
+        var bob = if (floats) (sin(t / (if (k == "doze") 900.0 else 380.0)) * 2).roundToInt() - 3
+                  else if (walking && ((t / 160).toLong() % 2 == 1L)) -1 else 0
+        var sx = 0
+        var stretch = 1f
+        if (k == "dance") { bob -= abs((sin(t / 160) * 2).roundToInt()); sx = (sin(t / 320) * 2).roundToInt() }
+        if (k == "stretch" && it < 2400) stretch = (1 + 0.12 * sin(min(1.0, it / 1200) * Math.PI)).toFloat()
         val fi = when {
             floats -> ((t / 450).toLong() % 2).toInt()
             walking -> ((t / 160).toLong() % 2).toInt()
             else -> 0
         }.coerceAtMost(frames.size - 1)
-        val fx = x.roundToInt() - 8f
+        val fx = x.roundToInt() - 8f + sx
         val fy = (feet - 16 + bob).toFloat()
         fill.color = Color.argb(115 * alpha / 255, 0, 0, 0)
         c.drawRect(fx + 4, feet - 1f, fx + 12, feet + 1f, fill)
         fadePaint.alpha = alpha
-        if (faceLeft) {
+        val flip = (walking && faceLeft) || (!walking && faceLeft && k != "look" && k != "dance") ||
+            (k == "look" && (it / 1500).toLong() % 2 == 1L) || (k == "dance" && (t / 640).toLong() % 2 == 1L)
+        val hgt = 16f * stretch
+        val top = fy + 16 - hgt
+        val dst = RectF(fx, top, fx + 16, top + hgt)
+        if (flip) {
             c.save()
             c.scale(-1f, 1f, fx + 8f, 0f)
-            c.drawBitmap(frames[fi], fx, fy, fadePaint)
+            c.drawBitmap(frames[fi], null, dst, fadePaint)
             c.restore()
         } else {
-            c.drawBitmap(frames[fi], fx, fy, fadePaint)
+            c.drawBitmap(frames[fi], null, dst, fadePaint)
+        }
+        if (alpha == 255) {
+            drawAccessory(c, fx, top, t, flip)
+            when (k) {
+                "wave" -> if (it < 3000) px(c, fx + 15, fy + 6 - ((it / 250).toLong() % 2) * 2, 2f, 3f, Color.parseColor("#EEF1FF"))
+                "read" -> { px(c, fx + 4, fy + 9, 8f, 5f, Color.parseColor("#5B3FB5")); px(c, fx + 5, fy + 10, 3f, 3f, Color.parseColor("#EEF1FF"))
+                    px(c, fx + 8, fy + 10, 3f, 3f, Color.parseColor("#EEF1FF")) }
+                "yawn" -> if (it % 4000 < 900) px(c, fx + 7, fy + 8, 2f, 2f, Color.parseColor("#07080F"))
+                "dance" -> if ((t / 400).toLong() % 2 == 1L) px(c, fx + 17, (fy - 4 + sin(t / 300) * 2).toFloat(), 2f, 3f, Color.parseColor("#FF4FD8"))
+            }
+            if (k == "doze" || k == "yawn") {
+                val zp = ((it / 1400) % 1.0).toFloat()
+                val col = Color.argb((255 * (1 - zp)).toInt(), 167, 176, 211)
+                px(c, fx + 13 + zp * 4, fy - 2 - zp * 8, 3f, 1f, col); px(c, fx + 15 + zp * 4, fy - 1 - zp * 8, 1f, 1f, col)
+                px(c, fx + 13 + zp * 4, fy - zp * 8, 3f, 1f, col)
+            }
         }
         val bubble = emote?.let { emotes[it] }
         if (bubble != null && !walking && alpha == 255) {
@@ -502,6 +611,96 @@ class TownView(context: Context) : View(context) {
         if (walking && !floats && (t / 160).toLong() % 4 == 0L) {          // little dust puffs
             fill.color = Color.argb(90, 167, 176, 211)
             c.drawRect(fx + (if (faceLeft) 12 else 2), feet - 1f, fx + (if (faceLeft) 14 else 4), feet.toFloat(), fill)
+        }
+    }
+
+    /** Windows switching on and off at night, and blinking roof beacons. */
+    private fun drawLife(c: Canvas, b: Building, t: Double) {
+        if (!b.open) return
+        if (night) b.windows.forEachIndexed { i, w ->
+            if (hash(b.plot * 13 + i, (t / 9000 + i * 0.31).toLong()) < 0.18) px(c, b.x + w[0].toFloat(), b.y + w[1].toFloat(), w[2].toFloat(), w[3].toFloat(), Color.parseColor("#151A33"))
+        }
+        val bc = b.beacon ?: return
+        if (b.roofLight == null && b.plot % 3 != 0) return
+        val col = b.roofLight ?: Color.parseColor("#FF5D73")
+        if (((t + b.plot * 377) / (if (b.roofLight != null) 700 else 1100)).toLong() % 2 == 1L) {
+            px(c, b.x + bc[0].toFloat(), b.y + bc[1].toFloat(), 1f, 1f, col)
+            px(c, b.x + bc[0] - 1f, b.y + bc[1] - 1f, 3f, 3f, Color.argb(77, Color.red(col), Color.green(col), Color.blue(col)))
+        }
+    }
+
+    /** Maintenance bots, delivery drones, the cargo shuttle and the lift car. */
+    private fun drawTraffic(c: Canvas, t: Double) {
+        for (i in 0 until bots) {
+            val span = worldW - 40
+            val p = ((t / (26000 + i * 7000)) + i * 0.43) % 2.0
+            val x = (20 + (if (p < 1) p else 2 - p) * span).toFloat()
+            val y = 187f
+            px(c, x, y, 6f, 4f, Color.parseColor("#A7B0D3")); px(c, x + 1, y + 1, 4f, 1f, Color.parseColor("#353E6E"))
+            px(c, x + (if (p < 1) 5 else 0), y + 1, 1f, 1f, Color.parseColor(if ((t / 300).toLong() % 2 == 1L) "#4FE0A5" else "#1F8A68"))
+            px(c, x, y + 4, 2f, 1f, Color.parseColor("#07080F")); px(c, x + 4, y + 4, 2f, 1f, Color.parseColor("#07080F"))
+            px(c, x + 2, y - 2, 1f, 2f, Color.parseColor("#6B7399")); px(c, x + 2, y - 3, 1f, 1f, Color.parseColor("#FFD86B"))
+        }
+        val store = buildingOf("store")
+        if (store != null) for (i in 0 until drones) {
+            val dest = buildingOf(if (i == 0 && deliveryTo != null) deliveryTo else listOf("home", "greenhouse", "mech_shop", "pet_shop", "gallery")[i % 5])
+                ?: buildingOf("home") ?: break
+            val p = ((t / 9000) + i * 0.29) % 1.0
+            val back = p > 0.5
+            val q = if (back) (1 - p) * 2 else p * 2
+            val x = (store.doorX + (dest.doorX - store.doorX) * q).toFloat()
+            val y = (store.y - 6 - sin(q * Math.PI) * 20 + sin(t / 120 + i) * 0.6).toFloat()
+            px(c, x - 3, y, 7f, 1f, Color.parseColor("#6B7399")); px(c, x - 1, y + 1, 3f, 2f, Color.parseColor("#5EF2FF"))
+            if ((t / 90).toLong() % 2 == 1L) { px(c, x - 4, y - 1, 2f, 1f, Color.parseColor("#EEF1FF")); px(c, x + 3, y - 1, 2f, 1f, Color.parseColor("#EEF1FF")) }
+            if (!back) px(c, x - 1, y + 3, 3f, 2f, Color.parseColor("#8F6A4C"))
+        }
+        if (shuttle) {
+            val p = (t / 60000) % 1.4
+            if (p < 1) {
+                val x = (-30 + p * (worldW + 60)).toFloat()
+                val y = (22 + sin(p * 6) * 2).toFloat()
+                px(c, x, y, 16f, 4f, Color.parseColor("#A7B0D3")); px(c, x + 12, y + 1, 4f, 2f, Color.parseColor("#5EF2FF"))
+                px(c, x - 2, y + 1, 2f, 2f, Color.parseColor(if ((t / 150).toLong() % 2 == 1L) "#FF9F43" else "#FFD86B"))
+                px(c, x + 3, y + 4, 8f, 1f, Color.parseColor("#6B7399"))
+            }
+        }
+        if (liftCar && upperOpen && !riding) {
+            val p = (sin(t / 5000) + 1) / 2
+            val y = (upperFeet + (feetY - upperFeet) * p).toFloat()
+            px(c, liftX - 5, y - 2, 10f, 2f, Color.parseColor("#5EF2FF"))
+            px(c, liftX - 5, y - 12, 10f, 10f, Color.argb(64, 94, 242, 255))
+        }
+    }
+
+    /** Stardust drift, dust storms and comet passes. */
+    private fun drawWeather(c: Canvas, t: Double, ev: String?) {
+        when (ev) {
+            "stardust" -> for (i in 0 until 60) {
+                val x = ((i * 97 + t / 60 * (0.5 + (i % 5) / 10.0)) % worldW).toFloat()
+                val y = (((i * 53) + t / (40 + i % 7 * 6)) % worldH).toFloat()
+                val a = (255 * (0.4 + 0.4 * sin(t / 300 + i))).toInt().coerceIn(0, 255)
+                px(c, x, y, 1f, 1f, if (i % 4 != 0) Color.argb(a, 255, 216, 107) else Color.argb(a, 238, 241, 255))
+            }
+            "dust_storm" -> {
+                fill.color = Color.argb((255 * (0.22 + 0.06 * sin(t / 700))).toInt(), 143, 106, 76)
+                c.drawRect(0f, 0f, worldW.toFloat(), worldH.toFloat(), fill)
+                for (i in 0 until 90) {
+                    val x = (((i * 131 + t / 3) % (worldW + 40)) - 20).toFloat()
+                    val y = ((i * 37) % worldH).toFloat()
+                    px(c, x, y, 5f + i % 4, 1f, if (i % 3 != 0) Color.argb(90, 143, 106, 76) else Color.argb(90, 167, 176, 211))
+                }
+            }
+            "comet" -> {
+                val p = (t / 90000) % 1.0
+                val cx = (-20 + p * (worldW + 40)).toFloat()
+                val cy = (20 + p * 40).toFloat()
+                for (i in 0 until 40) {
+                    val a = (255 * (1 - i / 40.0) * 0.6).toInt()
+                    px(c, cx - i * 2.2f, (cy - i * 0.8f + sin(i + t / 200) * 0.6).toFloat(), 2f, 1f,
+                        if (i % 3 != 0) Color.argb(a, 191, 249, 255) else Color.argb(a, 94, 242, 255))
+                }
+                px(c, cx, cy - 1, 3f, 3f, Color.WHITE)
+            }
         }
     }
 
@@ -709,9 +908,9 @@ class TownView(context: Context) : View(context) {
                 }
             }
         }
-        for (b in buildings) if (b.level == 0) canvas.drawBitmap(b.bitmap, b.x.toFloat(), b.y.toFloat(), pixelPaint)
+        for (b in buildings) if (b.level == 0) { canvas.drawBitmap(b.bitmap, b.x.toFloat(), b.y.toFloat(), pixelPaint); drawLife(canvas, b, t) }
         deck?.let { canvas.drawBitmap(it, 0f, deckY.toFloat(), pixelPaint) }          // the Upper Street
-        for (b in buildings) if (b.level == 1) canvas.drawBitmap(b.bitmap, b.x.toFloat(), b.y.toFloat(), pixelPaint)
+        for (b in buildings) if (b.level == 1) { canvas.drawBitmap(b.bitmap, b.x.toFloat(), b.y.toFloat(), pixelPaint); drawLife(canvas, b, t) }
         // the airlock opens while the resident goes in or comes out
         val doorB = when (phase) { Phase.ENTER -> buildingOf(destId); Phase.EXIT -> buildings.minByOrNull { abs(it.doorX - residentX) }; else -> null }
         val dr = doorB?.door
@@ -743,6 +942,7 @@ class TownView(context: Context) : View(context) {
             }
         }
 
+        drawTraffic(canvas, t)
         for (i in 0 until (worldW / 48 + 1)) {
             val a = (0.25 + 0.25 * sin(t / 400 - i)).coerceIn(0.0, 1.0)
             fill.color = Color.argb((a * 255).toInt(), 0x5e, 0xf2, 0xff)
@@ -758,6 +958,7 @@ class TownView(context: Context) : View(context) {
                 canvas.drawBitmap(sh, tx, ty, pixelPaint)
             }
         }
+        drawWeather(canvas, t, ev)
         if (night || ev == "eclipse") {
             fill.color = if (ev == "eclipse") Color.argb(89, 5, 6, 20) else Color.argb(46, 5, 6, 20)
             canvas.drawRect(0f, 138f, worldW.toFloat(), worldH.toFloat(), fill)

@@ -34,6 +34,9 @@
   button { background:var(--accent); color:#05060d; border:0; border-radius:8px; padding:7px 12px; font-weight:600; cursor:pointer; }
   button:disabled { opacity:.5; cursor:default; }
   button.ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
+  a.btn { display:inline-block; text-decoration:none; border-radius:8px; padding:7px 12px; font-weight:600; }
+  a.btn.ghost { color:var(--text); border:1px solid var(--line); }
+  select { background:#080a18; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:7px; font:inherit; }
   button.deny { background:var(--bad); }
   button.ok { background:var(--good); }
   textarea, input { width:100%; background:#080a18; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px; font:inherit; }
@@ -90,6 +93,7 @@
   <button data-tab="creations">🎨 Creations</button>
   <button data-tab="mind">🧠 Mind</button>
   <button data-tab="pets">🐾 Pets</button>
+  <button data-tab="workshop">🔧 Workshop</button>
   <button data-tab="monitor">🩺 Monitor</button>
   <button data-tab="hub">⚙️ Hub</button>
 </nav>
@@ -272,6 +276,31 @@
   </section>
 </main>
 
+<main class="pane" data-pane="workshop">
+  <section>
+    <h2>Weekly goals</h2>
+    <div id="wsgoals" class="meta">Goals arrive with the Fabrication Hangar and the Mechanical Workshop.</div>
+  </section>
+  <section>
+    <h2>Give it a goal</h2>
+    <div class="meta">Coding goals with tests are checked automatically in the sandbox. Without tests, you review the answer yourself.</div>
+    <div class="row"><select id="gkind"><option value="code">💻 Coding</option><option value="machine">⚙️ Machine</option><option value="plan">📐 Real-world plan</option></select></div>
+    <input id="gtitle" placeholder="Short title, like: Reverse a signal" maxlength="120" style="width:100%; margin-top:6px">
+    <textarea id="gtext" rows="3" placeholder="What should it make? Be specific about function names." style="width:100%; margin-top:6px"></textarea>
+    <textarea id="gtests" rows="3" placeholder="Optional Python tests, one assert per line: assert reverse('abc') == 'cba'" style="width:100%; margin-top:6px; font-family:monospace"></textarea>
+    <div class="row"><button onclick="addGoal()">Add goal</button><span id="gmsg" class="meta"></span></div>
+  </section>
+  <section>
+    <h2>Machines &amp; parts</h2>
+    <div id="wsmachines" class="meta">Loading…</div>
+  </section>
+  <section class="wide">
+    <h2>Real-world plans</h2>
+    <div class="meta">About once a week your resident designs a small low-voltage project for you to build. Always check a plan before you build it.</div>
+    <div id="wsplans" style="margin-top:8px"></div>
+  </section>
+</main>
+
 <main class="pane" data-pane="monitor">
   <section class="wide" style="padding:14px">
     <h2>Monitor</h2>
@@ -294,6 +323,9 @@
       <button class="ghost" onclick="spaceEvent('solar_storm')">☀️ Storm</button>
       <button class="ghost" onclick="spaceEvent('eclipse')">🌑 Eclipse</button>
       <button class="ghost" onclick="spaceEvent('trader')">🛸 Trader</button>
+      <button class="ghost" onclick="spaceEvent('stardust')">✨ Stardust</button>
+      <button class="ghost" onclick="spaceEvent('dust_storm')">🌪️ Dust storm</button>
+      <button class="ghost" onclick="spaceEvent('comet')">☄️ Comet</button>
       <button class="ghost" id="stopevent" style="display:none" onclick="stopEvent()">⏹ Stop event</button>
     </div>
   </section>
@@ -326,7 +358,7 @@ const NAMES = {home:"Home Dome", library:"Observatory Library", internet_cafe:"U
   greenhouse:"Hydro Greenhouse", radio_tower:"Radio Tower", archive:"Archive Vault", salon:"Nova Salon",
   gallery:"Starlight Gallery", park:"Low-G Park", studio:"Radio Studio", station:"Orbital Station", exchange:"Curio Exchange",
   spaceport:"Spaceport", bank:"Credit Vault", workshop:"Fabrication Hangar", pet_shop:"Pet Shop", store:"Department Store",
-  museum:"Stellar Museum"};
+  museum:"Stellar Museum", mech_shop:"Mechanical Workshop"};
 const VERBS = {journal:"writing in its journal", update_personality:"rethinking who it is", rest:"resting",
   recall:"looking through its notes", write_note:"writing a note", research:"researching", read_page:"reading a web page",
   read_mail:"reading mail", send_request:"sending you a request", ask_question:"asking you a question",
@@ -346,7 +378,10 @@ const VERBS = {journal:"writing in its journal", update_personality:"rethinking 
   solve_puzzle:"solving a puzzle", hang_painting:"hanging a painting", compose:"composing music", play_composition:"playing its own song",
   station_study:"studying", check_exchange:"browsing the Exchange", sell_curio:"selling curios", trade_up:"trading up curios",
   auction_curio:"starting an auction", build:"starting construction", move_building:"moving a building", set_bedtime:"changing its bedtime", stargaze:"stargazing",
-  plan_colony:"planning the colony", sleep:"sleeping", expedition:"exploring"};
+  plan_colony:"planning the colony", view_challenge:"reading this week's challenge", attempt_challenge:"coding a challenge",
+  view_workshop:"checking its parts", design_machine:"designing a machine", maintain_machine:"servicing a machine",
+  design_plan:"designing a project for you", buy_accessory:"buying something to wear", wear:"trying on accessories",
+  paint_building:"repainting a building", sleep:"sleeping", expedition:"exploring"};
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const when = ts => ts ? new Date(ts * 1000).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"}) : "—";
 const api = (p, body) => fetch(p, body === undefined ? {} : {method:"POST", headers:{"Content-Type":"application/json", "X-Stellar-Hub": "1"}, body:JSON.stringify(body)}).then(r => r.json());
@@ -400,6 +435,94 @@ const Town = {
     }
     this.location = loc; this.targetX = this.door(loc);
   },
+  px(c, x, y, w, h, col) { c.fillStyle = col; c.fillRect(Math.round(x), Math.round(y), w, h); },
+  hash(a, b) { const n = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return n - Math.floor(n); },
+  /* building life: windows switching on and off at night, blinking roof beacons */
+  life(c, b, t) {
+    if (b.variant !== "open") return;
+    if (this.world.night) (b.windows || []).forEach((wn, i) => {
+      if (this.hash(b.plot * 13 + i, Math.floor(t / 9000 + i * 0.31)) < 0.18) this.px(c, b.x + wn[0], b.y + wn[1], wn[2], wn[3], "#151a33");
+    });
+    if (b.beacon && (b.roof_light || b.plot % 3 === 0)) {
+      const col = (this.world.roof_lights || {})[b.roof_light] || "#ff5d73";
+      const on = Math.floor((t + b.plot * 377) / (b.roof_light ? 700 : 1100)) % 2;
+      if (on) { this.px(c, b.x + b.beacon[0], b.y + b.beacon[1], 1, 1, col);
+        c.globalAlpha = .3; this.px(c, b.x + b.beacon[0] - 1, b.y + b.beacon[1] - 1, 3, 3, col); c.globalAlpha = 1; }
+    }
+  },
+  /* traffic: maintenance bots, delivery drones, the cargo shuttle and the lift car */
+  traffic(c, t, w) {
+    const tr = w.traffic || {};
+    for (let i = 0; i < (tr.bots || 0); i++) {                 // maintenance bot trundling along the walkway
+      const span = w.w - 40, p = ((t / (26000 + i * 7000)) + i * 0.43) % 2, x = 20 + (p < 1 ? p : 2 - p) * span, y = 187;
+      this.px(c, x, y, 6, 4, "#a7b0d3"); this.px(c, x + 1, y + 1, 4, 1, "#353e6e");
+      this.px(c, x + (p < 1 ? 5 : 0), y + 1, 1, 1, Math.floor(t / 300) % 2 ? "#4fe0a5" : "#1f8a68");
+      this.px(c, x, y + 4, 2, 1, "#07080f"); this.px(c, x + 4, y + 4, 2, 1, "#07080f");
+      this.px(c, x + 2, y - 2, 1, 2, "#6b7399"); this.px(c, x + 2, y - 3, 1, 1, "#ffd86b");
+    }
+    const store = this.bld("store");
+    for (let i = 0; i < (tr.drones || 0) && store; i++) {      // delivery drones from the store to the buyers
+      const dest = this.bld(i === 0 && tr.delivery ? tr.delivery : ["home", "greenhouse", "mech_shop", "pet_shop", "gallery"][i % 5]) || this.bld("home");
+      if (!dest) break;
+      const p = ((t / 9000) + i * 0.29) % 1, back = p > .5, q = back ? (1 - p) * 2 : p * 2;
+      const x = store.door_x + (dest.door_x - store.door_x) * q, y = store.y - 6 - Math.sin(q * Math.PI) * 20 + Math.sin(t / 120 + i) * 0.6;
+      this.px(c, x - 3, y, 7, 1, "#6b7399"); this.px(c, x - 1, y + 1, 3, 2, "#5ef2ff");
+      if (Math.floor(t / 90) % 2) { this.px(c, x - 4, y - 1, 2, 1, "#eef1ff"); this.px(c, x + 3, y - 1, 2, 1, "#eef1ff"); }
+      if (!back) this.px(c, x - 1, y + 3, 3, 2, "#8f6a4c");
+    }
+    if (tr.shuttle) {                                          // the cargo shuttle crossing high above
+      const p = (t / 60000) % 1.4; if (p < 1) { const x = -30 + p * (w.w + 60), y = 22 + Math.sin(p * 6) * 2;
+        this.px(c, x, y, 16, 4, "#a7b0d3"); this.px(c, x + 12, y + 1, 4, 2, "#5ef2ff"); this.px(c, x - 2, y + 1, 2, 2, Math.floor(t / 150) % 2 ? "#ff9f43" : "#ffd86b");
+        this.px(c, x + 3, y + 4, 8, 1, "#6b7399"); }
+    }
+    if (tr.lift && w.upper) {                                  // the lift car gliding between levels
+      const top = w.upper.feet_y, bot = w.resident.feet_y, p = (Math.sin(t / 5000) + 1) / 2, y = top + (bot - top) * p;
+      this.px(c, w.upper.lift_x - 5, y - 2, 10, 2, "#5ef2ff"); c.globalAlpha = .25; this.px(c, w.upper.lift_x - 5, y - 12, 10, 10, "#5ef2ff"); c.globalAlpha = 1;
+    }
+  },
+  /* space weather */
+  weather(c, t, w, ev) {
+    if (ev === "stardust") for (let i = 0; i < 60; i++) {
+      const x = (i * 97 + t / 60 * (0.5 + (i % 5) / 10)) % w.w, y = ((i * 53) + t / (40 + i % 7 * 6)) % w.h;
+      c.globalAlpha = .4 + .4 * Math.sin(t / 300 + i); this.px(c, x, y, 1, 1, i % 4 ? "#ffd86b" : "#eef1ff");
+    }
+    if (ev === "dust_storm") {
+      c.fillStyle = "rgba(143,106,76," + (.22 + .06 * Math.sin(t / 700)) + ")"; c.fillRect(0, 0, w.w, w.h);
+      for (let i = 0; i < 90; i++) { const x = (i * 131 + t / 3) % (w.w + 40) - 20, y = (i * 37) % w.h;
+        c.globalAlpha = .35; this.px(c, x, y, 5 + i % 4, 1, i % 3 ? "#8f6a4c" : "#a7b0d3"); }
+    }
+    if (ev === "comet") {
+      const p = (t / 90000) % 1, cx = -20 + p * (w.w + 40), cy = 20 + p * 40;
+      for (let i = 0; i < 40; i++) { c.globalAlpha = (1 - i / 40) * .6;
+        this.px(c, cx - i * 2.2, cy - i * 0.8 + Math.sin(i + t / 200) * 0.6, 2, 1, i % 3 ? "#bff9ff" : "#5ef2ff"); }
+      c.globalAlpha = 1; this.px(c, cx, cy - 1, 3, 3, "#ffffff");
+    }
+    c.globalAlpha = 1;
+  },
+  /* idle animations, chosen by mood, time of day and place */
+  idle(t) {
+    if (!this._idle || t > this._idle.until) {
+      const h = this.hour ?? 12, loc = this.location, pick = [];
+      if (this.listening) pick.push("dance", "dance", "dance");
+      if (h >= 21 || h < 7 || this.mood === "low") pick.push("doze", "yawn");
+      if (["library", "archive", "station"].includes(loc)) pick.push("read", "read");
+      if (this.mood === "happy" || this.mood === "joyful") pick.push("wave", "stretch");
+      pick.push("look", "look", "stretch", "none", "none");
+      if (this._wave) { pick.length = 0; pick.push("wave"); this._wave = false; }
+      this._idle = {kind: pick[Math.floor(Math.random() * pick.length)], start: t, until: t + 6000 + Math.random() * 6000};
+    }
+    return this._idle;
+  },
+  accessory(c, kind, fx, fy, t, flip) {
+    if (!kind) return;
+    if (kind === "antenna_cap") { this.px(c, fx + 7, fy - 3, 1, 4, "#a7b0d3"); this.px(c, fx + 6, fy - 5, 3, 2, Math.floor(t / 400) % 2 ? "#ff5d73" : "#ffd86b"); this.px(c, fx + 4, fy + 1, 8, 1, "#ff5d73"); }
+    if (kind === "beanie") { this.px(c, fx + 4, fy + 1, 8, 3, "#ff5d73"); this.px(c, fx + 4, fy + 3, 8, 1, "#9a2a44"); this.px(c, fx + 7, fy - 1, 2, 2, "#eef1ff"); }
+    if (kind === "crown") { for (const k of [4, 7, 10]) this.px(c, fx + k, fy - 1, 2, 3, "#ffd86b"); this.px(c, fx + 4, fy + 2, 8, 1, "#ffd86b"); this.px(c, fx + 7, fy + 1, 2, 1, "#ff4fd8"); }
+    if (kind === "bubble_helmet") { c.strokeStyle = "rgba(94,242,255,.7)"; c.lineWidth = 1; c.beginPath(); c.arc(fx + 8, fy + 8, 10, 0, 7); c.stroke(); this.px(c, fx + 3, fy + 2, 2, 1, "#ffffff"); }
+    if (kind === "scarf") { this.px(c, fx + 3, fy + 10, 10, 2, "#4fe0a5"); this.px(c, flip ? fx + 3 : fx + 11, fy + 12, 2, 4 + (Math.floor(t / 300) % 2), "#4fe0a5"); }
+    if (kind === "comet_trail") { for (let k = 1; k < 9; k++) { c.globalAlpha = 1 - k / 9;
+      this.px(c, flip ? fx + 16 + k * 2 : fx - k * 2, fy + 8 + Math.sin(t / 150 + k) * 2, 1, 1, k % 2 ? "#ff4fd8" : "#5ef2ff"); } c.globalAlpha = 1; }
+  },
   draw(t) {
     const c = this.ctx, w = this.world;
     c.imageSmoothingEnabled = false;
@@ -440,9 +563,9 @@ const Town = {
         const p = Math.sin(t / 600 + i * 1.7);
         if (p > .6) { c.fillStyle = "#ffffff"; c.fillRect(x, y, 1, 1); if (p > .93) { c.fillStyle = "#a7b0d3"; c.fillRect(x - 1, y, 3, 1); c.fillRect(x, y - 1, 1, 3); } }
       });
-      for (const b of this.sprites.buildings) if (!b.level) c.drawImage(b.img, b.x, b.y);
+      for (const b of this.sprites.buildings) if (!b.level) { c.drawImage(b.img, b.x, b.y); this.life(c, b, t); }
       if (this.sprites.deck) c.drawImage(this.sprites.deck, w.upper.x, w.upper.y);      // the Upper Street
-      for (const b of this.sprites.buildings) if (b.level) c.drawImage(b.img, b.x, b.y);
+      for (const b of this.sprites.buildings) if (b.level) { c.drawImage(b.img, b.x, b.y); this.life(c, b, t); }
       for (const d of this.sprites.decor) c.drawImage(d.img, d.x, d.y);
       for (const v of this.sprites.visitors || []) c.drawImage(v.img, v.x - 8, v.y + Math.round(Math.sin(t / 700)));
       for (const p of this.sprites.pets || []) {              // pets wander to their jobs and back
@@ -455,6 +578,7 @@ const Town = {
         if (p.asleep && !moving) { c.fillStyle = "#a7b0d3"; c.fillRect(Math.round(p.cx) + 4, py - 3 + Math.round(Math.sin(t / 500)), 2, 1); }
         if (["sick", "injured", "critical"].includes(p.status)) { c.fillStyle = "#ff5d73"; c.fillRect(Math.round(p.cx) - 1, py - 4, 3, 1); c.fillRect(Math.round(p.cx), py - 5, 1, 3); }
       }
+      this.traffic(c, t, w);
       for (let i = 0; i * 48 < w.w; i++) {
         c.globalAlpha = .25 + .25 * Math.sin(t / 400 - i);
         c.fillStyle = "#5ef2ff"; c.fillRect(4 + i * 48, 190, 3, 1);
@@ -467,6 +591,7 @@ const Town = {
         c.drawImage(this.sprites.ship, tx, ty);
         if (Math.floor(t / 300) % 2) { c.fillStyle = "#ff9f43"; c.fillRect(tx + 4, ty + 11, 1, 2); c.fillRect(tx + 15, ty + 11, 1, 2); }
       }
+      this.weather(c, t, w, ev);
       if (w.night || ev === "eclipse") { c.fillStyle = ev === "eclipse" ? "rgba(5,6,20,.35)" : "rgba(5,6,20,.18)"; c.fillRect(0, 138, w.w, w.h - 138); }
       if (this.x !== null && !this.away && !this.inOrbit) {
         const tb = this.bld(this.location), tl = tb ? (tb.level || 0) : 0;
@@ -483,14 +608,27 @@ const Town = {
         const walking = Math.abs(dx) > 0.5;
         if (walking) this.x += Math.sign(dx) * Math.min(0.9, Math.abs(dx));
         const r = w.resident, floats = r.floats, feet = Math.round(this.feet);
-        const bob = floats ? Math.round(Math.sin(t / 380) * 2) - 3 : 0;
+        const id = (walking || riding || this.asleep) ? {kind: "none", start: t} : this.idle(t), k = id.kind, it = t - id.start;
+        let bob = floats ? Math.round(Math.sin(t / (k === "doze" ? 900 : 380)) * 2) - 3 : 0, sx = 0, sy = 1;
+        if (k === "dance") { bob += -Math.abs(Math.round(Math.sin(t / 160) * 2)); sx = Math.round(Math.sin(t / 320) * 2); }
+        if (k === "stretch" && it < 2400) sy = 1 + 0.12 * Math.sin(Math.min(1, it / 1200) * Math.PI);
         const fi = floats ? Math.floor(t / 450) % 2 : (walking ? Math.floor(t / 160) % 2 : 0);
-        const fx = Math.round(this.x) - 8, fy = feet - 16 + bob;
+        const fx = Math.round(this.x) - 8 + sx, fy = feet - 16 + bob;
         if (riding) { c.fillStyle = "rgba(94,242,255,.35)"; c.fillRect(fx + 3, feet, 10, 2); }
         c.fillStyle = "rgba(0,0,0,.45)"; c.fillRect(fx + 4, feet - 1, 8, 2);
         const img = this.sprites.frames[fi];
-        if (walking && dx < 0) { c.save(); c.scale(-1, 1); c.drawImage(img, -fx - 16, fy); c.restore(); }
-        else c.drawImage(img, fx, fy);
+        const flip = (walking && dx < 0) || (k === "look" && Math.floor(it / 1500) % 2 === 1) || (k === "dance" && Math.floor(t / 640) % 2);
+        const hgt = Math.round(16 * sy), top = fy + 16 - hgt;
+        if (flip) { c.save(); c.scale(-1, 1); c.drawImage(img, -fx - 16, top, 16, hgt); c.restore(); }
+        else c.drawImage(img, fx, top, 16, hgt);
+        this.accessory(c, r.accessory, fx, top, t, flip);
+        if (k === "wave" && it < 3000) { const up = Math.floor(it / 250) % 2; this.px(c, fx + 15, fy + 6 - up * 2, 2, 3, "#eef1ff"); }
+        if (k === "read") { this.px(c, fx + 4, fy + 9, 8, 5, "#5b3fb5"); this.px(c, fx + 5, fy + 10, 3, 3, "#eef1ff"); this.px(c, fx + 8, fy + 10, 3, 3, "#eef1ff");
+          if (Math.floor(it / 2200) % 3 === 2) this.px(c, fx + 8, fy + 10, 1, 3, "#a7b0d3"); }
+        if (k === "yawn" && it % 4000 < 900) this.px(c, fx + 7, fy + 8, 2, 2, "#07080f");
+        if (k === "doze" || k === "yawn") { const zp = (it / 1400) % 1; c.globalAlpha = 1 - zp;
+          this.px(c, fx + 13 + zp * 4, fy - 2 - zp * 8, 3, 1, "#a7b0d3"); this.px(c, fx + 15 + zp * 4, fy - 1 - zp * 8, 1, 1, "#a7b0d3"); this.px(c, fx + 13 + zp * 4, fy - zp * 8, 3, 1, "#a7b0d3"); c.globalAlpha = 1; }
+        if (k === "dance" && Math.floor(t / 400) % 2) this.px(c, fx + 17, fy - 4 + Math.round(Math.sin(t / 300) * 2), 2, 3, "#ff4fd8");
         const em = this.emote && this.sprites.emotes[this.emote === "!" ? "!" : this.emote === "?" ? "?" : this.emote];
         if (em && !walking) c.drawImage(em, fx + 9, fy - 10 + (this.emote === "z" ? Math.round(Math.sin(t / 600) * 1.5) : 0));
       }
@@ -526,7 +664,7 @@ async function refreshInner() {
   const [s, inbox, feed, lib, col] = await Promise.all([api("/api/status"), api("/api/inbox"), api("/api/feed?limit=80"),
                                                         api("/api/library?limit=40"), api("/api/colony")]);
   if (s.world_version !== worldVersion) { Town.setWorld(await api("/api/world")); worldVersion = s.world_version; }
-  Town.away = !!s.away; Town.inOrbit = !!s.in_orbit; Town.emote = s.emote; Town.daylight = s.daylight; Town.event = s.event; Town.asleep = s.asleep;
+  Town.away = !!s.away; Town.inOrbit = !!s.in_orbit; Town.emote = s.emote; Town.daylight = s.daylight; Town.event = s.event; Town.asleep = s.asleep; Town.mood = s.mood; Town.listening = !!s.listening; Town.hour = s.hour;
   Town.setLocation(s.location, s.prev_location, s.last_turn);
   programs = {}; (col.programs || []).forEach(p => programs[p.id] = p);
 
@@ -1009,6 +1147,48 @@ refresh(); loadPairing();
 setInterval(refresh, 5000);
 loadExtras(); setInterval(loadExtras, 15000);
 setTimeout(loadPets, 1500); setInterval(loadPets, 15000);
+async function loadWorkshop() {
+  const d = await api("/api/workshop");
+  const key = JSON.stringify(d); if (key === loadWorkshop.last) return; loadWorkshop.last = key;
+  const icon = {code: "💻", machine: "⚙️", plan: "📐"}, tag = {open: "pending", review: "pending", passed: "approved", missed: "denied", cancelled: "denied"};
+  document.getElementById("wsgoals").innerHTML =
+    `<div class="meta">Coding level ${d.code_level} · machine level ${d.mech_level} · skill notebook: ${d.skills} entries · sandbox: ${esc(d.sandbox || "not installed")}</div>` +
+    ((d.goals || []).map(g => `<div class="item"><b>${icon[g.kind] || ""} ${esc(g.title)}</b> <span class="tag ${tag[g.status] || ""}">${esc(g.status)}</span>
+      <span class="meta">${g.source === "creator" ? "your goal" : "weekly"} · ${esc(g.week)} · ${g.attempts} tries</span>
+      <div class="meta">${esc(g.text)}</div>
+      ${g.last_code ? `<details><summary class="meta">Its code</summary><pre style="white-space:pre-wrap">${esc(g.last_code)}</pre></details>` : ""}
+      ${g.result ? `<details><summary class="meta">Last result</summary><pre style="white-space:pre-wrap">${esc(g.result)}</pre></details>` : ""}
+      ${g.status === "review" ? `<div class="row"><button onclick="reviewGoal(${g.id}, true)">✓ Passed</button><button class="ghost" onclick="reviewGoal(${g.id}, false)">Not yet</button></div>` : ""}
+      ${g.source === "creator" && ["open", "review"].includes(g.status) ? `<button class="ghost" onclick="cancelGoal(${g.id})">Remove</button>` : ""}</div>`).join("") || `<div class="meta">No goals yet.</div>`);
+  const parts = Object.entries(d.parts || {}).filter(([k, v]) => v).map(([k, v]) => `${esc(k.replace(/_/g, " "))} ×${v}`).join(", ");
+  document.getElementById("wsmachines").innerHTML =
+    `<div class="meta">Parts: ${parts || "none yet"}</div>` +
+    ((d.machines || []).map(m => `<div class="item"><b>⚙️ ${esc(m.name)}</b> <span class="tag ${m.condition <= 0 ? "denied" : m.condition < 30 ? "pending" : "approved"}">${m.condition <= 0 ? "broken" : Math.round(m.condition) + "%"}</span>
+      <div class="meta">It ${esc(m.does)}.</div><div class="bar"><div style="width:${Math.max(0, m.condition)}%"></div></div></div>`).join("") || `<div class="meta" style="margin-top:6px">No machines yet.</div>`);
+  document.getElementById("wsplans").innerHTML = (d.plans || []).map(p => { const q = p.plan;
+    return `<div class="item"><b>📐 ${esc(p.title)}</b> <span class="meta">${esc(p.kind.replace(/_/g, " "))} · ${esc(q.difficulty)} · ${when(p.ts)}</span>
+      <div class="err" style="margin:6px 0">${esc(q.safety)}</div><div>${esc(q.summary)}</div>
+      <details><summary class="meta">Parts, steps and files</summary>
+      <b>Parts</b><ul>${(q.parts || []).map(x => `<li>${typeof x === "object" ? `${esc(x.qty ?? 1)} × ${esc(x.item)}${x.note ? ` <span class="meta">(${esc(x.note)})</span>` : ""}` : esc(x)}</li>`).join("")}</ul>
+      ${(q.tools || []).length ? `<b>Tools</b><ul>${q.tools.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      <b>Steps</b><ol>${(q.steps || []).map(x => `<li>${esc(x)}</li>`).join("")}</ol>
+      ${q.tips ? `<div class="meta">Tips: ${esc(q.tips)}</div>` : ""}</details>
+      <div class="row"><a class="btn ghost" href="/api/plans/${p.id}.md" download>⬇ Plan (.md)</a>
+      ${q.code ? `<a class="btn ghost" href="/api/plans/${p.id}.code" download>⬇ Code</a>` : ""}
+      ${q.scad ? `<a class="btn ghost" href="/api/plans/${p.id}.scad" download>⬇ OpenSCAD</a>` : ""}</div></div>`; }).join("") || `<div class="meta">No plans yet. They start once the Mechanical Workshop is built.</div>`;
+}
+async function addGoal() {
+  const body = {kind: document.getElementById("gkind").value, title: document.getElementById("gtitle").value,
+                text: document.getElementById("gtext").value, tests: document.getElementById("gtests").value};
+  const r = await api("/api/goals", body);
+  document.getElementById("gmsg").textContent = r.ok ? "Added ✓" : (r.error || "Couldn't add it.");
+  if (r.ok) { ["gtitle", "gtext", "gtests"].forEach(i => document.getElementById(i).value = ""); loadWorkshop.last = null; loadWorkshop(); }
+}
+async function reviewGoal(id, passed) { const note = passed ? "" : (prompt("What should it fix? (optional)") || ""); await api("/api/goals/review", {id, passed, note}); loadWorkshop.last = null; loadWorkshop(); }
+async function cancelGoal(id) { await api("/api/goals/cancel", {id}); loadWorkshop.last = null; loadWorkshop(); }
+setTimeout(loadWorkshop, 1800); setInterval(loadWorkshop, 20000);
+Town._wave = true; document.addEventListener("visibilitychange", () => { if (!document.hidden) Town._wave = true; });
+
 setTimeout(loadMuseum, 1800); setInterval(loadMuseum, 20000);
 loadMonitor(); setInterval(loadMonitor, 15000);
 </script>

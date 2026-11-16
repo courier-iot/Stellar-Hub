@@ -14,6 +14,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.graphics.Color
 import android.graphics.Typeface
+import kotlin.math.roundToInt
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
@@ -54,9 +55,14 @@ class MainActivity : Activity() {
         "post_office" to "Relay Post", "salon" to "Nova Salon", "bank" to "Credit Vault",
         "workshop" to "Fabrication Hangar", "pet_shop" to "Pet Shop", "store" to "Department Store", "museum" to "Stellar Museum", "greenhouse" to "Hydro Greenhouse", "radio_tower" to "Radio Tower",
         "archive" to "Archive Vault", "spaceport" to "Spaceport", "gallery" to "Starlight Gallery", "park" to "Low-G Park",
-        "studio" to "Radio Studio", "station" to "Orbital Station", "exchange" to "Curio Exchange"
+        "studio" to "Radio Studio", "station" to "Orbital Station", "exchange" to "Curio Exchange",
+        "mech_shop" to "Mechanical Workshop"
     )
     private val verbs = mapOf(
+        "view_challenge" to "reading this week's challenge", "attempt_challenge" to "coding a challenge",
+        "view_workshop" to "checking its parts", "design_machine" to "designing a machine", "maintain_machine" to "servicing a machine",
+        "design_plan" to "designing a project for you", "buy_accessory" to "buying something to wear", "wear" to "trying on accessories",
+        "paint_building" to "repainting a building",
         "journal" to "writing in its journal", "update_personality" to "rethinking who it is", "rest" to "resting",
         "recall" to "looking through its notes", "write_note" to "writing a note", "research" to "researching",
         "read_page" to "reading a web page", "read_mail" to "reading mail", "send_request" to "sending you a request",
@@ -173,7 +179,7 @@ class MainActivity : Activity() {
         root.addView(caption)
 
         tabRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(8), 0, dp(8), dp(4)) }
-        for ((id, title) in listOf("inbox" to "Inbox", "chat" to "Chat", "colony" to "Colony", "gallery" to "Gallery", "feed" to "Feed", "hub" to "Hub")) {
+        for ((id, title) in listOf("inbox" to "Inbox", "chat" to "Chat", "colony" to "Colony", "build" to "Build", "gallery" to "Gallery", "feed" to "Feed", "hub" to "Hub")) {
             tabRow.addView(Button(this).apply {
                 text = title
                 tag = id
@@ -213,6 +219,7 @@ class MainActivity : Activity() {
         side.execute { ListenQueue.flush(this, foreground = true) }
         main.removeCallbacks(poller)
         main.post(poller)
+        if (::town.isInitialized) town.wave()
         if (prefs.getBoolean("share_music", false) && api != null &&
             System.currentTimeMillis() - prefs.getLong("music_synced", 0L) > 24 * 3600 * 1000L &&
             checkSelfPermission(audioPermission) == PackageManager.PERMISSION_GRANTED) shareMusic(false)
@@ -417,6 +424,7 @@ class MainActivity : Activity() {
         town.setAway(away != null)
         town.setOrbit(s.optBoolean("in_orbit"))
         val ev = s.optJSONObject("event")
+        town.setMood(s.optString("mood").takeIf { it.isNotBlank() && it != "null" }, s.optInt("hour", 12), s.optBoolean("asleep"))
         town.setLife(s.optString("emote").takeIf { it.isNotBlank() && it != "null" },
             if (s.isNull("daylight")) null else s.optDouble("daylight"), ev?.optString("type"))
         val credits = s.optInt("credits", 0)
@@ -480,6 +488,7 @@ class MainActivity : Activity() {
         when (id) {
             "inbox" -> loadInbox()
             "colony" -> loadColony()
+            "build" -> loadWorkshop()
             "gallery" -> loadGallery()
             "feed" -> loadFeed()
             "chat" -> loadChat()
@@ -838,6 +847,126 @@ class MainActivity : Activity() {
             val ch = chapters.getJSONObject(i)
             av.addView(spaced(label(ch.optString("title"), 14f, textCol, true)))
             av.addView(label(ch.optString("text"), 13f, dim))
+        }
+    }
+
+    // ------------------------------------------------------------------ workshop (v0.13)
+    private fun loadWorkshop() {
+        loading()
+        bgTask({ it.getObject("/api/workshop") }) { d -> if (tab == "build") renderWorkshop(d) }
+    }
+
+    private fun renderWorkshop(d: JSONObject) {
+        content.removeAllViews()
+        val head = section("Weekly goals")
+        head.addView(label("Coding level ${d.optInt("code_level", 1)} · machine level ${d.optInt("mech_level", 1)} · skill notebook: ${d.optInt("skills")} entries", 12f, dim))
+        val goals = d.optJSONArray("goals") ?: JSONArray()
+        if (goals.length() == 0) head.addView(label("No goals yet. They arrive with the Fabrication Hangar and the Mechanical Workshop.", 13f, dim))
+        for (i in 0 until goals.length()) {
+            val g = goals.getJSONObject(i)
+            val st = g.optString("status")
+            val icon = when (g.optString("kind")) { "code" -> "💻"; "machine" -> "⚙️"; else -> "📐" }
+            head.addView(spaced(label("$icon ${g.optString("title")}  ·  $st", 14f,
+                when (st) { "passed" -> good; "missed", "cancelled" -> bad; else -> warn }, true)))
+            head.addView(label("${if (g.optString("source") == "creator") "your goal" else "weekly"} · ${g.optInt("attempts")} tries · ${g.optString("text")}", 12f, dim))
+            val code = g.optString("last_code").takeIf { it.isNotBlank() && it != "null" }
+            if (code != null) head.addView(label(code.take(1200), 11f, textCol).apply { typeface = Typeface.MONOSPACE })
+            val id = g.optInt("id")
+            if (st == "review") head.addView(rowOf(
+                smallButton("✓ Passed", good) { reviewGoal(id, true) }, smallButton("Not yet", bad) { reviewGoal(id, false) }))
+            if (g.optString("source") == "creator" && (st == "open" || st == "review"))
+                head.addView(rowOf(smallButton("Remove", line) {
+                    bgTask({ it.post("/api/goals/cancel", JSONObject().put("id", id)) }) { loadWorkshop() } }))
+        }
+        content.addView(head)
+
+        val add = section("Give it a goal")
+        add.addView(label("Coding goals with tests are checked automatically in the sandbox. Without tests, you review the answer.", 12f, dim))
+        var kind = "code"
+        val kinds = listOf("code" to "💻 Coding", "machine" to "⚙️ Machine", "plan" to "📐 Plan")
+        val kindRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        fun paintKinds() { for (j in 0 until kindRow.childCount) (kindRow.getChildAt(j) as Button).setTextColor(if (kinds[j].first == kind) cyan else dim) }
+        for ((k, t) in kinds) kindRow.addView(smallButton(t, line) { kind = k; paintKinds() })
+        paintKinds()
+        add.addView(kindRow)
+        val title = input("Short title, like: Reverse a signal")
+        val text = input("What should it make? Name the functions.", 3)
+        val tests = input("Optional tests: assert reverse('abc') == 'cba'", 3).apply { typeface = Typeface.MONOSPACE }
+        add.addView(spaced(title)); add.addView(spaced(text)); add.addView(spaced(tests))
+        add.addView(rowOf(smallButton("Add goal", cyan) {
+            val body = JSONObject().put("kind", kind).put("title", title.text.toString()).put("text", text.text.toString())
+                .put("tests", tests.text.toString())
+            bgTask({ it.post("/api/goals", body) }) { r ->
+                if (r.optBoolean("ok")) { toast("Goal added"); loadWorkshop() } else toast(r.optString("error", "Couldn't add it"))
+            }
+        }))
+        content.addView(add)
+
+        val mach = section("Machines & parts")
+        val parts = d.optJSONObject("parts")
+        val owned = ArrayList<String>()
+        parts?.keys()?.forEach { k -> val n = parts.optInt(k); if (n > 0) owned.add("${k.replace('_', ' ')} ×$n") }
+        mach.addView(label("Parts: ${if (owned.isEmpty()) "none yet" else owned.joinToString(", ")}", 12f, dim))
+        val ms = d.optJSONArray("machines") ?: JSONArray()
+        for (i in 0 until ms.length()) {
+            val m = ms.getJSONObject(i)
+            val cond = m.optDouble("condition")
+            mach.addView(spaced(label("⚙️ ${m.optString("name")}  ·  ${if (cond <= 0) "broken" else "${cond.roundToInt()}%"}", 14f,
+                if (cond <= 0) bad else if (cond < 30) warn else good, true)))
+            mach.addView(label("It ${m.optString("does")}.", 12f, dim))
+        }
+        if (ms.length() == 0) mach.addView(label("No machines yet.", 13f, dim))
+        content.addView(mach)
+
+        val plans = section("Real-world plans")
+        plans.addView(label("About once a week your resident designs a small low-voltage project for you to build.", 12f, dim))
+        val ps = d.optJSONArray("plans") ?: JSONArray()
+        if (ps.length() == 0) plans.addView(label("No plans yet. They start once the Mechanical Workshop is built.", 13f, dim))
+        for (i in 0 until ps.length()) {
+            val p = ps.getJSONObject(i)
+            val q = p.optJSONObject("plan") ?: JSONObject()
+            val pid = p.optInt("id")
+            plans.addView(spaced(label("📐 ${p.optString("title")}", 15f, textCol, true)))
+            plans.addView(label("${p.optString("kind").replace('_', ' ')} · ${q.optString("difficulty")} · ${fmt(p.optDouble("ts"))}", 12f, dim))
+            plans.addView(label(q.optString("safety"), 12f, bad))
+            plans.addView(label(q.optString("summary"), 13f, textCol))
+            val btns = arrayListOf<View>(smallButton("⬇ Plan", cyan) { savePlanFile(pid, "md") })
+            if (q.optString("code").isNotBlank()) btns.add(smallButton("⬇ Code", line) { savePlanFile(pid, "code") })
+            if (q.optString("scad").isNotBlank()) btns.add(smallButton("⬇ OpenSCAD", line) { savePlanFile(pid, "scad") })
+            plans.addView(rowOf(*btns.toTypedArray()))
+        }
+        content.addView(plans)
+    }
+
+    private fun reviewGoal(id: Int, passed: Boolean) {
+        bgTask({ it.post("/api/goals/review", JSONObject().put("id", id).put("passed", passed)) }) { loadWorkshop() }
+    }
+
+    /** Saves a plan (or its code / OpenSCAD file) into Downloads/Stellar Hub. */
+    private fun savePlanFile(pid: Int, part: String) {
+        bgTask({ it.getBytes("/api/plans/$pid.$part") }) { bytes ->
+            val text = String(bytes, Charsets.UTF_8)
+            val ext = when (part) { "md" -> "md"; "scad" -> "scad"; else -> if ("void setup" in text || "#include" in text) "ino" else "py" }
+            val name = "stellar_plan_${pid}_${part}.$ext"
+            try {
+                if (Build.VERSION.SDK_INT >= 29) {
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                        put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/Stellar Hub")
+                    }
+                    val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                        ?: throw IllegalStateException("no storage")
+                    contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    toast("Saved to Download/Stellar Hub")
+                } else {
+                    val dir = getExternalFilesDir("Download") ?: filesDir
+                    java.io.File(dir, name).writeBytes(bytes)
+                    toast("Saved to ${dir.absolutePath}")
+                }
+            } catch (e: Exception) {
+                toast("Couldn't save it: ${e.message}")
+            }
         }
     }
 

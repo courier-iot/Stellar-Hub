@@ -28,6 +28,19 @@ def load_config(root):
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
             mine = json.load(f)
+    if mine and not mine.get("_migrated_0130"):
+        # v0.13: turns every 12 minutes. Only the old defaults change; settings you picked yourself stay.
+        if mine.get("tick_minutes") == 30:
+            mine["tick_minutes"] = 12
+        if (mine.get("limits") or {}).get("llm_calls_per_day") == 300:
+            mine["limits"]["llm_calls_per_day"] = 500
+        mine["_migrated_0130"] = True
+        try:
+            with open(path + ".tmp", "w", encoding="utf-8") as f:
+                json.dump(mine, f, indent=2)
+            os.replace(path + ".tmp", path)
+        except OSError:
+            pass
     cfg = _merge(defaults, mine)
     cfg["_config_path"] = path
     return cfg

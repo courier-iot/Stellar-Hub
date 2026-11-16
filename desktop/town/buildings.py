@@ -117,6 +117,10 @@ BUILDINGS = {
                   "you can buy. (The Credit Vault keeps your money; shopping happens here once the store is open.)"),
         "actions": {
             "browse_store": "{}  look through everything for sale",
+            "buy_accessory": "{\"item\": \"antenna_cap|beanie|crown|bubble_helmet|scarf|comet_trail\"}  buy something to wear",
+            "wear": "{\"item\": \"<accessory you own, or none>\"}  choose what to wear",
+            "paint_building": ("{\"building\": \"<id>\", \"paint\": \"<paint job>\", \"roof_light\": \"<light colour, optional>\"}  "
+                               "give a building a new paint job and roof light"),
             "buy": "{\"item\": \"<kind:name, e.g. seeds:moon_moss, decor:lamp_post, furniture:neon_sign, pots, unlock:gallery>\"}  buy something. Shop: {shop}",
         },
     },
@@ -224,6 +228,23 @@ BUILDINGS = {
         "actions": {
             "write_program": "{\"name\": \"short_name\", \"description\": \"what it does\", \"code\": \"python code\"}  build a program",
             "list_programs": "{}  see your programs and their results",
+            "view_challenge": "{}  read this week's coding challenge (and any coding goals from your creator)",
+            "attempt_challenge": ("{\"goal_id\": <optional id>}  write code for a coding goal. Its automatic tests run in the "
+                                  "sandbox right away, no approval needed (a few tries a day)"),
+        },
+    },
+    "mech_shop": {
+        "name": "Mechanical Workshop",
+        "about": ("Build machines from parts bought at the Department Store. A simulator checks every design; working machines "
+                  "help the colony, wear down slowly and need maintenance. Also design real projects for your creator to build."),
+        "locked": True, "unlockable": True, "unlock_price": 300,
+        "actions": {
+            "view_workshop": "{}  see your parts, this week's machine goal and your machines",
+            "design_machine": ("{\"machine\": \"<optional machine id>\"}  design a machine from parts you own and run it "
+                               "through the simulator (parts are only used if it passes)"),
+            "maintain_machine": "{\"machine_id\": <optional id>}  service a machine (uses one spare gear, +45% condition)",
+            "design_plan": ("{\"kind\": \"esp32|3d_print|crafts|smart_home\", \"idea\": \"<optional>\"}  design a REAL "
+                            "low-voltage project for your creator to build (about once a week)"),
         },
     },
 }
@@ -241,7 +262,9 @@ SATISFIES = {
     "write": ("creativity", 45), "compose": ("creativity", 50), "play_composition": ("rest", 30),
     "observe_sky": ("curiosity", 35), "station_study": ("curiosity", 40), "solve_puzzle": ("curiosity", 25),
     "showcase": ("creativity", 15), "hang_painting": ("creativity", 15), "upgrade_home": ("creativity", 30),
-    "view_collection": ("rest", 15), "check_exchange": ("curiosity", 15), "sell_curio": ("connection", 15),
+    "view_collection": ("rest", 15), "attempt_challenge": ("curiosity", 40), "design_machine": ("creativity", 45),
+    "design_plan": ("creativity", 50), "maintain_machine": ("rest", 10), "view_workshop": ("curiosity", 10),
+    "wear": ("creativity", 15), "buy_accessory": ("creativity", 20), "paint_building": ("creativity", 30), "check_exchange": ("curiosity", 15), "sell_curio": ("connection", 15),
     "trade_up": ("creativity", 20), "auction_curio": ("connection", 20), "build": ("creativity", 40), "move_building": ("creativity", 30), "play_music": ("rest", 45), "water": ("rest", 10), "check_plants": ("rest", 10),
 }
 # How much each need grows per turn.

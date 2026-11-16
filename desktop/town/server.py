@@ -234,9 +234,35 @@ def make_server(agent, host, port, pair_code):
                       "/api/visitors": agent.visitors_overview,
                       "/api/pets": agent.pets_overview,
                       "/api/museum": agent.museum_overview,
+                      "/api/workshop": agent.workshop_overview,
                       "/api/monitor": lambda: agent.monitor_overview((qs.get("track") or [None])[0])}
             if u.path in simple:
                 return self._json(simple[u.path]())
+            m = re.fullmatch(r"/api/plans/(\d+)\.(md|code|scad)", u.path)
+            if m:
+                pid, part = int(m.group(1)), m.group(2)
+                plan = next((p for p in agent.plans_list() if p["id"] == pid), None)
+                if not plan:
+                    return self._json({"error": "not found"}, 404)
+                slug = re.sub(r"[^a-z0-9]+", "_", plan["title"].lower()).strip("_")[:40] or f"plan_{pid}"
+                if part == "md":
+                    data, fname = agent.plan_markdown(pid), f"{slug}.md"
+                elif part == "scad":
+                    data, fname = plan["plan"].get("scad") or "", f"{slug}.scad"
+                else:
+                    data = plan["plan"].get("code") or ""
+                    fname = f"{slug}.ino" if "void setup" in data or "#include" in data else f"{slug}.py"
+                if not data:
+                    return self._json({"error": "this plan has no such file"}, 404)
+                body = data.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.end_headers()
+                self.wfile.write(body)
+                return None
             m = re.fullmatch(r"/api/compositions/(\d+)\.wav", u.path)
             if m:
                 path = os.path.join(agent.studio_dir, f"{int(m.group(1))}.wav")
@@ -306,6 +332,25 @@ def make_server(agent, host, port, pair_code):
                     if k in body:
                         save_setting(agent.cfg, "voice", k, body[k])
                 return self._json(agent.voice().status())
+            if path == "/api/goals":
+                title, text = str(body.get("title", "")).strip(), str(body.get("text", "")).strip()
+                if not title or not text:
+                    return self._json({"ok": False, "error": "a goal needs a title and a description"}, 400)
+                gid = agent.add_creator_goal(body.get("kind", "code"), title, text, body.get("tests") or None)
+                return self._json({"ok": True, "id": gid})
+            if path == "/api/goals/review":
+                try:
+                    gid = int(body.get("id"))
+                except (TypeError, ValueError):
+                    return self._json({"ok": False}, 400)
+                return self._json({"ok": agent.review_goal(gid, bool(body.get("passed")), str(body.get("note", ""))[:500])})
+            if path == "/api/goals/cancel":
+                try:
+                    gid = int(body.get("id"))
+                except (TypeError, ValueError):
+                    return self._json({"ok": False}, 400)
+                agent.db.x("UPDATE goals SET status='cancelled' WHERE id=? AND source='creator' AND status IN ('open','review')", (gid,))
+                return self._json({"ok": True})
             if path == "/api/pets/brain":
                 if not self._local():
                     return self._json({"error": "only from the hub computer"}, 403)

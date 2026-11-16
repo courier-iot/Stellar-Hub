@@ -96,8 +96,13 @@ class Canvas:
 _DAY = False   # daytime: windows reflect light instead of glowing
 
 
+WINDOWS = []     # lit windows drawn by the last building_sprite call, for flickering lights on the clients
+
+
 def window(c, x, y, w, h, lit, glow="y"):
     c.rect(x, y, w, h, "k")
+    if lit and w > 2 and h > 2:
+        WINDOWS.append([x + 1, y + 1, w - 2, h - 2])
     if lit and _DAY:
         c.rect(x + 1, y + 1, w - 2, h - 2, "g")
         c.px(x + 1, y + 1, "s"); c.px(x + w - 2, y + h - 2, "G")
@@ -142,6 +147,7 @@ def neon_icon(c, x, y, icon, col):
         "gavel": [".###...", ".####..", "..###..", "...#.#.", "....#.#", "######."],
         "bag": ["..###..", ".#...#.", "#######", "#.....#", "#.....#", "#######"],
         "column": ["#######", ".#.#.#.", ".#.#.#.", ".#.#.#.", ".#.#.#.", "#######"],
+        "wrench": ["....##.", "...#..#", "....###", "...#...", "..#....", "##....."],
         "paw": ["#.#.#..", "#.#.#..", ".......", ".###...", "#####..", ".###..."],
     }
     for j, row in enumerate(shapes[icon]):
@@ -507,6 +513,33 @@ def b_store(lit):
     return c, d
 
 
+def b_mech_shop(lit):
+    """The Mechanical Workshop: a riveted garage with a roll-up door, a crane arm and a smokestack."""
+    c = Canvas(BW, BH)
+    c.box(2, 22, 40, 33, "O")                                                 # riveted garage
+    for y in range(24, 54, 4):
+        c.rect(3, y, 38, 1, "o")
+    for x in (4, 39):
+        for y in range(25, 53, 6):
+            c.px(x, y, "s")
+    c.rect(1, 20, 42, 3, "S"); c.rect(1, 20, 42, 1, "s")                      # roof lip
+    c.rect(6, 8, 4, 12, "S"); c.rect(5, 7, 6, 2, "g")                          # smokestack
+    c.rect(28, 12, 1, 8, "S"); c.rect(28, 12, 12, 1, "Y" if lit else "o")     # crane arm
+    c.rect(38, 13, 1, 4, "S"); c.rect(37, 17, 3, 2, "Y" if lit else "o")
+    c.rect(10, 34, 24, 21, "k")                                               # roll-up door
+    for y in range(35, 55, 2):
+        c.rect(11, y, 22, 1, "S" if y % 4 else "s")
+    c.rect(11, 52, 22, 2, "y" if lit else "o")
+    for x in range(11, 33, 4):
+        c.px(x, 52, "k"); c.px(x + 1, 53, "k")
+    window(c, 4, 36, 5, 6, lit, "Y"); window(c, 35, 36, 5, 6, lit, "Y")
+    d = (18, 40, 9, 15)
+    sign(c, 22, 23, "wrench", "Y", lit)
+    c.outline()
+    c.rect(0, 55, BW, 1, "k")
+    return c, d
+
+
 def b_museum(lit):
     c = Canvas(BW, BH)
     c.box(3, 26, 38, 29, "s")
@@ -536,7 +569,7 @@ STATION = [
     "............kk............",
 ]
 
-BUILDERS = {"home": b_home, "gallery": b_gallery, "park": b_park, "exchange": b_exchange, "pet_shop": b_pet_shop, "store": b_store, "museum": b_museum, "library": b_library, "internet_cafe": b_cafe, "post_office": b_post,
+BUILDERS = {"home": b_home, "gallery": b_gallery, "park": b_park, "exchange": b_exchange, "pet_shop": b_pet_shop, "store": b_store, "museum": b_museum, "mech_shop": b_mech_shop, "library": b_library, "internet_cafe": b_cafe, "post_office": b_post,
             "salon": b_salon, "bank": b_bank, "workshop": b_workshop, "greenhouse": b_greenhouse,
             "radio_tower": b_radio, "archive": b_archive, "spaceport": b_spaceport}
 ORDER = ["home", "library", "internet_cafe", "post_office", "greenhouse", "radio_tower",
@@ -549,6 +582,7 @@ def building_sprite(bid, variant, extra=None, with_door=False):
     lit = variant == "open"
     extra = extra or {}
     _DAY = not extra.get("night", True)
+    del WINDOWS[:]
     if bid == "home":
         c, (dx, dy, dw, dh) = b_home(lit, extra.get("floors", 1))
     elif bid == "gallery":
@@ -893,9 +927,19 @@ def world(layout, building_states, look, extras=None):
         if bid:
             variant = building_states.get(bid, "open")
             spr, dr = building_sprite(bid, variant, extras, with_door=True)
+            wins = [list(w) for w in WINDOWS] if variant == "open" else []
+            style = (extras.get("paints") or {}).get(bid) or {}
+            if style.get("paint") and variant in ("open", "closed"):
+                from .style import apply_paint
+                spr = apply_paint(spr, style["paint"])
             h = len(spr)
+            top = next((yy for yy, r in enumerate(spr) if r.strip(".")), 0)
+            row = spr[top]
+            beacon = [(len(row) - len(row.lstrip("."))) + len(row.strip(".")) // 2, max(0, top - 1)]
             buildings.append({"id": bid, "plot": i, "x": x, "y": base - h + 1, "w": BW, "h": h, "variant": variant,
-                              "door_x": x + BW // 2, "door": dr, "sprite": spr, "level": level, "feet_y": feet})
+                              "door_x": x + BW // 2, "door": dr, "sprite": spr, "level": level, "feet_y": feet,
+                              "windows": wins, "beacon": beacon, "roof_light": style.get("light"),
+                              "paint": style.get("paint")})
         else:
             buildings.append({"id": None, "plot": i, "x": x, "y": base - BH + 1, "w": BW, "h": BH, "variant": "empty",
                               "door_x": x + BW // 2, "sprite": empty_lot(i + 1), "level": level, "feet_y": feet})
@@ -911,7 +955,11 @@ def world(layout, building_states, look, extras=None):
             "aliases": {"studio": "radio_tower", "station": "spaceport"},
             "station": {"sprite": STATION, "x": 520, "y": 14} if extras.get("station") else None,
             "resident": {"frames": resident_frames(look), "form": look.get("form", "star_spirit"),
-                         "feet_y": FEET_Y, "floats": look.get("form", "star_spirit") == "star_spirit"},
+                         "feet_y": FEET_Y, "floats": look.get("form", "star_spirit") == "star_spirit",
+                         "accessory": extras.get("wearing")},
+            "weather": extras.get("weather"), "traffic": extras.get("traffic"),
+            "roof_lights": {"red": "#ff5d73", "gold": "#ffd86b", "cyan": "#5ef2ff", "green": "#4fe0a5",
+                            "magenta": "#ff4fd8", "white": "#eef1ff"},
             "twinkle": stars_for_twinkle(),
             "upper": {"state": upper, "x": 0, "y": UPPER_WALK_Y - 2, "sprite": upper_deck(upper), "lift_x": LIFT_X,
                       "feet_y": UPPER_FEET_Y} if upper else None}

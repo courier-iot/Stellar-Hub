@@ -50,7 +50,14 @@ class Updater:
     def read_watchdog_result(self):
         """After a Windows update, the watchdog leaves a note saying whether the installer succeeded."""
         prog = self.db.get("update_progress") or {}
-        if str(prog.get("stage", "")).startswith("Installing") and not os.path.exists(self.result_path):
+        installing = str(prog.get("stage", "")).startswith("Installing")
+        target = prog.get("target")
+        if installing and (not target or parse_version(self.current()) >= parse_version(target)):
+            # it's already on the version it was updating to (an installer that finished without its note, or
+            # the creator ran the new installer by hand): that's a success, not a failure
+            if not os.path.exists(self.result_path):
+                self._progress(f"Updated to v{self.current()} ✓")
+        elif installing and not os.path.exists(self.result_path):
             self._progress("The last update didn't finish", "Stellar Hub restarted on v" + self.current() + ". You can try "
                            "again, or run the installer from the latest release yourself (your resident and settings are kept).")
         try:
@@ -197,8 +204,10 @@ Start-Process -FilePath '{q(pyw)}' -ArgumentList '"{q(os.path.join(self.root, "r
         threading.Thread(target=self._apply, args=(st,), daemon=True).start()
         return {"ok": True, "message": f"Updating to v{st['latest']}…"}
 
-    def _progress(self, stage, error=None):
-        self.db.set("update_progress", {"stage": stage, "error": error, "ts": time.time()})
+    def _progress(self, stage, error=None, target=None):
+        old = self.db.get("update_progress") or {}
+        self.db.set("update_progress", {"stage": stage, "error": error, "ts": time.time(),
+                                        "target": target or old.get("target")})
 
     def _download_verified(self, name, assets, folder):
         if name not in assets:
@@ -225,7 +234,7 @@ Start-Process -FilePath '{q(pyw)}' -ArgumentList '"{q(os.path.join(self.root, "r
         tag, version, assets = st["tag"], st["latest"], st.get("assets", {})
         work = tempfile.mkdtemp(prefix="stellarhub-update-")
         try:
-            self._progress("Backing up your resident…")
+            self._progress("Backing up your resident…", target=version)
             self.agent.backup_now()
             if self.install_kind() == "installer":
                 self._progress("Downloading the installer…")
