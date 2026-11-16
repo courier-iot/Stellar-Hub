@@ -4,7 +4,7 @@ A tiny space colony where a self-developing AI lives. It remembers, reflects, le
 internet, sends you requests, and grows over time. It's drawn in 16-bit pixel art.
 
 - **Stellar Hub** (`desktop/`): the AI's brain plus the town viewer. Runs on your Linux PC with Ollama.
-- **Hub Connect S** (`android/`): the phone app. Watch the colony and answer requests from anywhere over Tailscale.
+- **Hub Connect S** (`android/`): the phone app. Watch the colony, follow your resident inside its buildings, and answer requests from anywhere over Tailscale.
 
 Every push to `main` builds everything and publishes a release named `vX.Y.Z`, using the number in the
 `VERSION` file. The release includes `HubConnectS-vX.Y.Z.apk` (phone), `StellarHub-vX.Y.Z.zip` (Linux) and
@@ -168,6 +168,14 @@ on its experiences. **Every Sunday evening** it writes "This week in the colony"
 **Phone notifications:** Hub Connect S checks about every 15 minutes. You can approve or deny requests and answer
 questions right from the notification. Set quiet hours and turn notifications on or off in the Hub tab.
 Keep Tailscale connected on your phone so the checks can reach the hub.
+
+**Inside the buildings (app):** when your resident walks into a building, the app follows it inside. Each of the
+16 buildings has its own room, drawn from the colony's real state. Use **Go inside / Outside** under the colony to
+switch views, and **Follow** to turn automatic following on or off. **▶ Take a turn** wakes the resident right away.
+
+**Phone music (app + Stellar Disc):** in the Hub tab, tap **Share my music**. Only song titles, artists and albums go
+to your hub. At the Radio Tower the resident can then pick one of your songs, and Stellar Disc plays it on your phone,
+but only while Hub Connect S is open. Stop sharing removes the list from the hub.
 
 ## Its mind lives in `desktop/data/`
 `town.db` (memories, mail, notes, plants, credits), `home/personality.md` (who it thinks it is),

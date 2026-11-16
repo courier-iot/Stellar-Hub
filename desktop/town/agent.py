@@ -6,7 +6,7 @@ import threading
 import time
 import traceback
 
-from . import prompts, sprites, web_tools
+from . import interiors, prompts, sprites, web_tools
 from .colony import COLOUR_PRICE, FORM_PRICE, ColonyMixin
 from .backup import make_backup
 from .exchange import ExchangeMixin
@@ -159,6 +159,18 @@ class Agent(ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
             self.mem.add("plan", "Today's goals: " + "; ".join(goals), self.db.get("location", "home"), 5)
 
     # ---------- the turn ----------
+    def offered_actions(self, bid):
+        """The actions shown to the model for a building (phone music only once the phone has shared its songs)."""
+        out = []
+        for a, d in BUILDINGS[bid]["actions"].items():
+            if a in ("list_phone_music", "play_phone_music"):
+                if not self.phone_songs():
+                    continue
+                if a == "play_phone_music":
+                    d += " (the app is OPEN right now)" if self.phone_online() else " (the app is closed right now)"
+            out.append((a, d))
+        return out
+
     def build_context(self, needs):
         born = self.db.get("born", time.time())
         day = int((time.time() - born) // 86400) + 1
@@ -212,7 +224,7 @@ class Agent(ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
             elif not self.is_available(bid):
                 bl.append(f"- {bid}: CLOSED for now.")
             else:
-                acts = "; ".join(f"{a} {d}" for a, d in b["actions"].items())
+                acts = "; ".join(f"{a} {d}" for a, d in self.offered_actions(bid))
                 acts = acts.replace("{colours}", ", ".join(sprites.COLOR_CHOICES)).replace(
                     "{skins}", ", ".join(sprites.SKIN_CHOICES)).replace("{shop}", self.shop_text()).replace(
                     "{move_cost}", str(self.cfg.get("move_cost", 1500)))
@@ -686,18 +698,7 @@ What do you do now?"""
                 if not it:
                     spots.append(None)
                     continue
-                icon, rows = None, None
-                if it["type"] == "painting":
-                    r = self.db.q("SELECT rows FROM paintings WHERE id=?", (it["id"],))
-                    rows = json.loads(r[0]["rows"]) if r else None
-                elif it["type"] == "curio" and it["id"] in CU.CATALOG:
-                    icon = CU.sprite(it["id"])
-                elif it["type"] == "plant":
-                    r = self.db.q("SELECT species FROM plants WHERE id=?", (it["id"],))
-                    if r and r[0]["species"] in SPECIES:
-                        icon = sprites.cutting_icon(*SPECIES[r[0]["species"]]["colors"])
-                elif it["type"] == "writing":
-                    icon = sprites.WRITING_ICON
+                icon, rows = self.showcase_art(it)
                 spots.append({"type": it["type"], "id": it["id"], "label": self.showcase_label(it),
                               "icon": icon, "rows": rows})
             floors.append(spots)
@@ -709,6 +710,91 @@ What do you do now?"""
             "digests": self.db.q("SELECT * FROM digests ORDER BY id DESC LIMIT 8"),
             "quizzes": self.db.q("SELECT topic, mastery, attempts, interval_days, due_ts FROM quizzes ORDER BY mastery DESC LIMIT 30"),
         }
+
+    def showcase_art(self, it):
+        """(icon, painting rows) for one showcase item."""
+        from . import curios as CU
+        from .plants import SPECIES
+        icon, rows = None, None
+        if it["type"] == "painting":
+            r = self.db.q("SELECT rows FROM paintings WHERE id=?", (it["id"],))
+            rows = json.loads(r[0]["rows"]) if r else None
+        elif it["type"] == "curio" and it["id"] in CU.CATALOG:
+            icon = CU.sprite(it["id"])
+        elif it["type"] == "plant":
+            r = self.db.q("SELECT species FROM plants WHERE id=?", (it["id"],))
+            if r and r[0]["species"] in SPECIES:
+                icon = sprites.cutting_icon(*SPECIES[r[0]["species"]]["colors"])
+        elif it["type"] == "writing":
+            icon = sprites.WRITING_ICON
+        return icon, rows
+
+    # ---------------------------------------------------------------- interiors (Hub Connect S follows it inside)
+    def interior_data(self, bid):
+        """The live details a building's room shows."""
+        from . import curios as CU
+        latest = lambda q: (lambda r: json.loads(r[0]["rows"]) if r else None)(self.db.q(q))
+        if bid == "home":
+            h = self.home()
+            show = []
+            for n in range(1, 13):
+                it = h["spots"].get("1", {}).get(str(n))
+                if not it:
+                    show.append(None)
+                    continue
+                icon, rows = self.showcase_art(it)
+                show.append({"icon": icon, "rows": rows})
+            return {"floors": h["floors"], "showcase": show,
+                    "latest": latest("SELECT rows FROM paintings ORDER BY id DESC LIMIT 1")}
+        if bid == "gallery":
+            hung = [{"id": p["id"], "rows": json.loads(p["rows"])} for p in
+                    self.db.q("SELECT id, rows FROM paintings WHERE hung='gallery' ORDER BY hung_ts LIMIT 12")]
+            return {"hung": hung, "latest": latest(
+                "SELECT rows FROM paintings ORDER BY (hung IS NULL) DESC, id DESC LIMIT 1")}
+        if bid == "greenhouse":
+            plants = self.world_extras()["plants"]
+            lights = [p["light"] for p in self.pot_plants() if p.get("light")]
+            return {"plants": plants, "light": max(set(lights), key=lights.count) if lights else "normal"}
+        if bid == "radio_tower":
+            return {"playing": bool(self.now_playing() or self.phone_playing())}
+        if bid == "bank":
+            return {"credits": self.credits()}
+        if bid == "post_office":
+            return {"letters": self.db.q("SELECT COUNT(*) AS n FROM letters WHERE read=0")[0]["n"]}
+        if bid == "exchange":
+            col = self.collection()
+            rare = {"legendary": 0, "rare": 1, "uncommon": 2}
+            best = sorted((c for c in col if c in CU.CATALOG), key=lambda c: (rare.get(CU.CATALOG[c]["rarity"], 3), c))
+            return {"curios": [CU.sprite(c) for c in best[:4]]}
+        if bid == "studio":
+            return {"compositions": self.db.q("SELECT COUNT(*) AS n FROM compositions")[0]["n"]}
+        if bid == "archive":
+            return {"chapters": self.db.q("SELECT COUNT(*) AS n FROM chapters")[0]["n"],
+                    "memories": self.db.q("SELECT COUNT(*) AS n FROM memories")[0]["n"]}
+        if bid == "workshop":
+            return {"programs": self.db.q("SELECT COUNT(*) AS n FROM programs")[0]["n"]}
+        if bid == "spaceport":
+            return {"away": bool(self.expedition())}
+        if bid == "internet_cafe":
+            return {"storm": self.storm()}
+        return {}
+
+    def interior(self, bid):
+        if bid not in interiors.ROOMS:
+            return None
+        return interiors.interior(bid, self.interior_data(bid), sprites.resident_palette(self.appearance()))
+
+    def interior_status(self):
+        """Which room the resident is in, what it's doing there, and the room's version for the app's cache."""
+        loc = self.db.get("location", "home")
+        if loc not in interiors.ROOMS:
+            return None
+        act = self.db.get("last_act") or {}
+        action = act.get("action") if act.get("building") == loc else None
+        if self.is_asleep() and loc == "home":
+            action = "sleep"
+        return {"id": loc, "action": action,
+                "version": interiors.interior_version(loc, self.interior_data(loc))}
 
     def featured_painting(self):
         r = self.db.q("SELECT rows FROM paintings WHERE hung='gallery' ORDER BY hung_ts DESC LIMIT 1")
@@ -765,4 +851,7 @@ What do you do now?"""
             "credits": self.credits(), "now_playing": self.now_playing(),
             "away": (lambda e: {"topic": e["topic"], "return_ts": e["return_ts"]} if e else None)(self.expedition()),
             "latest_event": self.db.q("SELECT COALESCE(MAX(id),0) AS m FROM events")[0]["m"],
+            "interior": self.interior_status(),
+            "phone_play": self.phone_request(),
+            "phone_music": self.phone_music_info(),
         }

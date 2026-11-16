@@ -2,6 +2,13 @@
 
 Stellar Hub's update manager shows the entries newer than the version you have.
 
+## v0.9.0
+- Added: follow your resident inside. Every one of the 16 buildings has its own room in Hub Connect S, showing real things from the colony: the paintings hung in the Gallery, the plants in the Greenhouse, the Home Dome showcase, the Exchange's best curios and more. The resident walks to the easel, the bed, the telescope or a painting on the wall depending on what it's doing, and wanders around between turns.
+- Added: walking in and out of buildings. Airlocks open, the resident steps inside or back out, and little effects show what it's doing (notes, paint, water, sleep).
+- Added: phone music through Stellar Disc. Share your phone's song list from the Hub tab, and at the Radio Tower your resident can pick a song that Stellar Disc plays on your phone, only while Hub Connect S is open.
+- Added: a Take a turn button right under the colony, with Go inside / Outside and Follow on/off.
+- Changed: Live chat is now at the top of the Chat tab.
+
 ## v0.8.4
 - Fixed: Hub Connect S crashed when you tapped Save & test (and could crash on opening once paired) on Android 14 and newer. A required network permission for the background notification check was missing.
 - Added: if the app ever crashes, the next time it opens it shows what happened, so it can be screenshotted and fixed.

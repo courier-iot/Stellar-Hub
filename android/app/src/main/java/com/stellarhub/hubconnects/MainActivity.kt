@@ -1,6 +1,7 @@
 package com.stellarhub.hubconnects
 
 import android.app.Activity
+import android.app.SearchManager
 import android.content.ContentValues
 import android.graphics.Bitmap
 import android.media.MediaPlayer
@@ -75,12 +76,14 @@ class MainActivity : Activity() {
         "solve_puzzle" to "solving a puzzle", "hang_painting" to "hanging a painting", "compose" to "composing music",
         "play_composition" to "playing its own song", "station_study" to "studying",
         "check_exchange" to "browsing the Exchange", "sell_curio" to "selling curios", "trade_up" to "trading up curios",
-        "auction_curio" to "starting an auction"
+        "auction_curio" to "starting an auction", "list_phone_music" to "browsing the music on your phone",
+        "play_phone_music" to "playing a song on your phone"
     )
     private val hobbyIcons = mapOf("painting" to "🎨", "writing" to "✍️", "composing" to "🎼", "astronomy" to "🔭",
         "collecting" to "🧺", "games" to "♟️", "gardening" to "🌱", "coding" to "🛠")
 
     private val io = Executors.newSingleThreadExecutor()
+    private val side = Executors.newSingleThreadExecutor()   // rooms and the music list, so a long chat reply doesn't hold them up
     private val main = Handler(Looper.getMainLooper())
     private val prefs by lazy { getSharedPreferences("hub", MODE_PRIVATE) }
 
@@ -96,6 +99,9 @@ class MainActivity : Activity() {
     private var resumed = false
     private var player: MediaPlayer? = null
     private var chessSel: String? = null
+    private lateinit var turnBtn: Button
+    private lateinit var viewBtn: Button
+    private lateinit var followBtn: Button
 
     private val poller = object : Runnable {
         override fun run() {
@@ -134,7 +140,25 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(dp(52), dp(40)).apply { setMargins(0, 0, dp(10), 0) })
         root.addView(headRow)
         town = TownView(this)
+        town.follow = prefs.getBoolean("follow", true)
+        town.onNeedRoom = { id -> fetchRoom(id) }
+        town.onViewChanged = { updateViewButtons() }
         root.addView(town, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        // controls right under the colony: take a turn, step inside / outside, follow on or off
+        turnBtn = smallButton("▶ Take a turn", cyan) { takeTurn() }
+        viewBtn = smallButton("Go inside", textCol) { town.showInside(!town.isInside) }
+        followBtn = smallButton("", textCol) {
+            town.follow = !town.follow
+            prefs.edit().putBoolean("follow", town.follow).apply()
+            if (town.follow && town.canGoInside) town.showInside(true)
+            updateViewButtons()
+        }
+        val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(8), dp(6), dp(8), 0) }
+        controls.addView(turnBtn, LinearLayout.LayoutParams(0, dp(38), 1.3f).apply { setMargins(dp(2), 0, dp(2), 0) })
+        controls.addView(viewBtn, LinearLayout.LayoutParams(0, dp(38), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
+        controls.addView(followBtn, LinearLayout.LayoutParams(0, dp(38), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
+        root.addView(controls)
+        updateViewButtons()
         caption = label("Connecting to Stellar Hub…", 14f, dim).apply { setPadding(dp(14), dp(8), dp(14), dp(8)) }
         root.addView(caption)
 
@@ -177,6 +201,9 @@ class MainActivity : Activity() {
         resumed = true
         main.removeCallbacks(poller)
         main.post(poller)
+        if (prefs.getBoolean("share_music", false) && api != null &&
+            System.currentTimeMillis() - prefs.getLong("music_synced", 0L) > 24 * 3600 * 1000L &&
+            checkSelfPermission(audioPermission) == PackageManager.PERMISSION_GRANTED) shareMusic(false)
     }
 
     override fun onPause() {
@@ -222,7 +249,7 @@ class MainActivity : Activity() {
     private fun connectFromPrefs() {
         val addr = prefs.getString("address", "") ?: ""
         val code = prefs.getString("code", "") ?: ""
-        api = if (addr.isNotBlank() && code.isNotBlank()) Api(addr, code) else null
+        api = if (addr.isNotBlank() && code.isNotBlank()) Api(addr, code, foreground = true) else null
         worldVersion = null
     }
 
@@ -243,6 +270,46 @@ class MainActivity : Activity() {
         background = GradientDrawable().apply { setColor(color); cornerRadius = dp(8).toFloat() }
         setPadding(dp(14), dp(6), dp(14), dp(6))
         setOnClickListener { onClick() }
+    }
+
+    private fun smallButton(t: String, color: Int, onClick: () -> Unit) = Button(this).apply {
+        text = t
+        isAllCaps = false
+        textSize = 12f
+        setTextColor(color)
+        setPadding(dp(4), 0, dp(4), 0)
+        background = GradientDrawable().apply { setColor(panel); setStroke(dp(1), line); cornerRadius = dp(8).toFloat() }
+        setOnClickListener { onClick() }
+    }
+
+    private fun updateViewButtons() {
+        if (!::viewBtn.isInitialized) return
+        viewBtn.text = if (town.isInside) "◀ Outside" else "Go inside ▶"
+        viewBtn.isEnabled = town.isInside || town.canGoInside
+        viewBtn.alpha = if (viewBtn.isEnabled) 1f else 0.45f
+        followBtn.text = if (town.follow) "Follow: ON" else "Follow: OFF"
+        followBtn.setTextColor(if (town.follow) good else dim)
+    }
+
+    private fun takeTurn() {
+        if (lastStatus?.optBoolean("busy") == true) { toast("It's already thinking…"); return }
+        turnBtn.text = "Thinking…"
+        bgTask({ it.post("/api/turn") }) {
+            toast("Your resident is taking a turn…")
+            main.postDelayed({ pollStatus() }, 1500)
+        }
+    }
+
+    private fun fetchRoom(id: String) {
+        val a = api ?: return
+        side.execute {
+            try {
+                val room = a.getObject("/api/interior/$id")
+                main.post { if (!isFinishing) town.setRoom(room) }
+            } catch (e: Exception) {
+                main.post { town.roomFailed(id) }
+            }
+        }
     }
 
     private fun input(hint: String, lines: Int = 1, value: String = "") = EditText(this).apply {
@@ -339,7 +406,15 @@ class MainActivity : Activity() {
         val credits = s.optInt("credits", 0)
         header.text = if (s.optString("name").let { it.isBlank() || it == "null" }) "HUB CONNECT S" else "HUB CONNECT S   ◈ $credits"
         val prev = s.optString("prev_location").takeIf { it.isNotBlank() && it != "null" }
-        town.setLocation(loc, prev, s.optDouble("last_turn", 0.0))
+        val room = s.optJSONObject("interior")
+        town.setPlace(loc, prev, s.optDouble("last_turn", 0.0),
+            room?.optString("action")?.takeIf { it.isNotBlank() && it != "null" },
+            room?.optString("version")?.takeIf { it.isNotBlank() && it != "null" })
+        if (::turnBtn.isInitialized) {
+            turnBtn.text = if (s.optBoolean("busy")) "Thinking…" else "▶ Take a turn"
+            updateViewButtons()
+        }
+        s.optJSONObject("phone_play")?.let { playOnPhone(it) }
         val name = s.optString("name")
         if (name.isBlank() || name == "null") {
             caption.text = "A star spirit is about to be born. Tap Hub → Take a turn now."
@@ -794,6 +869,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        side.shutdownNow()
         player?.release()
         player = null
         super.onDestroy()
@@ -921,27 +997,6 @@ class MainActivity : Activity() {
 
     private fun renderChat(st: JSONObject) {
         content.removeAllViews()
-        val sc = card()
-        sc.addView(label("ASK WHAT IT REMEMBERS", 13f, dim, true))
-        val qbox = input("e.g. What do you remember about the trader?")
-        sc.addView(spaced(qbox))
-        val answer = label("", 14f, cyan)
-        sc.addView(rowOf(button("Ask", cyan) {
-            val q = qbox.text.toString().trim()
-            if (q.isEmpty()) return@button
-            answer.text = "Remembering…"
-            bgTask({ it.post("/api/search", JSONObject().put("q", q)) }) { r ->
-                val mems = r.optJSONArray("memories") ?: JSONArray()
-                val sb = StringBuilder(r.optString("answer"))
-                for (i in 0 until minOf(4, mems.length())) {
-                    val m = mems.getJSONObject(i)
-                    sb.append("\n\n• ").append(fmt(m.optDouble("ts", 0.0))).append(": ").append(m.optString("text").take(200))
-                }
-                answer.text = sb.toString()
-            }
-        }))
-        sc.addView(spaced(answer))
-        content.addView(sc)
         val c = card()
         c.addView(label("LIVE CHAT", 13f, dim, true))
         c.addView(label("Your resident pauses what it's doing to talk with you, and remembers the conversation afterwards.", 12f, dim))
@@ -968,6 +1023,28 @@ class MainActivity : Activity() {
             bgTask({ it.post("/api/chat/end") }) { toast("Chat saved to its memories"); loadChat() }
         }))
         content.addView(c)
+
+        val sc = card()
+        sc.addView(label("ASK WHAT IT REMEMBERS", 13f, dim, true))
+        val qbox = input("e.g. What do you remember about the trader?")
+        sc.addView(spaced(qbox))
+        val answer = label("", 14f, cyan)
+        sc.addView(rowOf(button("Ask", cyan) {
+            val q = qbox.text.toString().trim()
+            if (q.isEmpty()) return@button
+            answer.text = "Remembering…"
+            bgTask({ it.post("/api/search", JSONObject().put("q", q)) }) { r ->
+                val mems = r.optJSONArray("memories") ?: JSONArray()
+                val sb = StringBuilder(r.optString("answer"))
+                for (i in 0 until minOf(4, mems.length())) {
+                    val m = mems.getJSONObject(i)
+                    sb.append("\n\n• ").append(fmt(m.optDouble("ts", 0.0))).append(": ").append(m.optString("text").take(200))
+                }
+                answer.text = sb.toString()
+            }
+        }))
+        sc.addView(spaced(answer))
+        content.addView(sc)
 
         val lc = card()
         lc.addView(label("WRITE A LETTER", 13f, dim, true))
@@ -1031,6 +1108,7 @@ class MainActivity : Activity() {
             }
         ))
         content.addView(nc)
+        content.addView(phoneMusicCard())
 
         val s = lastStatus ?: return
         // Resident
@@ -1056,9 +1134,7 @@ class MainActivity : Activity() {
             res.addView(spaced(label("Today's goals", 12f, dim, true)))
             for (i in 0 until goals.length()) res.addView(label("• " + goals.optString(i), 14f))
         }
-        res.addView(rowOf(button(if (s.optBoolean("busy")) "Thinking…" else "Take a turn now", cyan) {
-            bgTask({ it.post("/api/turn") }) { toast("Your resident is thinking…"); main.postDelayed({ pollStatus() }, 1500) }
-        }))
+        res.addView(rowOf(button(if (s.optBoolean("busy")) "Thinking…" else "Take a turn now", cyan) { takeTurn() }))
         content.addView(res)
 
         // Buildings
@@ -1095,6 +1171,107 @@ class MainActivity : Activity() {
 
         val err = s.optString("last_error")
         if (err.isNotBlank() && err != "null") content.addView(label("Last problem on the hub: $err", 12f, bad))
+    }
+
+    // ------------------------------------------------------------------ phone music (Stellar Disc)
+    private val discPackage = "com.stellapp.disc"
+    private val audioPermission get() =
+        if (Build.VERSION.SDK_INT >= 33) "android.permission.READ_MEDIA_AUDIO" else "android.permission.READ_EXTERNAL_STORAGE"
+
+    private fun discInstalled(): Boolean = try {
+        packageManager.getPackageInfo(discPackage, 0); true
+    } catch (e: PackageManager.NameNotFoundException) { false }
+
+    private fun phoneMusicCard(): LinearLayout {
+        val c = card()
+        c.addView(label("Phone music · Stellar Disc", 13f, dim, true))
+        c.addView(label("Share the song list from your phone with your resident. At the Radio Tower it can pick one, " +
+            "and Stellar Disc plays it on your phone, only while Hub Connect S is open. Only titles, artists and " +
+            "albums are sent to your hub, never the files.", 13f, dim))
+        val on = prefs.getBoolean("share_music", false)
+        if (!discInstalled()) c.addView(spaced(label("Stellar Disc isn't installed on this phone yet.", 13f, warn)))
+        val info = lastStatus?.optJSONObject("phone_music")
+        if (on && info != null) c.addView(spaced(label("${info.optInt("songs")} songs shared · updated ${fmt(info.optDouble("ts", 0.0))}", 13f, good)))
+        if (on) {
+            c.addView(rowOf(
+                button("Update song list", cyan) { shareMusic(true) },
+                button("Stop sharing", dim) {
+                    prefs.edit().putBoolean("share_music", false).apply()
+                    bgTask({ it.post("/api/phone/forget") }) { toast("Your phone's song list was removed from the hub"); pollStatusThenHub() }
+                }))
+        } else {
+            c.addView(rowOf(button("Share my music", cyan) {
+                prefs.edit().putBoolean("share_music", true).apply()
+                shareMusic(true)
+            }))
+        }
+        return c
+    }
+
+    /** Reads the song list from the phone's media library and sends it to the hub. */
+    private fun shareMusic(announce: Boolean) {
+        if (checkSelfPermission(audioPermission) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(audioPermission), 7)
+            return
+        }
+        val a = api ?: run { toast("Set up the connection first"); return }
+        if (announce) toast("Reading your music…")
+        side.execute {
+            try {
+                val tracks = JSONArray()
+                val cols = arrayOf(MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.ALBUM)
+                contentResolver.query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, cols,
+                    MediaStore.Audio.Media.IS_MUSIC + " != 0", null, MediaStore.Audio.Media.TITLE + " ASC")?.use { cur ->
+                    while (cur.moveToNext() && tracks.length() < 5000) {
+                        val title = cur.getString(0) ?: continue
+                        val artist = cur.getString(1)?.takeIf { it != "<unknown>" } ?: ""
+                        tracks.put(JSONObject().put("title", title).put("artist", artist).put("album", cur.getString(2) ?: ""))
+                    }
+                }
+                val r = a.post("/api/phone/music", JSONObject().put("tracks", tracks))
+                prefs.edit().putLong("music_synced", System.currentTimeMillis()).apply()
+                main.post {
+                    if (isFinishing) return@post
+                    if (announce) toast("Shared ${r.optInt("songs")} songs with your resident")
+                    pollStatusThenHub()
+                }
+            } catch (e: Exception) {
+                main.post { if (!isFinishing) toast("Couldn't share your music: ${e.message}") }
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 7) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) shareMusic(true)
+            else { prefs.edit().putBoolean("share_music", false).apply(); toast("Music access is needed to share your song list"); if (tab == "hub") showTab("hub") }
+        }
+    }
+
+    /** The resident asked for a song: Stellar Disc plays it, but only while the app is on screen. */
+    private fun playOnPhone(req: JSONObject) {
+        val id = req.optLong("id")
+        if (!resumed || !prefs.getBoolean("share_music", false) || id == prefs.getLong("played_id", 0L)) return
+        prefs.edit().putLong("played_id", id).apply()
+        val title = req.optString("title")
+        val artist = req.optString("artist")
+        var ok = false
+        var note = ""
+        if (!discInstalled()) note = "Stellar Disc isn't installed" else {
+            val query = if (artist.isNotBlank() && artist != "unknown artist") "$title by $artist" else title
+            val intent = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).setPackage(discPackage)
+                .putExtra(SearchManager.QUERY, query)
+            try {
+                startActivity(intent)   // opens on top of Hub Connect S: Back comes straight back here
+                ok = true
+                val who = lastStatus?.optString("name")?.takeIf { it.isNotBlank() && it != "null" } ?: "Your resident"
+                toast("$who put on \"$title\" in Stellar Disc")
+            } catch (e: Exception) {
+                note = e.message ?: "couldn't open Stellar Disc"
+            }
+        }
+        bgTask({ it.post("/api/phone/played", JSONObject().put("id", id).put("ok", ok).put("note", note)) }) { }
     }
 
     private fun pollStatusThenHub() {

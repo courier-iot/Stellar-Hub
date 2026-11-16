@@ -122,12 +122,12 @@ def make_server(agent, host, port, pair_code):
         def _json(self, obj, code=200):
             self._send(json.dumps(obj), code=code)
 
-        def _body(self):
+        def _body(self, limit=100_000):
             try:
                 n = int(self.headers.get("Content-Length") or 0)
             except ValueError:
                 return {}
-            if not n or n > 100_000:
+            if not n or n > limit:
                 return {}
             try:
                 return json.loads(self.rfile.read(n).decode())
@@ -149,6 +149,8 @@ def make_server(agent, host, port, pair_code):
                 if _blocked(self.client_address[0]):
                     return self._json({"error": "too many wrong pair codes, try again in 5 minutes"}, 429)
                 return self._json({"error": "wrong or missing pair code"}, 401)
+            if self.headers.get("X-Hub-App") == "open":
+                agent.phone_here()
             try:
                 limit = max(1, min(500, int((qs.get("limit") or ["60"])[0])))
             except ValueError:
@@ -157,6 +159,10 @@ def make_server(agent, host, port, pair_code):
                 return self._json({"ok": True, "app": "Stellar Hub", "name": agent.db.get("name")})
             if u.path == "/api/status":
                 return self._json(agent.status())
+            m = re.fullmatch(r"/api/interior/(\w+)", u.path)
+            if m:
+                room = agent.interior(m.group(1))
+                return self._json(room) if room else self._json({"error": "no such room"}, 404)
             if u.path == "/api/world":
                 return self._json(agent.world())
             if u.path == "/api/pairing":
@@ -227,7 +233,25 @@ def make_server(agent, host, port, pair_code):
             u = urlparse(self.path)
             if not self._authed(parse_qs(u.query)):
                 return self._json({"error": "wrong or missing pair code"}, 401)
-            path, body = u.path, self._body()
+            path = u.path
+            body = self._body(2_000_000 if path == "/api/phone/music" else 100_000)
+            if self.headers.get("X-Hub-App") == "open":
+                agent.phone_here()
+            if path == "/api/phone/music":
+                tracks = body.get("tracks")
+                if not isinstance(tracks, list):
+                    return self._json({"ok": False, "error": "tracks must be a list"}, 400)
+                return self._json({"ok": True, "songs": agent.set_phone_library(tracks)})
+            if path == "/api/phone/forget":
+                agent.db.set("phone_music", None)
+                return self._json({"ok": True})
+            if path == "/api/phone/played":
+                try:
+                    rid = int(body.get("id"))
+                except (TypeError, ValueError):
+                    return self._json({"ok": False}, 400)
+                ok = agent.phone_played(rid, bool(body.get("ok")), str(body.get("note", ""))[:200])
+                return self._json({"ok": ok})
             m = re.fullmatch(r"/api/requests/(\d+)/reply", path)
             if m:
                 ok = agent.reply_request(int(m.group(1)), body.get("decision", ""), str(body.get("reply", ""))[:3000])

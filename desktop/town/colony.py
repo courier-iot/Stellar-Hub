@@ -458,6 +458,92 @@ class ColonyMixin:
             return "I turned the music off."
         return "Nothing was playing."
 
+    # ---------------------------------------------------------------- phone music (Stellar Disc on the creator's phone)
+    PHONE_FRESH = 240        # the app counts as open if it checked in within this many seconds
+
+    def phone_here(self):
+        """Hub Connect S is open on the creator's phone right now."""
+        self._phone_seen = time.time()
+
+    def phone_online(self):
+        return time.time() - getattr(self, "_phone_seen", 0) < self.PHONE_FRESH
+
+    def set_phone_library(self, tracks):
+        songs = []
+        for t in (tracks or [])[:5000]:
+            if not isinstance(t, dict):
+                continue
+            title = str(t.get("title") or "").strip()[:120]
+            if not title:
+                continue
+            songs.append({"id": len(songs) + 1, "title": title,
+                          "artist": str(t.get("artist") or "unknown artist").strip()[:80] or "unknown artist",
+                          "album": str(t.get("album") or "").strip()[:80]})
+        self.db.set("phone_music", {"ts": time.time(), "songs": songs})
+        return len(songs)
+
+    def phone_songs(self):
+        return (self.db.get("phone_music") or {}).get("songs", [])
+
+    def phone_music_info(self):
+        pm = self.db.get("phone_music")
+        return {"songs": len(pm.get("songs", [])), "ts": pm.get("ts")} if pm else None
+
+    def phone_request(self):
+        """A song the resident asked the phone to play, waiting for the app to pick it up."""
+        r = self.db.get("phone_play")
+        if r and not r.get("done") and time.time() - r["ts"] < 600:
+            return {k: r[k] for k in ("id", "title", "artist", "album", "ts")}
+        return None
+
+    def phone_playing(self):
+        r = self.db.get("phone_play")
+        return bool(r and r.get("ok") and time.time() - r.get("done", 0) < 240)
+
+    def phone_played(self, rid, ok, note=""):
+        r = self.db.get("phone_play")
+        if not r or r.get("id") != rid or r.get("done"):
+            return False
+        r["done"], r["ok"] = time.time(), bool(ok)
+        self.db.set("phone_play", r)
+        label = f"\"{r['title']}\" by {r['artist']}"
+        self.mem.add("observation", f"My creator's phone {'played' if ok else 'could not play'} {label} through Stellar Disc."
+                     + (f" ({note[:120]})" if note else ""), "radio_tower", 2)
+        return True
+
+    def act_list_phone_music(self, a, imp):
+        songs = self.phone_songs()
+        if not songs:
+            return "My creator hasn't shared their phone's music with me yet."
+        q = words(str(a.get("search", "")))
+        if q:
+            hits = [s for s in songs if q & words(f"{s['title']} {s['artist']} {s['album']}")][:10]
+        else:
+            import random
+            hits = random.sample(songs, min(10, len(songs)))
+        if not hits:
+            return f"No songs on the phone matched. It has {len(songs)} songs."
+        return f"{len(songs)} songs on my creator's phone. Found: " + "; ".join(
+            f"#{s['id']} {s['title']} by {s['artist']}" for s in hits)
+
+    def act_play_phone_music(self, a, imp):
+        songs = self.phone_songs()
+        try:
+            song = songs[int(a.get("song_id")) - 1]
+        except (TypeError, ValueError, IndexError):
+            return "I couldn't find that song on the phone. I should list the phone's music first."
+        label = f"\"{song['title']}\" by {song['artist']}"
+        if not self.phone_online():
+            return f"I wanted to play {label} on my creator's phone, but Hub Connect S isn't open there right now."
+        if self.quiet_now():
+            return f"It's quiet hours, so I hummed {label} to myself instead."
+        if self._usage().get("plays", 0) >= self.cfg.get("radio", {}).get("plays_per_day", 12):
+            return "I've played a lot of music today. The radio needs a rest."
+        self._bump("plays")
+        self.db.set("phone_play", {"id": int(time.time() * 1000) % 2_000_000_000, "ts": time.time(),
+                                   "title": song["title"], "artist": song["artist"], "album": song["album"]})
+        return f"I asked Stellar Disc on my creator's phone to play {label}."
+
     def act_broadcast_log(self, a, imp):
         text = str(a.get("text", "")).strip()
         if not text:

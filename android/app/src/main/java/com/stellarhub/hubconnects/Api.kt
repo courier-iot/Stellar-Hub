@@ -8,7 +8,7 @@ import java.net.URL
 class ApiException(message: String) : Exception(message)
 
 /** Talks to Stellar Hub over Tailscale. Every call must run off the main thread. */
-class Api(address: String, private val pairCode: String) {
+class Api(address: String, private val pairCode: String, private val foreground: Boolean = false) {
 
     val base: String = normalize(address)
 
@@ -18,6 +18,7 @@ class Api(address: String, private val pairCode: String) {
         conn.connectTimeout = 8000
         conn.readTimeout = 180000  // chat replies from a local model can take a while
         conn.setRequestProperty("X-Hub-Token", pairCode.trim().uppercase())
+        if (foreground) conn.setRequestProperty("X-Hub-App", "open")   // the app is on screen (phone music can play)
         return conn
     }
 

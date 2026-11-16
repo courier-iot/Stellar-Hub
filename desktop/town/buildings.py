@@ -136,6 +136,9 @@ BUILDINGS = {
             "play_music": "{\"song_id\": <id>}  play a song (out loud in the colony)",
             "stop_music": "{}  stop playing",
             "broadcast_log": "{\"text\": \"...\"}  broadcast a colony log entry: what's happening, how you feel",
+            "list_phone_music": "{\"search\": \"<words, or empty for a random pick>\"}  browse the songs on your creator's phone",
+            "play_phone_music": ("{\"song_id\": <id>}  play a song on your creator's phone through their Stellar Disc "
+                                 "player. Only works while they have Hub Connect S open"),
         },
     },
     "archive": {

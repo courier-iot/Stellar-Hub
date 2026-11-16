@@ -484,7 +484,7 @@ ORDER = ["home", "library", "internet_cafe", "post_office", "greenhouse", "radio
 X0, STEP = 13, 53
 
 
-def building_sprite(bid, variant, extra=None):
+def building_sprite(bid, variant, extra=None, with_door=False):
     global _DAY
     lit = variant == "open"
     extra = extra or {}
@@ -523,7 +523,7 @@ def building_sprite(bid, variant, extra=None):
         for i in range(0, 44, 7):
             c.px(i, 54, "Y")
         c.rect(30, 48, 5, 7, "Y"); c.rect(31, 51, 3, 1, "w"); c.rect(29, 54, 7, 1, "k")   # cone
-    return c.rows()
+    return (c.rows(), [dx, dy, dw, dh]) if with_door else c.rows()
 
 
 # ---------------------------------------------------------------- background
@@ -782,10 +782,10 @@ def world(layout, building_states, look, extras=None):
         bid = layout.get(i) if isinstance(layout, dict) else None
         if bid:
             variant = building_states.get(bid, "open")
-            spr = building_sprite(bid, variant, extras)
+            spr, dr = building_sprite(bid, variant, extras, with_door=True)
             h = len(spr)
             buildings.append({"id": bid, "plot": i, "x": x, "y": WALK_Y - h + 1, "w": BW, "h": h, "variant": variant,
-                              "door_x": x + BW // 2, "sprite": spr})
+                              "door_x": x + BW // 2, "door": dr, "sprite": spr})
         else:
             buildings.append({"id": None, "plot": i, "x": x, "y": WALK_Y - BH + 1, "w": BW, "h": BH, "variant": "empty",
                               "door_x": x + BW // 2, "sprite": empty_lot(i + 1)})
