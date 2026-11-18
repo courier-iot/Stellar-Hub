@@ -391,7 +391,9 @@ class LifeMixin:
     def maybe_space_event(self):
         if self.space_event():
             return
-        per_week = self.cfg.get("events_per_week", 4)
+        from . import worlds
+        worlds.refresh_season()
+        per_week = self.cfg.get("events_per_week", 4) * worlds.season()["event_rate"]   # v0.13.6: seasons
         turns_per_week = 7 * 16 * 60 / max(5, self.cfg["tick_minutes"])
         if random.random() < per_week / turns_per_week:
             self.start_space_event(random.choices(list(EVENT_TYPES), [e["weight"] for e in EVENT_TYPES.values()])[0])

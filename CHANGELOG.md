@@ -2,6 +2,12 @@
 
 Stellar Hub's update manager shows the entries newer than the version you have.
 
+## v0.13.6
+- Added: each world now colours how the resident talks and what it notices. In the forest it speaks with a gentle storybook warmth and treats the wisps and fireflies as neighbours; on the ocean it plans around the tides and weather and uses the odd sailor's phrase; on the Moon it notices the ringed planet, the stars and the quiet. Its personality stays its own.
+- Added: five seasons in every world, each lasting one calendar month: 🌱 Spring, ☀️ Summer, 🍂 Autumn, ❄️ Winter, then a special season with far more events (☄️ Starfall on the Moon, ✨ Wild Magic in the forest, 🌀 Storm Season on the ocean). December 2026 is Winter. Each season recolours the world (autumn leaves, winter snow and frost, magic glow), shifts which events happen and how often (fewer in winter, 2.5x in the special season), and the resident knows the season and lets it shape what it does.
+- Added: a 4-day transition at the end of every month: colours, events and the resident's mood blend gradually into the next season ("Autumn turning to Winter").
+- Changed: the season shows on the dashboard (under the town and in Hub tab → World) and as an emoji next to your credits in Hub Connect S.
+
 ## v0.13.5
 - Added: world types. Choose where the colony lives when you first install: the 🌙 Moon colony (the original), the 🌲 Enchanted Forest (a glowing night forest with lanterns, luminous mushrooms, fireflies and a stream) or the 🌊 Ocean world (a boardwalk colony on a moonlit sea, with coral, kelp and a lighthouse). Each world has its own backdrop and colours, its own drawing of every building (a treehouse home, a moon-window library tower, a burrow gallery, a willow-pond park, a wizard-tower trade hall, a fallen-log pet shop, a cherry-tree salon, a toadstool market and a wishing well in the forest; a coral cottage, a lighthouse library, a shipwreck museum and a submarine dock on the ocean), its own name for every building and pet, its own descriptions, and its own mix of events (fireflies, pollen and thunderstorms in the forest; sea glass, high tides and magnetic storms on the ocean).
 - Added: switch worlds any time on the dashboard (Hub tab → World). Nothing is lost: the resident, its memories, buildings, credits and pets all move with it, and old memories read with the new names.

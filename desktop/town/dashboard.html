@@ -373,6 +373,7 @@
     <div class="row" style="margin-top:8px"><select id="worldpick"></select>
       <button onclick="switchWorld()">Move the colony here</button></div>
     <div id="worldblurb" class="meta"></div>
+    <div id="seasonnow" class="meta" style="margin-top:6px"></div>
   </section>
   <section>
     <h2>Events</h2>
@@ -430,6 +431,9 @@ async function loadWorlds() {
   rw.innerHTML = opts; rw.value = WORLDS.current;
   const blurb = () => { const c = WORLDS.choices.find(c => c.id === pick.value); document.getElementById("worldblurb").textContent = c ? c.blurb : ""; };
   pick.onchange = blurb; blurb();
+  if (WORLDS.season) document.getElementById("seasonnow").innerHTML =
+    `<b>${esc(WORLDS.season.title)}</b>: ${esc(WORLDS.season.about)} (${WORLDS.season.days_left} day(s) left, then ${esc(WORLDS.season.next)}). ` +
+    `Seasons change every month: Spring, Summer, Autumn, Winter, then a special season with many more events.`;
   document.getElementById("resetbox").style.display = WORLDS.can_reset ? "" : "none";
   for (const [id, title] of Object.entries(WORLDS.events || {})) {
     const b = document.querySelector(`button[onclick="spaceEvent('${id}')"]`);
@@ -787,6 +791,7 @@ async function refreshInner() {
              (act.thought ? `<br><i>"${esc(act.thought)}"</i>` : "");
   if (s.now_playing) cap += `<br>♪ Now playing: ${esc(s.now_playing.title)} by ${esc(s.now_playing.artist)}`;
   if (s.event) cap += `<br>${esc(s.event.title)}: ${esc(s.event.about)}`;
+  if (s.season) cap += `<br><span class="meta">${esc(s.season.title)} · ${s.season.days_left} day(s) left, then ${esc(s.season.next)}</span>`;
   document.getElementById("plan").innerHTML = s.map ? esc(s.map).replace(/; /g, "<br>") +
     (s.blueprints && s.blueprints.length ? `<br><br>Blueprints waiting to be built: ${esc(s.blueprints.map(b => NAMES[b] || b).join(", "))}` : "") +
     `<br><br>Sleeps ${s.sleep.bed}:00 to ${s.sleep.wake}:00` : "";

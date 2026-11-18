@@ -286,6 +286,32 @@ class WorldsAndReset(unittest.TestCase):
                     self.assertFalse(used - set(sprites.PALETTE), (w, bid, variant))
             self.assertTrue(sprites.station_sprite()["sprite"])
 
+    def test_seasons_cycle_monthly_and_colour_the_world(self):
+        import datetime
+        from town import life, worlds
+        months = [worlds.season_id(datetime.date(2026, 12, 1) + datetime.timedelta(days=31 * i)) for i in range(10)]
+        self.assertEqual(months[:5], ["winter", "special", "spring", "summer", "autumn"])
+        self.assertEqual(months[5:], months[:5])                       # a five-month cycle
+        for w in worlds.ORDER:
+            worlds.set_current(w)
+            for sid in worlds.SEASON_ORDER:
+                title, about, rate, boosts, pal = worlds.SEASONS[w][sid]
+                self.assertFalse(set(boosts) - set(life.EVENT_TYPES), (w, sid))
+                self.assertFalse(set(pal) - set(sprites.PALETTE), (w, sid))   # only recolours existing colours
+            self.assertGreater(worlds.SEASONS[w]["special"][2], 2 * worlds.SEASONS[w]["summer"][2])
+            note = worlds.voice_note("You are Nova.")
+            self.assertIn("YOUR WORLD", note); self.assertIn("SEASON", note)
+            self.assertEqual(worlds.voice_note("You are a fair grader."), "")
+        worlds.set_current("forest")
+        mid, late = worlds.season(datetime.date(2026, 11, 10)), worlds.season(datetime.date(2026, 11, 29))
+        self.assertEqual((mid["id"], mid["turning"]), ("autumn", 0))
+        self.assertEqual(late["next_id"], "winter")
+        self.assertTrue(0 < late["turning"] < 1)                      # the last 4 days blend into winter
+        self.assertIn("turning to", late["title"])
+        a = make_agent()
+        self.assertIn(a.world()["season"]["id"], worlds.SEASON_ORDER)
+        self.assertNotIn("error", a.take_turn())
+
     def test_names_from_any_world_read_in_the_current_one(self):
         from town import worlds
         worlds.set_current("forest")

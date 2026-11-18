@@ -6,7 +6,7 @@ import threading
 import time
 import traceback
 
-from . import interiors, prompts, sprites, web_tools
+from . import interiors, prompts, sprites, web_tools, worlds
 from .colony import COLOUR_PRICE, FORM_PRICE, ColonyMixin
 from .backup import make_backup
 from .exchange import ExchangeMixin
@@ -989,7 +989,7 @@ What do you do now?"""
             "mood": self.mood_word() if self.db.get("name") else None, "creator": self.creator, "listening": bool(self.listening_now()),
             "hour": datetime.datetime.now().hour,
             "sleep": self.bedtime(), "night": self.is_night(), "daylight": self.daylight(),
-            "chat": bool(self.chat_state()), "event": self.space_event(),
+            "chat": bool(self.chat_state()), "event": self.space_event(), "season": worlds.season(),
             "blueprints": self.blueprints(), "map": self.map_text(),
             "last_backup": self.db.get("last_backup"), "model": self.model_status,
             "in_orbit": self.db.get("location") == "station" and bool((self.db.get("last_turn") or 0) > time.time() - 30 * 60),

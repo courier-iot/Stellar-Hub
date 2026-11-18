@@ -470,7 +470,9 @@ class MainActivity : Activity() {
         town.setLife(s.optString("emote").takeIf { it.isNotBlank() && it != "null" },
             if (s.isNull("daylight")) null else s.optDouble("daylight"), ev?.optString("type"))
         val credits = s.optInt("credits", 0)
-        header.text = if (s.optString("name").let { it.isBlank() || it == "null" }) "HUB CONNECT S" else "HUB CONNECT S   ◈ $credits"
+        // v0.13.6: the season's emoji next to the credits
+        val seasonIcon = s.optJSONObject("season")?.optString("title")?.substringBefore(" ")?.let { "   $it" } ?: ""
+        header.text = if (s.optString("name").let { it.isBlank() || it == "null" }) "HUB CONNECT S" else "HUB CONNECT S   ◈ $credits$seasonIcon"
         val prev = s.optString("prev_location").takeIf { it.isNotBlank() && it != "null" }
         val room = s.optJSONObject("interior")
         town.setPlace(loc, prev, s.optDouble("last_turn", 0.0),

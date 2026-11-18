@@ -71,6 +71,7 @@ class OllamaLLM:
     def chat(self, system, user, json_mode=False, task=None, schema=None):
         from . import worlds
         system, user = worlds.reword(system), worlds.reword(user)     # v0.13.5: the current world's names
+        system += worlds.voice_note(system)                           # v0.13.6: world voice + season
         payload = {
             "model": self.model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],

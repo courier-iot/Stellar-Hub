@@ -232,6 +232,7 @@ def make_server(agent, host, port, pair_code):
                 from .life import EVENT_TYPES
                 return self._json({"current": worlds.current(), "choices": worlds.choices(),
                                    "events": {k: v["title"] for k, v in EVENT_TYPES.items()},
+                                   "season": worlds.season(),
                                    "can_reset": self._local() and self.role == "owner"})
             if u.path == "/api/pairing":
                 if not self._local():

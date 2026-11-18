@@ -1198,7 +1198,7 @@ def world(layout, building_states, look, extras=None):
     pal.update(resident_palette(look))
     from . import worlds
     data = {"w": W, "h": H, "palette": pal, "background": _BG, "buildings": buildings, "decor": decor,
-            "world_type": worlds.current(), "names": worlds.names(),
+            "world_type": worlds.current(), "names": worlds.names(), "season": worlds.season(),
             "away": bool(extras.get("away")), "night": bool(extras.get("night", True)),
             "emotes": EMOTES, "trader_ship": TRADER_SHIP, "home_plot": HOME_PLOT,
             "aliases": {"studio": "radio_tower", "station": "spaceport"},
@@ -1218,5 +1218,7 @@ def world(layout, building_states, look, extras=None):
 
 def world_version(layout, building_states, look, extras=None):
     from . import worlds
-    key = [sorted((int(k), v) for k, v in (layout or {}).items()), building_states, look, extras or {}, worlds.current()]
+    worlds.refresh_season()
+    key = [sorted((int(k), v) for k, v in (layout or {}).items()), building_states, look, extras or {}, worlds.current(),
+           worlds.season_id()]
     return hashlib.md5(json.dumps(key, sort_keys=True).encode()).hexdigest()[:10]

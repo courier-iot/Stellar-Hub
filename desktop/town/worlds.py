@@ -88,7 +88,8 @@ WORLDS = {
         },
         "phrases": [("a small space colony", "a small village in an enchanted forest"),
                     ("little glowing star spirit", "little glowing forest wisp"),
-                    ("the colony's spaceport", "the edge of Whisper Woods")],
+                    ("the colony's spaceport", "the edge of Whisper Woods"),
+                    ("the Stellar Hub space colony", "the Stellar Hub forest village")],
         "palette": {
             # sky: deep indigo to violet mist
             "A": "#05061a", "B": "#0a0b26", "D": "#131238", "F": "#1d1a4d", "I": "#2a2368", "J": "#3b2f86",
@@ -158,7 +159,8 @@ WORLDS = {
         },
         "phrases": [("a small space colony", "a small colony on an ocean world"),
                     ("little glowing star spirit", "little glowing sea spirit"),
-                    ("the colony's spaceport", "the Submarine Dock")],
+                    ("the colony's spaceport", "the Submarine Dock"),
+                    ("the Stellar Hub space colony", "the Stellar Hub ocean colony")],
         "palette": {
             # sky: deep navy to sea-blue at the horizon
             "A": "#020713", "B": "#05102a", "D": "#0a1a3d", "F": "#10274f", "I": "#173661", "J": "#21487a",
@@ -272,9 +274,149 @@ def set_current(world):
     for eid, e in life.EVENT_TYPES.items():
         title, weight, about = w.get("events", {}).get(eid, _moon["events"][eid])
         e["title"], e["weight"], e["about"] = title, weight, about
-    sprites.PALETTE.clear()
-    sprites.PALETTE.update(_moon["palette"])
-    sprites.PALETTE.update(w.get("palette", {}))
     sprites.reset_background()
     _build()
+    refresh_season(force=True)                     # v0.13.6: this month's season colours and events
     return world
+
+
+# ------------------------------------------------------------------ v0.13.6: world voice and seasons
+# How each world colours the way the resident talks and what it notices. Its personality stays its own.
+VOICE = {
+    "moon": ("You live on the Moon. Let it colour what you notice and how you describe things: the ringed planet "
+             "overhead, the stars, the low gravity, the quiet of the craters. Stay entirely yourself."),
+    "forest": ("You live in an enchanted forest. Let it colour how you talk and what you notice: the trees and moss, "
+               "the weather in the canopy, old forest lore, and the wisps and fireflies, whom you treat as neighbours. "
+               "Speak with a gentle, storybook warmth and nature words, but stay entirely yourself: same personality, "
+               "same interests, nothing twee or forced."),
+    "ocean": ("You live on an ocean world. Let it colour how you talk and what you notice: the tides and weather at sea, "
+              "the lighthouse, gulls and sea life, the creak of the boardwalk. Plan around the tide and the weather like "
+              "a seasoned islander, and now and then use a sailor's turn of phrase (lightly). Stay entirely yourself."),
+}
+
+SEASON_ORDER = ["spring", "summer", "autumn", "winter", "special"]
+ANCHOR = 2026 * 12 + 11      # December 2026 is Winter; each season lasts one calendar month, five months a cycle
+
+# per world: id -> (title, what it's like, how often events happen (x), event weight boosts, palette changes)
+SEASONS = {
+    "moon": {
+        "spring": ("🌱 Spring", "The greenhouse vents open and the colony shakes off the long cold. A good time to start something new.",
+                   1.0, {"stardust": 1.5}, {"e": "#7af0b8"}),
+        "summer": ("☀️ Summer", "Long bright days on the surface. Solar storms are more common.",
+                   1.1, {"solar_storm": 2}, {"J": "#4a2c80"}),
+        "autumn": ("🍂 Autumn", "The light turns copper over the craters and the dust picks up.",
+                   1.0, {"dust_storm": 2}, {"Q": "#5a5268", "L": "#46405a"}),
+        "winter": ("❄️ Winter", "Frost on the domes and long nights: a season for staying in, reading and making things.",
+                   0.8, {"eclipse": 2, "meteor_shower": 1.5}, {"K": "#3a4258", "L": "#55607e", "Q": "#7f8aaa"}),
+        "special": ("☄️ Starfall", "The colony is passing through a comet stream. Events of every kind come far more often, "
+                    "especially meteor showers and comets.", 2.5, {"meteor_shower": 3, "comet": 4, "trader": 2},
+                    {"J": "#5a2a8a", "V": "#8a5af0"}),
+    },
+    "forest": {
+        "spring": ("🌱 Spring", "Blossom on every branch, new shoots underfoot and pollen on the breeze.",
+                   1.0, {"stardust": 2}, {"e": "#7fe0a0", "d": "#3a7a70", "u": "#2a5040"}),
+        "summer": ("☀️ Summer", "Warm green nights, thick with fireflies.",
+                   1.1, {"meteor_shower": 2}, {"q": "#fffbc0", "d": "#2f6a6a"}),
+        "autumn": ("🍂 Autumn", "The canopy turns gold and copper, leaves drift onto the paths, and thunderstorms roll through.",
+                   1.0, {"dust_storm": 2, "trader": 1.5},
+                   {"b": "#4a2a1e", "d": "#a8602a", "E": "#a0522d", "e": "#e0963f", "u": "#3a3022"}),
+        "winter": ("❄️ Winter", "Snow on the boughs and frost on the mushrooms. The forest is hushed: cosy indoor days.",
+                   0.8, {"eclipse": 2},
+                   {"b": "#3a4a66", "d": "#a8c0d8", "u": "#5a6a80", "K": "#6a7a90", "E": "#6a8aa0", "e": "#cfe3f0"}),
+        "special": ("✨ Wild Magic", "Magic is running wild through the forest. Strange events happen far more often, "
+                    "especially wild magic storms and falling stars.", 2.5, {"solar_storm": 3, "comet": 4, "meteor_shower": 2},
+                    {"x": "#c89bff", "i": "#ffd27a", "V": "#9a5af0", "d": "#6a4ab0", "b": "#2a2060",
+                     "J": "#5a2aa0", "I": "#3a1f7a", "u": "#2a2a5a"}),
+    },
+    "ocean": {
+        "spring": ("🌱 Spring", "Calm seas and warming water: the reef is coming alive.",
+                   1.0, {"stardust": 1.5}, {"v": "#2a8a5a", "j": "#ff8a9a"}),
+        "summer": ("☀️ Summer", "Long bright days, glassy water and trader ships on the horizon.",
+                   1.1, {"trader": 2}, {"J": "#2a5a90", "L": "#2a7a9a"}),
+        "autumn": ("🍂 Autumn", "Rising winds and big swells. High tides come more often.",
+                   1.0, {"dust_storm": 2}, {"b": "#0e3a4a", "v": "#5a6a2a"}),
+        "winter": ("❄️ Winter", "Cold grey seas and short days; foam on the boardwalk and the beacon burning late.",
+                   0.8, {"solar_storm": 1.5}, {"b": "#2a3a4a", "K": "#2a4050", "d": "#5a7a8a", "J": "#2a3a52"}),
+        "special": ("🌀 Storm Season", "Storm after storm is rolling in. Events happen far more often, especially high tides "
+                    "and magnetic storms.", 2.5, {"dust_storm": 3, "solar_storm": 3, "trader": 1.5},
+                    {"J": "#1a2a3a", "I": "#142233", "d": "#3a5a6a", "i": "#e0f8ff"}),
+    },
+}
+
+_season_applied = None
+
+
+def season_id(now=None):
+    import datetime
+    t = now or datetime.date.today()
+    return SEASON_ORDER[(t.year * 12 + t.month - 1 - ANCHOR + 3) % 5]
+
+
+TRANSITION_DAYS = 4         # the last 4 days of each month blend into the next season
+
+
+def _blend_hex(a, b, f):
+    ca = [int(a[i:i + 2], 16) for i in (1, 3, 5)]
+    cb = [int(b[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(x + (y - x) * f):02x}" for x, y in zip(ca, cb))
+
+
+def season(now=None):
+    """This month's season in the current world, how long is left, and how far it has turned into the next one."""
+    import calendar
+    import datetime
+    t = now or datetime.date.today()
+    sid = season_id(t)
+    nxt = SEASON_ORDER[(SEASON_ORDER.index(sid) + 1) % 5]
+    title, about, mult, boosts, _ = SEASONS[_current][sid]
+    days_left = calendar.monthrange(t.year, t.month)[1] - t.day + 1
+    turning = (TRANSITION_DAYS - days_left + 1) / (TRANSITION_DAYS + 1) if days_left <= TRANSITION_DAYS else 0.0
+    ntitle, nabout, nmult, _, _ = SEASONS[_current][nxt]
+    out = {"id": sid, "title": title, "about": about, "days_left": days_left, "next_id": nxt, "next": ntitle,
+           "turning": round(turning, 2), "event_rate": round(mult + (nmult - mult) * turning, 2)}
+    if turning:
+        out["title"] = f"{title.split(' ')[0]}→{ntitle.split(' ')[0]} {title.split(' ', 1)[1]} turning to {ntitle.split(' ', 1)[1]}"
+        out["about"] = f"{about} The change is coming: {nabout}"
+    return out
+
+
+def refresh_season(force=False):
+    """Apply this month's season (colours and event mix), blending into the next one over the last 4 days.
+    Cheap to call often; only does work when something changes."""
+    global _season_applied
+    from . import life, sprites
+    if _moon is None:                                # not set up yet: set_current() applies the season itself
+        set_current(_current)
+        return True
+    s = season()
+    key = (_current, s["id"], s["turning"])
+    if key == _season_applied and not force:
+        return False
+    _season_applied = key
+    w = WORLDS[_current]
+    _, _, _, boosts, pal = SEASONS[_current][s["id"]]
+    _, _, _, nboosts, npal = SEASONS[_current][s["next_id"]]
+    f = s["turning"]
+    for eid, e in life.EVENT_TYPES.items():
+        base = w.get("events", {}).get(eid, _moon["events"][eid])[1]
+        b0, b1 = boosts.get(eid, 1), nboosts.get(eid, 1)
+        e["weight"] = base * (b0 + (b1 - b0) * f)
+    world_pal = dict(_moon["palette"]); world_pal.update(w.get("palette", {}))
+    sprites.PALETTE.clear()
+    sprites.PALETTE.update(world_pal)
+    for k in set(pal) | set(npal):
+        a, b = pal.get(k, world_pal[k]), npal.get(k, world_pal[k])
+        sprites.PALETTE[k] = _blend_hex(a, b, f) if f else a
+    return True
+
+
+SKIP_VOICE = ("You are a fair grader", "You are reviewing")
+
+
+def voice_note(system):
+    """Added to the resident's prompts: how its world colours its voice, and what season it is."""
+    if not system or system.startswith(SKIP_VOICE):
+        return ""
+    s = season()
+    return (f"\n\nYOUR WORLD: {VOICE[_current]}\nSEASON: {s['title']} ({s['days_left']} day(s) left, then {s['next']}). "
+            f"{s['about']} Let the season show in what you notice and choose to do.")
