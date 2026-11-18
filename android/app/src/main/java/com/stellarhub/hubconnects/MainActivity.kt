@@ -50,7 +50,8 @@ class MainActivity : Activity() {
     private val bad = Color.parseColor("#FF5D73")
     private val warn = Color.parseColor("#FFD86B")
 
-    private val names = mapOf(
+    // v0.13.5: the hub sends each world's building names with the town; these are the Moon names until it does
+    private val names = mutableMapOf(
         "home" to "Home Dome", "library" to "Observatory Library", "internet_cafe" to "Uplink Café",
         "post_office" to "Relay Post", "salon" to "Nova Salon", "bank" to "Credit Vault",
         "workshop" to "Fabrication Hangar", "pet_shop" to "Pet Shop", "store" to "Department Store", "museum" to "Stellar Museum", "greenhouse" to "Hydro Greenhouse", "radio_tower" to "Radio Tower",
@@ -58,6 +59,7 @@ class MainActivity : Activity() {
         "studio" to "Radio Studio", "station" to "Orbital Station", "exchange" to "Curio Exchange",
         "mech_shop" to "Mechanical Workshop"
     )
+    private fun nm(id: String) = names[id] ?: id
     private val verbs = mapOf(
         "view_challenge" to "reading this week's challenge", "attempt_challenge" to "coding a challenge",
         "view_workshop" to "checking its parts", "design_machine" to "designing a machine", "maintain_machine" to "servicing a machine",
@@ -435,6 +437,7 @@ class MainActivity : Activity() {
                 main.post {
                     if (world != null) {
                         town.setWorld(world); worldVersion = v
+                        world.optJSONObject("names")?.let { j -> j.keys().forEach { k -> names[k] = j.optString(k) } }
                         lastPalette = try { Pixel.palette(world.getJSONObject("palette")) } catch (e: Exception) { lastPalette }
                     }
                     applyStatus(s)
@@ -491,9 +494,9 @@ class MainActivity : Activity() {
         if (s.optBoolean("chat")) {
             sb.append("$name is chatting with you.")
         } else if (s.optBoolean("in_orbit")) {
-            sb.append("$name is up at the Orbital Station, studying.")
+            sb.append("$name is up at the ${nm("station")}, studying.")
         } else if (s.optBoolean("asleep") && away == null) {
-            sb.append("$name is asleep in the Home Dome (until ${s.optJSONObject("sleep")?.optInt("wake")}:00).")
+            sb.append("$name is asleep in the ${names["home"] ?: "Home Dome"} (until ${s.optJSONObject("sleep")?.optInt("wake")}:00).")
         } else if (away != null) {
             sb.append("$name is away on an expedition: ${away.optString("topic")}")
             sb.append(" (back around ${fmt(away.optDouble("return_ts", 0.0))}).")
@@ -956,7 +959,7 @@ class MainActivity : Activity() {
         val head = section("Weekly goals")
         head.addView(label("Coding level ${d.optInt("code_level", 1)} · machine level ${d.optInt("mech_level", 1)} · skill notebook: ${d.optInt("skills")} entries", 12f, dim))
         val goals = d.optJSONArray("goals") ?: JSONArray()
-        if (goals.length() == 0) head.addView(label("No goals yet. They arrive with the Fabrication Hangar and the Mechanical Workshop.", 13f, dim))
+        if (goals.length() == 0) head.addView(label("No goals yet. They arrive with the ${nm("workshop")} and the ${nm("mech_shop")}.", 13f, dim))
         for (i in 0 until goals.length()) {
             val g = goals.getJSONObject(i)
             val st = g.optString("status")
@@ -1013,7 +1016,7 @@ class MainActivity : Activity() {
         val plans = section("Real-world plans")
         plans.addView(label("About once a week your resident designs a small low-voltage project for you to build.", 12f, dim))
         val ps = d.optJSONArray("plans") ?: JSONArray()
-        if (ps.length() == 0) plans.addView(label("No plans yet. They start once the Mechanical Workshop is built.", 13f, dim))
+        if (ps.length() == 0) plans.addView(label("No plans yet. They start once the ${nm("mech_shop")} is built.", 13f, dim))
         for (i in 0 until ps.length()) {
             val p = ps.getJSONObject(i)
             val q = p.optJSONObject("plan") ?: JSONObject()
@@ -1518,7 +1521,7 @@ class MainActivity : Activity() {
 
         val lc = card()
         lc.addView(label("WRITE A LETTER", 13f, dim, true))
-        lc.addView(label("Letters wait at the Relay Post until your resident visits.", 12f, dim))
+        lc.addView(label("Letters wait at the ${nm("post_office")} until your resident visits.", 12f, dim))
         val lbox = input("Dear…", 4)
         lc.addView(spaced(lbox))
         lc.addView(rowOf(button("Send letter", cyan) {
@@ -1740,7 +1743,7 @@ class MainActivity : Activity() {
     private fun phoneMusicCard(): LinearLayout {
         val c = card()
         c.addView(label("Phone music · Stellar Disc", 13f, dim, true))
-        c.addView(label("Share the song list from your phone with your resident. At the Radio Tower it can pick one, " +
+        c.addView(label("Share the song list from your phone with your resident. At the ${nm("radio_tower")} it can pick one, " +
             "and Stellar Disc plays it on your phone, only while Hub Connect S is open. Only titles, artists and " +
             "albums are sent to your hub, never the files.", 13f, dim))
         val on = prefs.getBoolean("share_music", false)

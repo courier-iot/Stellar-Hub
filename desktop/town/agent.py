@@ -35,6 +35,7 @@ class BudgetExceeded(Exception):
 class Agent(ExtrasMixin, MonitorMixin, DevicesMixin, EconomyMixin, TrainingMixin, StyleMixin, WorkshopMixin, MuseumMixin, PetsMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
     def __init__(self, cfg, db, llm, data_dir):
         self.cfg, self.db, self.llm = cfg, db, llm
+        self.data_dir = data_dir
         self.mem = Memory(db)
         self.home_dir = os.path.join(data_dir, "home")
         os.makedirs(self.home_dir, exist_ok=True)

@@ -71,3 +71,19 @@ def save_setting(cfg, section, key, value):
     with open(path + ".tmp", "w", encoding="utf-8") as f:
         json.dump(mine, f, indent=2)
     os.replace(path + ".tmp", path)
+
+
+def save_top(cfg, key, value):
+    """Changes one top-level setting (like "world") in config.json and in the running config."""
+    cfg[key] = value
+    path = cfg.get("_config_path")
+    if not path:
+        return
+    mine = {}
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            mine = json.load(f)
+    mine[key] = value
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(mine, f, indent=2)
+    os.replace(path + ".tmp", path)

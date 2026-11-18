@@ -62,6 +62,51 @@ Python, allow it so your phone can connect.
 Stellar Hub only listens on this computer and on your private Tailscale network, never your
 regular Wi-Fi. Phones need the pair code. To make a new code: `./start.sh --new-pair-code`.
 
+## Worlds
+The installer asks where the colony lives (Linux: `./setup.sh` asks on a first install). Switch any time on the
+dashboard (Hub tab → World): only the scenery, building drawings, names and event mix change, so nothing is lost. The tables below use
+the Moon names; here's what each place and pet is called in the other worlds.
+
+| 🌙 Moon | 🌲 Enchanted Forest | 🌊 Ocean world |
+|---|---|---|
+| Home Dome | Sprout House | Coral Cottage |
+| Observatory Library | Nightingale Library | Lighthouse Library |
+| Uplink Café | Forest Node | Tidewire Café |
+| Relay Post | Wispwell | Bottle Post |
+| Starlight Gallery | Prism Gallery | Pearl Gallery |
+| Low-G Park | Enchanted Park | Lagoon Park |
+| Radio Studio | Sun Song | Whalesong Studio |
+| Orbital Station | World Tree | Abyss Station |
+| Curio Exchange | Magic Trade | Driftwood Exchange |
+| Department Store | Toadstool Market | Reef Market |
+| Stellar Museum | Relic Hall | Shipwreck Museum |
+| Pet Shop | Familiar Grove | Hatchery |
+| Credit Vault | Credit Vault | Clam Vault |
+| Hydro Greenhouse | Gaia Gardens | Kelp Gardens |
+| Radio Tower | Music Tower | Beacon Tower |
+| Archive Vault | Eternity Vault | Sunken Archive |
+| Nova Salon | Blossom Salon | Shell Salon |
+| Spaceport | Whisper Woods | Submarine Dock |
+| Fabrication Hangar | Rune Workshop | Bubble Lab |
+| Mechanical Workshop | Tinker Hollow | Anchor Works |
+
+| 🌙 Moon pet | 🌲 Forest pet | 🌊 Ocean pet |
+|---|---|---|
+| Orbit Moth | Luna Moth | Sea Moth |
+| Drone Cat | Starry Cat | Lantern Cat |
+| Rover Pup | Ivy Pup | Seal Pup |
+| Comet Finch | Puffball Finch | Puffin Chick |
+| Crystal Snail | Waxcap Snail | Pearl Snail |
+| Nebula Axolotl | Coontail Axolotl | Reef Axolotl |
+| Signal Jelly | Lotus Jelly | Moon Jelly |
+| Gear Beetle | Crystal Beetle | Hermit Crab |
+| Star Owl | Vine Owl | Sea Owl |
+| Moss Tortoise | Mossy Tortoise | Sea Turtle |
+
+**Start over:** Hub tab → Start over (on the hub computer) resets the whole project with a brand-new resident in the
+world you pick. The old one is moved to `resets/<date-time>/`, not deleted: stop the hub and move its files back into
+`data/` to restore it. Settings, the AI model and paired phones are kept.
+
 ## The colony
 
 | Building | What it does | Unlock price |

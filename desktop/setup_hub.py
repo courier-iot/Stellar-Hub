@@ -352,6 +352,31 @@ def set_model(model):
         f.write("\n")
 
 
+def choose_world():
+    """v0.13.5: on a first install (no resident yet) on Linux, pick where the colony lives.
+    The Windows installer asks on its own page instead. It can be changed later on the dashboard (Hub tab)."""
+    from town import worlds
+    from town.config import load_config
+    if IS_WIN or CHECK_ONLY or YES or os.path.exists(os.path.join(ROOT, "data", "town.db")):
+        return
+    say("\nWhere should your colony live?", "b")
+    for i, w in enumerate(worlds.ORDER, 1):
+        say(f"  {i}. {worlds.WORLDS[w]['title']}: {worlds.WORLDS[w]['blurb']}")
+    try:
+        pick = input("Pick 1-3 [1]: ").strip() or "1"
+    except EOFError:
+        pick = "1"
+    w = worlds.ORDER[int(pick) - 1] if pick.isdigit() and 1 <= int(pick) <= len(worlds.ORDER) else worlds.DEFAULT
+    load_config(ROOT)
+    with open(CONFIG, encoding="utf-8") as f:
+        cfg = json.load(f)
+    cfg["world"] = w
+    with open(CONFIG, "w") as f:
+        json.dump(cfg, f, indent=2)
+        f.write("\n")
+    say(f"✓ {worlds.WORLDS[w]['title']} it is. You can change it any time on the dashboard (Hub tab → World).", "g")
+
+
 # ------------------------------------------------------------------ main
 def main():
     say("\n★ STELLAR HUB SETUP ★\n", "b")
@@ -364,6 +389,7 @@ def main():
     if sys.version_info < (3, 10):
         say(f"Python {sys.version.split()[0]} is too old. Stellar Hub needs Python 3.10 or newer.", "r")
         return 1
+    choose_world()
 
     # ---- graphics
     cards = gpus()

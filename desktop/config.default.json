@@ -8,6 +8,7 @@
   },
   "creator_name": "Creator",
   "resident_name": null,
+  "world": "moon",
   "tick_minutes": 20,
   "reflect_threshold": 30,
   "limits": {

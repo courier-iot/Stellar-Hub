@@ -69,6 +69,8 @@ class OllamaLLM:
     schema_ok = True      # Ollama 0.5+ can hold the answer to a JSON schema (the exact building ids and actions)
 
     def chat(self, system, user, json_mode=False, task=None, schema=None):
+        from . import worlds
+        system, user = worlds.reword(system), worlds.reword(user)     # v0.13.5: the current world's names
         payload = {
             "model": self.model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],

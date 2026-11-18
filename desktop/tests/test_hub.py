@@ -246,5 +246,119 @@ class SettingsAndUpdates(unittest.TestCase):
         self.assertIn("Updated", db.get("update_progress")["stage"])
 
 
+
+class WorldsAndReset(unittest.TestCase):
+    """v0.13.5: world types (moon, forest, ocean) and starting over."""
+
+    def tearDown(self):
+        from town import worlds
+        worlds.set_current("moon")
+
+    def test_every_world_renames_draws_and_switches_back(self):
+        from town import pets, worlds
+        a = make_agent()
+        finish_building(a, "library", 3)
+        for w in worlds.ORDER:
+            worlds.set_current(w)
+            for bid in BUILDINGS:
+                self.assertEqual(BUILDINGS[bid]["name"], worlds.WORLDS[w]["buildings"][bid], (w, bid))
+            for sid in pets.SPECIES:
+                self.assertEqual(pets.SPECIES[sid]["name"], worlds.WORLDS[w]["pets"][sid], (w, sid))
+            data = a.world()
+            used = set("".join(data["background"])) | {ch for b in data["buildings"] for r in b["sprite"] for ch in r}
+            self.assertFalse(used - set(data["palette"]) - {"."}, w)       # every pixel has a colour
+            self.assertEqual(data["names"]["home"], worlds.WORLDS[w]["buildings"]["home"])
+        worlds.set_current("moon")
+        self.assertEqual(BUILDINGS["home"]["name"], "Home Dome")
+        self.assertIn("habitat dome", BUILDINGS["home"]["about"])
+
+    def test_every_world_draws_every_building_in_every_state(self):
+        from town import worlds
+        for w in worlds.ORDER:
+            worlds.set_current(w)
+            for bid in sprites.BUILDERS:
+                for variant in ("open", "closed", "locked", "construction"):
+                    extra = {"night": variant != "closed", "floors": 3, "studio": True, "playing": True, "away": variant == "locked",
+                             "plants": [("e", "m", "blooming"), ("E", "y", "wilted")], "featured": ["mk" * 4] * 8}
+                    rows, door = sprites.building_sprite(bid, variant, extra, with_door=True)
+                    self.assertTrue(rows and all(len(r) == len(rows[0]) for r in rows), (w, bid, variant))
+                    used = set("".join(rows)) - {"."}
+                    self.assertFalse(used - set(sprites.PALETTE), (w, bid, variant))
+            self.assertTrue(sprites.station_sprite()["sprite"])
+
+    def test_names_from_any_world_read_in_the_current_one(self):
+        from town import worlds
+        worlds.set_current("forest")
+        self.assertEqual(worlds.reword("I wrote at the Home Dome with my Orbit Moth."),
+                         "I wrote at the Sprout House with my Luna Moth.")
+        self.assertEqual(worlds.reword("Off to the Coral Cottage"), "Off to the Sprout House")
+        self.assertEqual(worlds.reword("home spaceport internet_cafe"), "home spaceport internet_cafe")   # ids stay
+        worlds.set_current("ocean")
+        self.assertEqual(worlds.reword("the Credit Vault"), "the Clam Vault")
+        self.assertIn("ocean world", worlds.reword("Stellar Hub, a small space colony."))
+        worlds.set_current("moon")
+        self.assertEqual(worlds.reword("Wispwell and Whisper Woods"), "Relay Post and Spaceport")
+
+    def test_switch_world_over_the_api(self):
+        from town import server, worlds
+        a = make_agent()
+        cfg_path = os.path.join(tempfile.mkdtemp(), "config.json")
+        a.cfg["_config_path"] = cfg_path
+        srv = server.make_server(a, "0.0.0.0", 0, "ABCD-EFGH-JKMN")
+        port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+        def post(path, body):          # the dashboard on the hub computer
+            import urllib.error
+            import urllib.request
+            req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=json.dumps(body).encode(),
+                                         headers={"Content-Type": "application/json", "X-Stellar-Hub": "1"})
+            try:
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    return resp.status, json.loads(resp.read())
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read())
+        try:
+            code, r = call(port, "/api/worlds")
+            self.assertEqual(r["current"], "moon")
+            code, r = post("/api/world", {"world": "lava"})
+            self.assertEqual(code, 400)
+            code, r = post("/api/world", {"world": "ocean"})
+            self.assertTrue(r["ok"])
+            with open(cfg_path) as f:
+                self.assertEqual(json.load(f)["world"], "ocean")
+            code, w = call(port, "/api/world")
+            self.assertEqual(w["world_type"], "ocean")
+            code, st = call(port, "/api/status")
+            self.assertNotIn("Home Dome", json.dumps(st))
+            code, r = post("/api/reset", {"confirm": "nope"})
+            self.assertEqual(code, 400)
+        finally:
+            srv.shutdown()
+
+    def test_reset_moves_everything_and_keeps_phones(self):
+        from town import reset
+        from town.db import DB
+        root = tempfile.mkdtemp()
+        data = os.path.join(root, "data")
+        os.makedirs(os.path.join(data, "home"))
+        old = DB(os.path.join(data, "town.db"))
+        old.x("INSERT INTO devices(name, token_hash, role, status, created) VALUES('pixel', 'abc', 'owner', 'active', 1)")
+        old.x("INSERT INTO memories(ts, kind, content) VALUES(1, 'journal', 'old life')")
+        with open(os.path.join(data, "pair_code.txt"), "w") as f:
+            f.write("ABCD-EFGH-JKMN")
+        del old
+        self.assertIsNone(reset.apply_pending(root, data))      # nothing asked for: nothing happens
+        reset.request(data, "forest")
+        info = reset.apply_pending(root, data)
+        self.assertEqual(info["world"], "forest")
+        self.assertEqual(sorted(os.listdir(data)), ["pair_code.txt"])
+        self.assertTrue(os.path.exists(os.path.join(info["saved_to"], "town.db")))
+        new = DB(os.path.join(data, "town.db"))
+        self.assertEqual(reset.restore_devices(info["old_db"], new), 1)
+        self.assertEqual(new.q("SELECT name FROM devices")[0]["name"], "pixel")
+        self.assertFalse(new.q("SELECT id FROM memories"))
+
+
 if __name__ == "__main__":
     unittest.main()

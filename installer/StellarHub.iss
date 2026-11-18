@@ -69,6 +69,7 @@ const
 
 var
   WasInstalled: Boolean;
+  WorldPage: TInputOptionWizardPage;   // v0.13.5: world type, asked on a first install only
 
 // Read before anything is installed: was Stellar Hub already here (so this is an update)?
 function InitializeSetup(): Boolean;
@@ -100,6 +101,33 @@ begin
   Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Ps, '', SW_HIDE, ewWaitUntilTerminated, Code);
 end;
 
+// v0.13.5: pick where the colony lives. Updates skip this page and keep the current world.
+procedure InitializeWizard();
+begin
+  WorldPage := CreateInputOptionPage(wpSelectTasks, 'Choose your world', 'Where should your colony live?',
+    'Each world has its own scenery, building and pet names, and events. Everything works the same in all of them, ' +
+    'and you can switch any time on the dashboard (Hub tab -> World).', True, False);
+  WorldPage.Add('Moon colony: the original. A cratered moon, metal domes and a ringed planet in the sky.');
+  WorldPage.Add('Enchanted Forest: a glowing night forest with lanterns, luminous mushrooms and fireflies.');
+  WorldPage.Add('Ocean world: a boardwalk colony on a moonlit sea, with coral, kelp and a lighthouse.');
+  WorldPage.SelectedValueIndex := 0;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (WorldPage <> nil) and (PageID = WorldPage.ID) and WasInstalled;
+end;
+
+function WorldId(): String;
+begin
+  case WorldPage.SelectedValueIndex of
+    1: Result := 'forest';
+    2: Result := 'ocean';
+  else
+    Result := 'moon';
+  end;
+end;
+
 // v0.13.3: the Fab Hangar's coding sandbox needs Docker Desktop on Windows.
 function DockerFound(): Boolean;
 begin
@@ -111,6 +139,9 @@ procedure CurStepChanged(CurStep: TSetupStep);
 var
   ErrorCode: Integer;
 begin
+  // The hub reads this on its first start (and ignores it if a resident already exists).
+  if (CurStep = ssPostInstall) and (not WasInstalled) then
+    SaveStringToFile(ExpandConstant('{app}\world_choice.txt'), WorldId(), False);
   if (CurStep = ssPostInstall) and (not WizardSilent) and (not DockerFound()) then
   begin
     if MsgBox('Docker Desktop wasn''t found on this PC.' + #13#10 + #13#10 +

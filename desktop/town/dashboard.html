@@ -367,7 +367,15 @@
 
 <main class="pane" data-pane="hub">
   <section>
-    <h2>Space events</h2>
+    <h2>World</h2>
+    <div class="meta">Where the colony lives. Switching changes the scenery, names and which events happen most;
+      the resident, its memories, buildings, credits and pets all stay.</div>
+    <div class="row" style="margin-top:8px"><select id="worldpick"></select>
+      <button onclick="switchWorld()">Move the colony here</button></div>
+    <div id="worldblurb" class="meta"></div>
+  </section>
+  <section>
+    <h2>Events</h2>
     <div id="eventnow" class="meta"></div>
     <div class="row">
       <button class="ghost" onclick="spaceEvent('meteor_shower')">☄️ Meteors</button>
@@ -400,8 +408,53 @@
       <b>Member</b>: watch, chat, give goals and letters, take a turn. <b>Viewer</b>: watch only.</div>
     <div id="devices" style="margin-top:8px"></div>
   </section>
+  <section id="resetbox" style="display:none; border-color:var(--bad)">
+    <h2>Start over</h2>
+    <div class="meta">Resets the whole project: a brand-new resident with no memories, buildings, credits, pets, plants,
+      curios or skill notebook, in the world you pick below. Your settings, AI model and paired phones are kept.
+      Nothing is deleted: the old resident is moved to the <b>resets</b> folder in the Stellar Hub folder, so it can be put back.</div>
+    <div class="row" style="margin-top:8px"><select id="resetworld"></select></div>
+    <div class="row"><input id="resetconfirm" placeholder="Type RESET to confirm" style="max-width:220px">
+      <button class="deny" onclick="resetProject()">Reset project</button></div>
+    <div id="resetmsg" class="meta"></div>
+  </section>
 </main>
 <script>
+// v0.13.5: world types and starting over
+let WORLDS = null;
+async function loadWorlds() {
+  try { WORLDS = await api("/api/worlds"); } catch (e) { return; }
+  const opts = WORLDS.choices.map(c => `<option value="${esc(c.id)}">${esc(c.title)}</option>`).join("");
+  const pick = document.getElementById("worldpick"), rw = document.getElementById("resetworld");
+  pick.innerHTML = opts; pick.value = WORLDS.current;
+  rw.innerHTML = opts; rw.value = WORLDS.current;
+  const blurb = () => { const c = WORLDS.choices.find(c => c.id === pick.value); document.getElementById("worldblurb").textContent = c ? c.blurb : ""; };
+  pick.onchange = blurb; blurb();
+  document.getElementById("resetbox").style.display = WORLDS.can_reset ? "" : "none";
+  for (const [id, title] of Object.entries(WORLDS.events || {})) {
+    const b = document.querySelector(`button[onclick="spaceEvent('${id}')"]`);
+    if (b) b.textContent = title;
+  }
+}
+async function switchWorld() {
+  const w = document.getElementById("worldpick").value;
+  if (WORLDS && w === WORLDS.current) return;
+  const c = WORLDS.choices.find(c => c.id === w);
+  if (!confirm(`Move the colony to: ${c ? c.title : w}? Nothing is lost, and you can switch back any time.`)) return;
+  const r = await api("/api/world", {world: w});
+  if (r.ok) location.reload(); else alert(r.error || "Couldn't switch.");
+}
+async function resetProject() {
+  const msg = document.getElementById("resetmsg");
+  if (document.getElementById("resetconfirm").value.trim() !== "RESET") { msg.textContent = "Type RESET (in capitals) to confirm."; return; }
+  if (!confirm("Really start over with a brand-new resident? The hub will restart.")) return;
+  const r = await api("/api/reset", {confirm: "RESET", world: document.getElementById("resetworld").value});
+  if (!r.ok) { msg.textContent = r.error || "Couldn't reset."; return; }
+  msg.textContent = "Resetting… the hub is restarting with a new resident. This page reloads by itself.";
+  setTimeout(function wait() { fetch("/api/ping").then(x => x.ok ? location.reload() : setTimeout(wait, 2000)).catch(() => setTimeout(wait, 2000)); }, 6000);
+}
+setTimeout(loadWorlds, 300);
+
 function showTab(t) {
   document.querySelectorAll("nav#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
   document.querySelectorAll("main.pane").forEach(m => m.classList.toggle("on", m.dataset.pane === t));

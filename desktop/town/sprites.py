@@ -583,7 +583,26 @@ def building_sprite(bid, variant, extra=None, with_door=False):
     extra = extra or {}
     _DAY = not extra.get("night", True)
     del WINDOWS[:]
-    if bid == "home":
+    from . import worlds
+    from .world_buildings import builders
+    wset = builders(worlds.current())                # v0.13.5: forest and ocean buildings have their own drawings
+    if wset and bid in wset[0]:
+        fn = wset[0][bid]
+        if bid == "home":
+            c, (dx, dy, dw, dh) = fn(lit, extra.get("floors", 1))
+        elif bid == "gallery":
+            c, (dx, dy, dw, dh) = fn(lit, extra.get("featured"))
+        elif bid == "greenhouse":
+            c, (dx, dy, dw, dh) = fn(lit, extra.get("plants", ()))
+        elif bid == "radio_tower":
+            c, (dx, dy, dw, dh) = fn(lit, extra.get("playing", False))
+            if extra.get("studio"):
+                wset[1](c, lit)
+        elif bid == "spaceport":
+            c, (dx, dy, dw, dh) = fn(lit, extra.get("away", False))
+        else:
+            c, (dx, dy, dw, dh) = fn(lit)
+    elif bid == "home":
         c, (dx, dy, dw, dh) = b_home(lit, extra.get("floors", 1))
     elif bid == "gallery":
         c, (dx, dy, dw, dh) = b_gallery(lit, extra.get("featured"))
@@ -622,6 +641,207 @@ def building_sprite(bid, variant, extra=None, with_door=False):
 
 # ---------------------------------------------------------------- background
 def background():
+    """The backdrop for the current world (v0.13.5: moon, forest or ocean)."""
+    from . import worlds
+    w = worlds.current()
+    if w == "forest":
+        return forest_background()
+    if w == "ocean":
+        return ocean_background()
+    return moon_background()
+
+
+def _sky(c):
+    bands = ["A", "B", "D", "F", "I", "J"]
+    band_h = GROUND_Y // len(bands) + 1
+    for y in range(GROUND_Y):
+        i = min(len(bands) - 1, y // band_h)
+        nxt = bands[min(len(bands) - 1, i + 1)]
+        frac = (y % band_h) / band_h
+        for x in range(W):
+            thresh = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]][y % 4][x % 4] / 16
+            c.px(x, y, nxt if frac > 0.55 and thresh < (frac - 0.55) * 2.2 else bands[i])
+
+
+def _walkway(c):
+    c.rect(0, WALK_Y, W, 1, "s")
+    c.rect(0, WALK_Y + 1, W, 9, "S")
+    for x in range(0, W, 12):
+        c.rect(x, WALK_Y + 1, 1, 9, "g")
+    c.rect(0, WALK_Y + 10, W, 1, "k")
+
+
+def _mushroom(c, x, base, h, r, cap="l", spot="j"):
+    c.rect(x, base - h, 2, h, "t")
+    c.rect(x + 1, base - h, 1, h, "s")
+    c.disc(x + 1, base - h, r, cap, r * .55)
+    for i in range(-r + 1, r, 3):
+        c.px(int(x + 1 + i), int(base - h - r * .25), spot)
+    c.px(x + 1, int(base - h - r * .4), spot)
+
+
+def forest_background():
+    """Enchanted Forest: a glowing night wood. Indigo sky through the canopy, lantern-hung trees,
+    luminous mushrooms, fireflies, a little stream and a wooden boardwalk."""
+    rnd = random.Random(21)
+    c = Canvas(W, H)
+    _sky(c)
+    for _ in range(180):                                         # stars between the branches
+        x, y = rnd.randrange(W), rnd.randrange(GROUND_Y - 40)
+        c.px(x, y, rnd.choice("wwtsq"))
+    for i in range(7):                                           # soft light shafts falling through the canopy
+        sx = 60 + i * 115 + rnd.randint(-20, 20)
+        for y in range(10, GROUND_Y):
+            for dx in range(14):
+                if (dx + y) % 3 == 0 and rnd.random() < .35:
+                    c.px(sx + dx + y // 5, y, "J" if y < 70 else "V")
+    c.disc(612, 30, 9, "t"); c.disc(609, 28, 8, "w")             # the moon
+    for _ in range(900):                                         # violet mist glowing behind the trees
+        a = rnd.random() * math.tau
+        r = abs(rnd.gauss(0, 1)) * 30
+        x, y = int(406 + math.cos(a) * r * 6), int(GROUND_Y - 22 + math.sin(a) * r * .5)
+        c.px(x, y, rnd.choice("VVpJ"))
+    x = -6                                                       # far trees
+    while x < W:
+        w, top = rnd.randint(3, 8), rnd.randint(10, 60)
+        c.rect(x, top, w, GROUND_Y - top, "h")
+        for _ in range(rnd.randint(1, 3)):                       # branches
+            by = rnd.randint(top + 6, GROUND_Y - 30)
+            d = rnd.choice((-1, 1))
+            for i in range(rnd.randint(6, 16)):
+                c.px(x + (w if d > 0 else -1) + i * d, by - i // 3, "h")
+        x += w + rnd.randint(14, 40)
+    for tx in (18, 150, 300, 500, 640, 770):                     # big near trees with glowing bark and roots
+        tx += rnd.randint(-12, 12)
+        tw = rnd.randint(14, 22)
+        c.rect(tx, 0, tw, GROUND_Y + 6, "a")
+        for y in range(0, GROUND_Y + 6, 2):
+            c.px(tx + 2 + int(2 * math.sin(y / 9)), y, "b")
+            c.px(tx + tw - 4 + int(2 * math.sin(y / 7)), y, "b")
+        for y in range(4, GROUND_Y, 5):                          # warm glow down one edge
+            if rnd.random() < .5:
+                c.px(tx + tw - 1, y, "i")
+        for d in (-1, 1):                                        # roots
+            for i in range(10):
+                c.rect(tx + (tw // 2) + d * (tw // 2 + i), GROUND_Y + 6 - i // 3, 1, i // 3 + 1, "a")
+        for _ in range(3):                                       # shelf fungi glowing on the trunk
+            fy = rnd.randrange(40, GROUND_Y - 10)
+            c.rect(tx + tw, fy, 4, 1, "i"); c.rect(tx + tw, fy + 1, 2, 1, "Y")
+    for _ in range(70):                                          # canopy clumps across the top
+        cx, cy, r = rnd.randrange(-10, W + 10), rnd.randrange(-6, 26), rnd.randint(10, 22)
+        c.disc(cx, cy, r, "a", r * .6)
+        c.disc(cx - 2, cy + 2, r - 4, "b", (r - 4) * .5)
+        for _ in range(r):
+            c.px(cx + rnd.randint(-r + 3, r - 3), cy + rnd.randint(int(-r * .3), int(r * .4)), "d")
+    for _ in range(26):                                          # hanging lanterns
+        x, length = rnd.randrange(8, W - 8), rnd.randint(14, 62)
+        c.rect(x, 8, 1, length, "a")
+        c.rect(x - 1, 8 + length, 3, 4, "i"); c.px(x, 9 + length, "y"); c.px(x, 10 + length, "t")
+        c.px(x, 7 + length, "k"); c.px(x, 12 + length, "k")
+    for _ in range(140):                                         # fireflies
+        c.px(rnd.randrange(W), rnd.randrange(30, WALK_Y - 4), rnd.choice("qqy"))
+    for y in range(GROUND_Y, WALK_Y):                            # mossy forest floor
+        for x in range(W):
+            c.px(x, y, "u" if (x * 5 + y * 11) % 17 else "K")
+    c.rect(0, GROUND_Y, W, 1, "L")
+    for x in range(0, W, 2):                                     # grass tufts along the edge
+        if rnd.random() < .5:
+            c.px(x, GROUND_Y - 1, "Q")
+    for x in range(W):                                           # a little stream winding across
+        y = int(GROUND_Y + 22 + 6 * math.sin(x / 47) + 3 * math.sin(x / 13))
+        c.rect(x, y, 1, 4, "C")
+        if (x // 3) % 5 == 0:
+            c.px(x, y + 1, "x")
+        if (x * 7) % 31 == 0:
+            c.px(x, y, "w")
+    for _ in range(40):                                          # violet path stones
+        c.disc(rnd.randrange(W), rnd.randrange(GROUND_Y + 4, WALK_Y - 2), rnd.randint(2, 4), "v", 1.5)
+    for _ in range(34):                                          # glowing mushrooms
+        x = rnd.randrange(4, W - 4)
+        base = rnd.randrange(GROUND_Y + 10, WALK_Y)
+        big = rnd.random() < .3
+        cap, spot = rnd.choice((("l", "j"), ("l", "j"), ("i", "t"), ("Y", "y")))
+        _mushroom(c, x, base, rnd.randint(5, 9) if big else rnd.randint(2, 4), rnd.randint(4, 6) if big else 2, cap, spot)
+    _walkway(c)                                                  # wooden boardwalk (palette turns metal into wood)
+    for x in range(0, W, 2):                                     # moss under the boardwalk
+        for y in range(WALK_Y + 11, H):
+            c.px(x, y, "u" if (x + y) % 3 else "a")
+            c.px(x + 1, y, "a")
+    for _ in range(40):
+        c.px(rnd.randrange(W), rnd.randrange(WALK_Y + 11, H), rnd.choice("qj"))
+    return c.rows()
+
+
+def ocean_background():
+    """Ocean world: a moonlit sea with islands and a lighthouse on the horizon, coral and kelp in the shallows,
+    glowing plankton and a boardwalk pier."""
+    rnd = random.Random(31)
+    c = Canvas(W, H)
+    _sky(c)
+    for _ in range(420):
+        x, y = rnd.randrange(W), rnd.randrange(84)
+        c.px(x, y, rnd.choice("wwtsS"))
+    for _ in range(8):
+        x, y = rnd.randrange(10, W - 10), rnd.randrange(6, 70)
+        for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
+            c.px(x + dx, y + dy, "w" if dx == dy == 0 else "s")
+    mx, my = 520, 34                                             # big pale moon
+    c.disc(mx, my, 16, "q"); c.disc(mx - 3, my - 3, 13, "t")
+    for cx, cy, r in ((mx + 5, my + 4, 3), (mx - 6, my + 6, 2), (mx + 2, my - 7, 2)):
+        c.disc(cx, cy, r, "y")
+    HZ = 96                                                      # horizon
+    for x in range(W):                                           # sea, darker further out
+        for y in range(HZ, WALK_Y):
+            f = (y - HZ) / (WALK_Y - HZ)
+            c.px(x, y, "a" if f < .25 else "b" if f < .6 else "K")
+    for _ in range(420):                                         # wave glints
+        y = rnd.randrange(HZ + 2, WALK_Y - 2)
+        x = rnd.randrange(W)
+        ln = 2 + int((y - HZ) / 12)
+        c.rect(x, y, ln, 1, rnd.choice("dLd"))
+    for y in range(HZ + 1, WALK_Y - 4, 2):                       # the moon's path on the water
+        half = 6 + (y - HZ) // 2
+        for _ in range(3 + (y - HZ) // 8):
+            x = mx + rnd.randint(-half, half)
+            c.rect(x, y, rnd.randint(2, 5), 1, rnd.choice("qti"))
+    for ix, iw, ih in ((60, 70, 10), (230, 40, 6), (660, 110, 14)):   # islands
+        for xx in range(ix, ix + iw):
+            hgt = int(ih * math.sin(math.pi * (xx - ix) / iw))
+            c.rect(xx, HZ - hgt, 1, hgt, "h")
+    lx = 706                                                     # lighthouse on the far island
+    c.rect(lx, HZ - 40, 5, 26, "s"); c.rect(lx, HZ - 32, 5, 3, "r"); c.rect(lx, HZ - 22, 5, 3, "r")
+    c.rect(lx - 1, HZ - 44, 7, 4, "k"); c.rect(lx, HZ - 43, 5, 2, "y")
+    for i in range(1, 40):                                       # its beam
+        c.px(lx - 2 - i, HZ - 42 + i // 8, "t" if i % 3 else "q")
+    c.rect(0, HZ, W, 1, "J")
+    for x in range(0, W, 3):                                     # foam line near the shore
+        c.px(x, WALK_Y - 3 + (x // 3) % 2, "i")
+    for _ in range(26):                                          # kelp
+        x = rnd.randrange(W)
+        hgt = rnd.randint(8, 22)
+        for i in range(hgt):
+            c.px(x + int(1.5 * math.sin(i / 3)), WALK_Y - i, "v")
+    for _ in range(22):                                          # coral
+        x = rnd.randrange(W)
+        col = rnd.choice("jjmY")
+        for i in range(rnd.randint(4, 8)):
+            c.px(x, WALK_Y - i, col)
+            if i % 2:
+                c.px(x + rnd.choice((-1, 1)) * (1 + i // 3), WALK_Y - i - 1, col)
+    for _ in range(150):                                         # glowing plankton
+        c.px(rnd.randrange(W), rnd.randrange(HZ + 6, H), rnd.choice("xxc"))
+    _walkway(c)                                                  # boardwalk pier
+    for y in range(WALK_Y + 11, H):                              # water under the pier
+        for x in range(W):
+            c.px(x, y, "a" if (x + y) % 5 else "b")
+    for x in range(6, W, 36):                                    # pier posts
+        c.rect(x, WALK_Y + 11, 3, H - WALK_Y - 11, "u"); c.px(x + 1, WALK_Y + 11, "S")
+    for _ in range(50):
+        c.px(rnd.randrange(W), rnd.randrange(WALK_Y + 11, H), rnd.choice("xd"))
+    return c.rows()
+
+
+def moon_background():
     rnd = random.Random(7)
     c = Canvas(W, H)
     bands = ["A", "B", "D", "F", "I", "J"]
@@ -713,8 +933,19 @@ def background():
 
 
 def stars_for_twinkle():
+    """Twinkling stars, only where there's open sky in the current world's backdrop."""
+    global _BG
+    if _BG is None:
+        _BG = background()
     rnd = random.Random(11)
-    return [[rnd.randrange(W), rnd.randrange(GROUND_Y - 30)] for _ in range(80)]
+    out = []
+    for _ in range(240):
+        x, y = rnd.randrange(W), rnd.randrange(GROUND_Y - 30)
+        if _BG[y][x] in "ABDFIJwts":
+            out.append([x, y])
+        if len(out) >= 80:
+            break
+    return out
 
 
 # ---------------------------------------------------------------- the resident
@@ -780,6 +1011,22 @@ def resident_palette(look):
 
 # ---------------------------------------------------------------- world JSON
 _BG = None
+
+
+def station_sprite():
+    """The Orbital Station in the sky (Moon), the World Tree's crown (forest) or the Abyss Station's buoy (ocean)."""
+    from . import worlds
+    from .world_buildings import builders
+    wset = builders(worlds.current())
+    if wset:
+        return {"sprite": wset[2], "x": 520, "y": wset[3]}
+    return {"sprite": STATION, "x": 520, "y": 14}
+
+
+def reset_background():
+    """Called when the world changes: the backdrop is redrawn next time it's needed."""
+    global _BG
+    _BG = None
 
 
 DECOR = {
@@ -949,11 +1196,13 @@ def world(layout, building_states, look, extras=None):
         decor.append({"name": name, "x": start + i * 14, "y": WALK_Y + 12, "sprite": DECOR[name]})
     pal = dict(PALETTE)
     pal.update(resident_palette(look))
+    from . import worlds
     data = {"w": W, "h": H, "palette": pal, "background": _BG, "buildings": buildings, "decor": decor,
+            "world_type": worlds.current(), "names": worlds.names(),
             "away": bool(extras.get("away")), "night": bool(extras.get("night", True)),
             "emotes": EMOTES, "trader_ship": TRADER_SHIP, "home_plot": HOME_PLOT,
             "aliases": {"studio": "radio_tower", "station": "spaceport"},
-            "station": {"sprite": STATION, "x": 520, "y": 14} if extras.get("station") else None,
+            "station": station_sprite() if extras.get("station") else None,
             "resident": {"frames": resident_frames(look), "form": look.get("form", "star_spirit"),
                          "feet_y": FEET_Y, "floats": look.get("form", "star_spirit") == "star_spirit",
                          "accessory": extras.get("wearing")},
@@ -968,5 +1217,6 @@ def world(layout, building_states, look, extras=None):
 
 
 def world_version(layout, building_states, look, extras=None):
-    key = [sorted((int(k), v) for k, v in (layout or {}).items()), building_states, look, extras or {}]
+    from . import worlds
+    key = [sorted((int(k), v) for k, v in (layout or {}).items()), building_states, look, extras or {}, worlds.current()]
     return hashlib.md5(json.dumps(key, sort_keys=True).encode()).hexdigest()[:10]

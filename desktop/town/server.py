@@ -22,6 +22,7 @@ from . import interiors
 from urllib.parse import parse_qs, urlparse
 
 from .osutil import find_exe, run_quiet
+from . import worlds
 from .devices import MEMBER_POSTS, OWNER_ONLY_GETS, PRIVATE_EVENTS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -174,7 +175,7 @@ def make_server(agent, host, port, pair_code):
                 self.close_connection = True   # the browser or phone closed the page mid-reply: nothing to do
 
         def _json(self, obj, code=200):
-            self._send(json.dumps(obj), code=code)
+            self._send(json.dumps(worlds.reword_obj(obj)), code=code)     # v0.13.5: names in the current world
 
         def _body(self, limit=100_000):
             try:
@@ -198,7 +199,7 @@ def make_server(agent, host, port, pair_code):
                     return self._send("Open the dashboard on the Stellar Hub computer, or use Hub Connect S.",
                                       "text/plain", 403)
                 with open(os.path.join(HERE, "dashboard.html"), encoding="utf-8") as f:
-                    return self._send(f.read(), "text/html")
+                    return self._send(worlds.reword(f.read()), "text/html")
             if u.path == "/api/me":
                 self.who = self._identity(qs)
                 if self.who is None:
@@ -227,6 +228,11 @@ def make_server(agent, host, port, pair_code):
                 return self._json(room) if room else self._json({"error": "no such room"}, 404)
             if u.path == "/api/world":
                 return self._json(agent.world())
+            if u.path == "/api/worlds":
+                from .life import EVENT_TYPES
+                return self._json({"current": worlds.current(), "choices": worlds.choices(),
+                                   "events": {k: v["title"] for k, v in EVENT_TYPES.items()},
+                                   "can_reset": self._local() and self.role == "owner"})
             if u.path == "/api/pairing":
                 if not self._local():
                     return self._json({"error": "only available on the hub computer"}, 403)
@@ -402,6 +408,32 @@ def make_server(agent, host, port, pair_code):
                     return self._json({"error": f"your account ({self.role}) can't do that. Ask the owner."}, 403)
             if self.headers.get("X-Hub-App") == "open" and self.role == "owner":
                 agent.phone_here()
+            if path == "/api/world":                       # owner only (non-owners are stopped above)
+                w = str(body.get("world", ""))
+                if not worlds.valid(w):
+                    return self._json({"ok": False, "error": "unknown world"}, 400)
+                if w != worlds.current():
+                    from .config import save_top
+                    save_top(agent.cfg, "world", w)
+                    worlds.set_current(w)
+                    agent.add_event("world", f"🗺️ The colony moved to: {worlds.WORLDS[w]['title']}",
+                                    "Same resident, same memories and buildings, new surroundings and names.")
+                return self._json({"ok": True, "current": worlds.current()})
+            if path == "/api/reset":
+                if not self._local():
+                    return self._json({"ok": False, "error": "a reset can only be started on the hub computer"}, 403)
+                if str(body.get("confirm", "")).strip() != "RESET":
+                    return self._json({"ok": False, "error": "type RESET to confirm"}, 400)
+                w = str(body.get("world") or worlds.current())
+                if not worlds.valid(w):
+                    return self._json({"ok": False, "error": "unknown world"}, 400)
+                from . import reset
+                up = getattr(agent, "updater", None)
+                if not up:
+                    return self._json({"ok": False, "error": "restart isn't available here"}, 500)
+                reset.request(agent.data_dir, w)
+                up._exit_soon(restart=True)
+                return self._json({"ok": True})
             m = re.fullmatch(r"/api/devices/(\d+)", path)
             if m:
                 ok = agent.update_device(int(m.group(1)), body.get("role"), body.get("status"), body.get("name"))

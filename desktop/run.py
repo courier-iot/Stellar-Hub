@@ -61,6 +61,22 @@ def main():
     global LOG_FILE
     data_dir = os.path.join(ROOT, cfg.get("data_dir", "data"))
     os.makedirs(data_dir, exist_ok=True)
+    from town import reset, worlds
+    from town.config import save_top
+    did_reset = reset.apply_pending(ROOT, data_dir)       # v0.13.5: a reset asked for from the dashboard
+    if did_reset and worlds.valid(did_reset.get("world")):
+        save_top(cfg, "world", did_reset["world"])
+    choice = os.path.join(ROOT, "world_choice.txt")        # written by the installer on a first install
+    if os.path.exists(choice):
+        try:
+            with open(choice, encoding="utf-8") as f:
+                picked = f.read().strip().lower()
+            if worlds.valid(picked) and not os.path.exists(os.path.join(data_dir, "town.db")):
+                save_top(cfg, "world", picked)
+            os.remove(choice)
+        except OSError:
+            pass
+    worlds.set_current(cfg.get("world", worlds.DEFAULT))
     LOG_FILE = os.path.join(data_dir, "hub.log")
     try:   # keep the log from growing forever
         if os.path.getsize(LOG_FILE) > 2_000_000:
@@ -68,6 +84,10 @@ def main():
     except OSError:
         pass
     db = DB(os.path.join(data_dir, "town.db"))
+    if did_reset:
+        n = reset.restore_devices(did_reset.get("old_db"), db)
+        log(f"Started over with a new resident ({worlds.WORLDS[worlds.current()]['title']}). "
+            f"The old one is saved in {did_reset['saved_to']}. Kept {n} paired device(s).")
     if cfg.get("provider") == "mock":
         llm = MockLLM()
     else:
@@ -77,7 +97,7 @@ def main():
     from town.updater import Updater
     agent.updater = Updater(ROOT, cfg, db, agent)
 
-    log(f"Stellar Hub v{VERSION}")
+    log(f"Stellar Hub v{VERSION}  ·  world: {worlds.WORLDS[worlds.current()]['title']}")
     agent.ensure_model(force=True)
     st = agent.model_status
     if st and st.get("note"):

@@ -2,6 +2,13 @@
 
 Stellar Hub's update manager shows the entries newer than the version you have.
 
+## v0.13.5
+- Added: world types. Choose where the colony lives when you first install: the 🌙 Moon colony (the original), the 🌲 Enchanted Forest (a glowing night forest with lanterns, luminous mushrooms, fireflies and a stream) or the 🌊 Ocean world (a boardwalk colony on a moonlit sea, with coral, kelp and a lighthouse). Each world has its own backdrop and colours, its own drawing of every building (a treehouse home, a moon-window library tower, a burrow gallery, a willow-pond park, a wizard-tower trade hall, a fallen-log pet shop, a cherry-tree salon, a toadstool market and a wishing well in the forest; a coral cottage, a lighthouse library, a shipwreck museum and a submarine dock on the ocean), its own name for every building and pet, its own descriptions, and its own mix of events (fireflies, pollen and thunderstorms in the forest; sea glass, high tides and magnetic storms on the ocean).
+- Added: switch worlds any time on the dashboard (Hub tab → World). Nothing is lost: the resident, its memories, buildings, credits and pets all move with it, and old memories read with the new names.
+- Added: Start over (Hub tab, on the hub computer only). Resets the whole project with a brand-new resident in the world you pick. Type RESET to confirm. Nothing is deleted: the old resident is moved to the resets folder. Your settings, AI model and paired phones are kept.
+- Changed: Hub Connect S shows building names from the hub, so they match your world.
+- Changed: updating never asks about the world; existing colonies stay on the Moon until you switch.
+
 ## v0.13.4
 - Fixed: installing an update by hand (downloading the installer) stopped the hub and didn't start it again, and could stop halfway. The installer now stops the hub properly before replacing files, "Start Stellar Hub now" is ticked and runs first, and the hardware check is no longer forced on every update (it's unticked on updates and still in the Start menu).
 - Changed: the resident can only answer with buildings it can actually go to right now and actions that exist there. Ollama holds its answer to that list (Ollama 0.5 or newer), so misspelled ids and made-up places ("observatory_library", "10") can't happen. With an older Ollama the hub falls back to correcting mistakes like before.
