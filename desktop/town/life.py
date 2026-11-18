@@ -281,7 +281,19 @@ class LifeMixin:
             self.mem.add("dream", dream, "home", 6)
         if insight:
             self.mem.add("reflection", insight, "home", 6)
-        return {"building": "home", "action": "sleep", "thought": "zzz", "result": "Fell asleep and dreamed." if dream else "Asleep."}
+        grew = None
+        try:                                     # v0.14: every few nights it thinks about who it's becoming
+            grew = self.personality_review()
+        except Exception:
+            pass
+        try:                                     # v0.14: and, if switched on, trains overnight once a week
+            self.maybe_auto_train()
+        except Exception:
+            pass
+        result = "Fell asleep and dreamed." if dream else "Asleep."
+        if grew:
+            result += " Thought about who I'm becoming: " + "; ".join(grew[:3])
+        return {"building": "home", "action": "sleep", "thought": "zzz", "result": result}
 
     # ================================================================ live chat
     def chat_state(self):

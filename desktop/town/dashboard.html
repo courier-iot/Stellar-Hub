@@ -239,6 +239,16 @@
     <div id="traits"></div>
   </section>
   <section>
+    <h2>Who it's becoming</h2>
+    <div class="meta">Every few nights, while it sleeps, it looks back and grows a little: its values, tastes, the moments
+      that shaped it, how it feels about others, its quirks, hopes and fears. <button class="ghost" onclick="reviewPersona()">Think about it now</button></div>
+    <div id="persona" style="margin-top:8px">Loading…</div>
+  </section>
+  <section>
+    <h2>How it has changed</h2>
+    <div id="ptimeline" class="scroll" style="max-height:360px"></div>
+  </section>
+  <section>
     <h2>Hobbies &amp; skills</h2>
     <div id="hobbies"></div>
   </section>
@@ -304,9 +314,15 @@
 </main>
 
 <main class="pane" data-pane="training">
+  <section class="wide">
+    <h2>Real training</h2>
+    <div class="meta">It learns from its own life: a small adapter is trained on the examples below, on your graphics card,
+      while it sleeps. A new version only goes live if it passes the exam; otherwise it's thrown away and nothing changes.</div>
+    <div id="trainer" style="margin-top:8px">Loading…</div>
+  </section>
   <section>
-    <h2>Training readiness</h2>
-    <div class="meta">Real training arrives in v0.14. Until then, this decides what it will learn from, and how carefully.
+    <h2>What it learns from</h2>
+    <div class="meta">This decides what it learns from, and how carefully.
       Training on its own writing can amplify its mistakes, so you stay in the loop.</div>
     <div id="trsummary" style="margin-top:8px">Loading…</div>
     <h2 class="sub">Settings</h2>
@@ -1372,7 +1388,9 @@ async function loadTraining() {
        <div class="row">Its own writing: at most <input id="trshare" type="number" min="10" max="100" value="${st.self_share}" style="width:70px">% of the examples</div>
        <div class="row">Pass mark <input id="trpass" type="number" min="30" max="100" value="${st.pass_mark}" style="width:70px">% · keep <input id="trkeep" type="number" min="1" max="20" value="${st.keep_versions}" style="width:60px"> old versions</div>
        <div class="row">Training strength <select id="trstr">${["gentle", "normal", "strong"].map(x => `<option ${x === st.strength ? "selected" : ""}>${x}</option>`).join("")}</select>
-       <span class="meta">gentle changes it least; start there</span></div>`;
+       <span class="meta">gentle changes it least; start there</span></div>
+       <label style="display:block; margin-top:6px"><input type="checkbox" id="trauto" ${st.auto_train ? "checked" : ""}> Train by itself at night, at most once a week,
+         when there are at least <input id="trmin" type="number" min="5" max="1000" value="${st.min_new}" style="width:70px"> new examples</label>`;
   }
   document.getElementById("trexam").innerHTML = (ex.questions || []).map(q => {
     const r = last && last.results.find(x => x.id === q.id);
@@ -1384,6 +1402,87 @@ async function loadTraining() {
     ${c.question ? `<div class="meta">Exam: ${esc(c.question)}</div>` : ""}</div>`).join("") || `<div class="meta">No corrections yet.</div>`;
   loadTrItems();
 }
+// v0.14: real training
+async function loadTrainer() {
+  let t; try { t = await api("/api/trainer"); } catch (e) { return; }
+  const box = document.getElementById("trainer"), run = t.run || {}, L = t.stage_labels || {};
+  let h = `<div>Trains on <b>${esc(t.base || "?")}</b>${t.base_repo ? ` <span class="meta">(${esc(t.base_repo)})</span>` : ""}
+    · live model: <b>${esc(t.live_model || "?")}</b></div>
+    <div class="meta">${t.gpu ? `Graphics card: ${esc(t.gpu.name)}, ${t.gpu.vram_gb} GB` : "No NVIDIA graphics card found"}${t.need_vram_gb ? ` · needs about ${t.need_vram_gb} GB` : ""}</div>`;
+  (t.problems || []).forEach(p => h += `<div class="warnbox">${esc(p)}</div>`);
+  if (!t.toolkit.ready) {
+    h += `<div style="margin-top:8px">First, install the training toolkit (PyTorch and friends, about 4-6 GB, into the Stellar Hub folder; your system isn't changed).</div>
+      <div class="row"><button onclick="api('/api/trainer/setup', {}).then(loadTrainer)" ${t.toolkit.installing ? "disabled" : ""}>${t.toolkit.installing ? "Installing…" : "Install the training toolkit"}</button></div>`;
+    if ((t.toolkit.log || []).length) h += `<pre class="meta scroll" style="max-height:160px">${esc(t.toolkit.log.join("\n"))}</pre>`;
+  } else if (run.active) {
+    const pr = run.progress;
+    h += `<div style="margin-top:8px"><b>Training v${run.n}:</b> ${esc(L[run.stage] || run.stage)}${pr && run.stage === "train" ?
+      ` · step ${pr.step}/${pr.total} · loss ${pr.loss.toFixed(3)} · about ${Math.ceil(pr.eta_s / 60)} min left` : "…"}</div>`;
+    if (pr && run.stage === "train") h += `<div style="background:var(--line, #333); height:8px; border-radius:4px; margin:6px 0"><div style="width:${Math.round(100 * pr.step / pr.total)}%; height:8px; border-radius:4px; background:var(--accent, #5ef2ff)"></div></div>`;
+    h += `<div class="meta">It's in a deep rest until this finishes (chat and turns are paused).</div>
+      <div class="row"><button class="deny" onclick="if (confirm('Stop this training run?')) api('/api/trainer/cancel', {}).then(loadTrainer)">Stop</button></div>`;
+  } else {
+    h += `<div class="row" style="margin-top:8px"><button onclick="startTrain()" ${t.problems.length ? "disabled" : ""}>Train now</button>
+      <span class="meta">Takes from minutes to a few hours, depending on your card and how much it has written. The first run downloads the base model's original files too.</span></div>`;
+  }
+  if (run.result && !run.active) {
+    const r = run.result;
+    h += `<div class="item" style="margin-top:8px">${r.ok ? "✅" : "❌"} Last run v${r.n} (${when(r.ended)}): ${r.ok ? `live · exam ${r.before}% → ${r.after}%` : esc(r.why || "didn't finish")}</div>`;
+  }
+  if ((t.run_log || []).length) h += `<details style="margin-top:6px"><summary class="meta">Run log</summary><pre class="meta scroll" style="max-height:220px">${esc(t.run_log.join("\n"))}</pre></details>`;
+  const vs = (t.versions || []).slice().reverse();
+  h += `<h2 class="sub">Versions</h2>` + vs.map(v => `<div class="item">${v.live ? "🟢" : "⚪"} <b>${esc(v.tag)}</b> · exam ${v.score}% · ${v.examples} examples · ${when(v.ts)}
+      ${v.live ? "" : `<button class="ghost" onclick="useModel('${esc(v.tag)}')">Use this</button>`}</div>`).join("") +
+    `<div class="item">${t.live_model === t.base ? "🟢" : "⚪"} <b>${esc(t.base || "base")}</b> · the plain model, before any training
+      ${t.live_model === t.base || !t.base ? "" : `<button class="ghost" onclick="useModel('${esc(t.base)}')">Go back to this</button>`}</div>`;
+  box.innerHTML = h;
+  if (run.active || t.toolkit.installing) setTimeout(loadTrainer, 4000);
+}
+async function startTrain() {
+  const r = await api("/api/trainer/train", {});
+  if (!r.ok) alert(r.message || "Couldn't start."); loadTrainer();
+}
+async function useModel(tag) {
+  if (!confirm(`Switch the resident to ${tag}?`)) return;
+  await api("/api/trainer/use", {tag}); loadTrainer();
+}
+setTimeout(loadTrainer, 1500); setInterval(loadTrainer, 30000);
+
+// v0.14: personality
+async function loadPersona() {
+  let p; try { p = await api("/api/persona"); } catch (e) { return; }
+  const bar = (v, c) => `<span style="display:inline-block; width:60px; height:6px; background:var(--line, #333); border-radius:3px; vertical-align:middle"><span style="display:block; width:${v}%; height:6px; border-radius:3px; background:${c}"></span></span>`;
+  let h = p.statement.text ? `<div style="white-space:pre-wrap"><i>"${esc(p.statement.text)}"</i></div>` +
+      (p.statement.history.length ? `<div class="meta">Rewritten ${p.statement.history.length} time(s). Last reason: ${esc(p.statement.history.slice(-1)[0].reason || "—")}</div>` : "")
+    : `<div class="meta">It hasn't written down who it is yet. It will after its next sleep (or press "Think about it now").</div>`;
+  const fav = p.tastes.filter(t => t.kind === "favourite"), bad = p.tastes.filter(t => t.kind === "dislike");
+  if (fav.length) h += `<h2 class="sub">Loves</h2>` + fav.map(t => `<div class="item">💛 <b>${esc(t.thing)}</b> <span class="meta">${esc(t.about)} · ${esc(t.why)}</span></div>`).join("");
+  if (bad.length) h += `<h2 class="sub">Dislikes</h2>` + bad.map(t => `<div class="item">💢 <b>${esc(t.thing)}</b> <span class="meta">${esc(t.why)}</span></div>`).join("");
+  if (p.core.length) h += `<h2 class="sub">Moments that shaped it (${p.core.length} of ${p.max_core})</h2>` + p.core.map(c => `<div class="item">⭐ ${esc(c.text)}<div class="meta">${esc(c.why)}</div></div>`).join("");
+  if ((p.core_archive || []).length) h += `<details><summary class="meta">Once core (${p.core_archive.length}): moments it has let go of, which can come back</summary>` +
+    p.core_archive.map(c => `<div class="item">☆ ${esc(c.text)}<div class="meta">core from ${when(c.since)} to ${when(c.retired)}${c.retire_why ? " · " + esc(c.retire_why) : ""}</div></div>`).join("") + `</details>`;
+  const bonds = Object.entries(p.bonds);
+  if (bonds.length) h += `<h2 class="sub">Bonds</h2>` + bonds.map(([who, b]) => `<div class="item"><b>${esc(who)}</b>
+      <span class="meta">trust</span> ${bar(b.trust, "#5ef2ff")} <span class="meta">fondness</span> ${bar(b.fondness, "#ff8ad8")}
+      <div class="meta">${esc(b.note || "")}${(b.in_jokes || []).length ? ` · in-joke: "${esc(b.in_jokes.slice(-1)[0])}"` : ""}</div></div>`).join("");
+  if (p.quirks.length) h += `<h2 class="sub">Quirks</h2><div>${p.quirks.map(q => `<span class="tag">${esc(q)}</span>`).join(" ")}</div>`;
+  if (p.hopes.length) h += `<h2 class="sub">Hopes</h2>` + p.hopes.map(x => `<div class="item">🌠 ${esc(x.hope)}<div class="meta">${esc(x.progress || "")}</div></div>`).join("");
+  if (p.fear && p.fear.fear) h += `<h2 class="sub">A fear it's facing</h2><div class="item">🌑 ${esc(p.fear.fear)}<div class="meta">${esc(p.fear.facing || "")}</div></div>`;
+  const chk = (p.checks || []).slice(-1)[0];
+  if (chk) h += `<div class="meta" style="margin-top:6px">Last self-check: ${chk.like_myself ? "felt like itself" : "felt a bit off"} · ${esc(chk.note)}</div>`;
+  h += `<div class="meta">Next look back: ${p.last_review ? "about " + p.review_days + " days after " + when(p.last_review) : "at its next sleep"}</div>`;
+  document.getElementById("persona").innerHTML = h;
+  document.getElementById("ptimeline").innerHTML = (p.timeline || []).map(t => `<div class="item"><span class="meta">${when(t.ts)}</span> ${esc(t.text)}</div>`).join("") ||
+    `<div class="meta">Nothing yet. Changes show up here as it grows.</div>`;
+}
+async function reviewPersona() {
+  const r = await api("/api/persona/review", {});
+  if (!r.ok) { alert(r.error || "Not right now."); return; }
+  document.getElementById("persona").insertAdjacentHTML("afterbegin", `<div class="meta">Thinking… (this takes one AI call)</div>`);
+  setTimeout(loadPersona, 20000);
+}
+setTimeout(loadPersona, 1200); setInterval(loadPersona, 60000);
+
 async function loadTrItems(more) {
   if (!more) trOffset = 0;
   const r = await api(`/api/training/items?status=${trStatus}&limit=40&offset=${trOffset}`);
@@ -1405,7 +1504,8 @@ async function saveTraining() {
     require_review: document.getElementById("trreq").checked, skip_flagged: document.getElementById("trflag").checked,
     auto_rollback: document.getElementById("trroll").checked, self_share: +document.getElementById("trshare").value,
     pass_mark: +document.getElementById("trpass").value, keep_versions: +document.getElementById("trkeep").value,
-    strength: document.getElementById("trstr").value});
+    strength: document.getElementById("trstr").value, auto_train: document.getElementById("trauto").checked,
+    min_new: +document.getElementById("trmin").value});
   document.getElementById("trmsg").textContent = r.settings ? "Saved ✓" : "Couldn't save"; loadTraining.drawn = false; loadTraining();
 }
 async function addExam() { await api("/api/training/exam/add", {question: document.getElementById("exq").value, expect: document.getElementById("exa").value});

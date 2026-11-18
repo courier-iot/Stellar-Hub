@@ -62,6 +62,25 @@ Python, allow it so your phone can connect.
 Stellar Hub only listens on this computer and on your private Tailscale network, never your
 regular Wi-Fi. Phones need the pair code. To make a new code: `./start.sh --new-pair-code`.
 
+## Personality and training (v0.14)
+**Personality:** every few nights (`personality.review_days` in config.json, default 3) the resident reviews its
+recent life and updates its "who I am" statement, tastes, core memories, bonds, quirks, hopes and fear. See it on the
+Mind tab. It keeps up to `personality.max_core` core memories (default 7, 3-15) in every prompt; ones it lets go of
+are kept in a "once core" archive and can come back.
+
+**Training:** Training tab → *Install the training toolkit* (once, about 4-6 GB), then *Train now*. What it learns
+from, the pass mark, strength and automatic weekly training are set on the same tab.
+
+| Graphics memory | Trainable models (QLoRA, 4-bit) |
+|---|---|
+| none (CPU only, slow) | qwen3:0.6b, llama3.2:1b, qwen2.5:1.5b, qwen3:1.7b |
+| 4 GB (e.g. GTX 1650) | the above + llama3.2:3b, qwen2.5:3b, qwen3:4b (tight) |
+| 6 GB (e.g. RTX 2060) | the same as 4 GB, with room to spare |
+| 8 GB+ | the above + qwen2.5:7b, qwen3:8b, llama3.1:8b |
+
+Files live in `data/trainer/`: `toolkit/` (its own Python), `hf/` (base model downloads), `runs/vN/` (examples, the
+adapter, the Modelfile and a log for each run). Gemma models can't be trained yet.
+
 ## Worlds
 The installer asks where the colony lives (Linux: `./setup.sh` asks on a first install). Switch any time on the
 dashboard (Hub tab → World): only the scenery, building drawings, names and event mix change, so nothing is lost. The tables below use

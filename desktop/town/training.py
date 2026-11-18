@@ -1,4 +1,4 @@
-"""v0.13.3: training controls, ready for v0.14's real training.
+"""v0.13.3: training controls (v0.14 adds the real training in trainer.py).
 
 Training a model on its own writing can amplify its quirks and mistakes ("model collapse"). This keeps a person in the
 loop before any of that happens:
@@ -31,6 +31,8 @@ DEFAULTS = {
     "auto_rollback": True,
     "keep_versions": 5,
     "strength": "gentle",           # gentle / normal / strong: how hard v0.14 trains (epochs and learning rate)
+    "auto_train": False,            # v0.14: train by itself at night, at most once a week
+    "min_new": 30,                  # ...when there are at least this many new examples
 }
 EXAM_SEED = [   # (question, expected words: any one of each "|" group must appear, comma = all groups)
     ("What is the building id of the Uplink Café? Answer with the id only.", "internet_cafe"),

@@ -14,7 +14,7 @@ import time
 ROLES = ("owner", "member", "viewer")
 MEMBER_POSTS = {"/api/goals/review", "/api/chat/start", "/api/chat/say", "/api/chat/end", "/api/goals", "/api/goals/cancel", "/api/letter",
                 "/api/turn", "/api/search", "/api/chess/new", "/api/chess/move"}
-OWNER_ONLY_GETS = {"/api/devices", "/api/training", "/api/training/exam", "/api/training/corrections"}
+OWNER_ONLY_GETS = {"/api/devices", "/api/training", "/api/training/exam", "/api/training/corrections", "/api/trainer"}
 PRIVATE_EVENTS = {"request", "question", "device", "monitor", "program"}
 
 

@@ -20,6 +20,8 @@ from .devices import DevicesMixin
 from . import manuals
 from .economy import EconomyMixin
 from .training import TrainingMixin
+from .personality import PersonalityMixin
+from .trainer import TrainerMixin
 from .hobbies import HobbiesMixin, level_for
 from .life import LifeMixin
 from .plants import SPECIES as PLANT_SPECIES
@@ -32,7 +34,7 @@ class BudgetExceeded(Exception):
     pass
 
 
-class Agent(ExtrasMixin, MonitorMixin, DevicesMixin, EconomyMixin, TrainingMixin, StyleMixin, WorkshopMixin, MuseumMixin, PetsMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
+class Agent(PersonalityMixin, TrainerMixin, ExtrasMixin, MonitorMixin, DevicesMixin, EconomyMixin, TrainingMixin, StyleMixin, WorkshopMixin, MuseumMixin, PetsMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
     def __init__(self, cfg, db, llm, data_dir):
         self.cfg, self.db, self.llm = cfg, db, llm
         self.data_dir = data_dir
@@ -117,7 +119,10 @@ class Agent(ExtrasMixin, MonitorMixin, DevicesMixin, EconomyMixin, TrainingMixin
     def ask(self, system, user, task, schema=None):
         if self._usage()["llm_calls"] >= self.cfg["limits"]["llm_calls_per_day"]:
             raise BudgetExceeded("Daily AI-call limit reached.")
+        if task != "exam" and self.training_active():
+            raise BudgetExceeded("Resting while it trains.")    # v0.14: the graphics card is busy learning
         self._bump("llm_calls")
+        system = system + self.persona_note(task)       # v0.14: who it is, in its own words
         if schema:
             try:
                 return self.llm.chat_json(system, user, task=task, schema=schema)
@@ -377,6 +382,9 @@ What do you do now?"""
             self.chat_expire()
             if self.chat_state():
                 return {"skipped": "chatting with the creator"}
+            if self.training_active():               # v0.14: in a deep rest while it learns
+                return self._special_turn({"building": "home", "action": "rest", "thought": "…",
+                                           "result": "In a deep rest, learning from my own life."})
             if self.layout() is None:  # upgrading from before plots existed: lay out the colony
                 summary = self.plan_colony("upgrade")
                 return self._special_turn({"building": "home", "action": "plan_colony",

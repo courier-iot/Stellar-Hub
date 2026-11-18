@@ -66,6 +66,9 @@ def main():
     did_reset = reset.apply_pending(ROOT, data_dir)       # v0.13.5: a reset asked for from the dashboard
     if did_reset and worlds.valid(did_reset.get("world")):
         save_top(cfg, "world", did_reset["world"])
+    if did_reset and did_reset.get("base_model"):          # v0.14: a new resident doesn't inherit a trained model
+        from town.config import save_setting
+        save_setting(cfg, "ollama", "model", did_reset["base_model"])
     choice = os.path.join(ROOT, "world_choice.txt")        # written by the installer on a first install
     if os.path.exists(choice):
         try:

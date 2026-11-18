@@ -45,5 +45,9 @@
     "tick_minutes": 5
   },
   "_migrated_0130": true,
-  "_migrated_0133": true
+  "_migrated_0133": true,
+  "personality": {
+    "review_days": 3,
+    "max_core": 7
+  }
 }

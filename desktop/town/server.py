@@ -309,6 +309,8 @@ def make_server(agent, host, port, pair_code):
                       "/api/workshop": agent.workshop_overview,
                       "/api/economy": agent.economy,
                       "/api/training": agent.training_summary,
+                      "/api/trainer": agent.trainer_status,
+                      "/api/persona": agent.persona_view,
                       "/api/training/exam": lambda: {"questions": agent.exam(), "runs": (agent.db.get("exam_runs") or [])[-5:],
                                                      "running": getattr(agent, "_exam_running", False)},
                       "/api/training/corrections": lambda: {"corrections": agent.corrections()},
@@ -478,6 +480,26 @@ def make_server(agent, host, port, pair_code):
                 return self._json({"ok": True})
             if path == "/api/training/exam/run":
                 agent.run_exam_async()
+                return self._json({"ok": True})
+            if path == "/api/trainer/setup":                   # v0.14: real training (owner only)
+                return self._json({"ok": agent.setup_toolkit()})
+            if path == "/api/trainer/train":
+                ok, msg = agent.start_training("manual")
+                return self._json({"ok": ok, "message": msg}, 200 if ok else 400)
+            if path == "/api/trainer/cancel":
+                return self._json({"ok": agent.cancel_training()})
+            if path == "/api/trainer/use":
+                ok = agent.use_model(str(body.get("tag", "")))
+                return self._json({"ok": ok}, 200 if ok else 400)
+            if path == "/api/persona/review":
+                if agent.training_active():
+                    return self._json({"ok": False, "error": "It's resting while it trains."}, 409)
+                def go():
+                    try:
+                        agent.personality_review(force=True)
+                    except Exception:
+                        pass
+                threading.Thread(target=go, daemon=True).start()
                 return self._json({"ok": True})
             if path == "/api/sandbox/check":
                 return self._json({"status": agent.sandbox_status(fresh=True), "problem": agent.sandbox_problem()})

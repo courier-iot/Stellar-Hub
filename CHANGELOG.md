@@ -2,6 +2,14 @@
 
 Stellar Hub's update manager shows the entries newer than the version you have.
 
+## v0.14.0
+- Added: real training. The resident learns from its own life: a small LoRA adapter is trained on your graphics card from its corrections, exam answers and reviewed writing (Training tab → Train now, or by itself at night at most once a week). Each run starts from the plain base model, so mistakes can't pile up across versions. A new version (stellar-<name>:vN in Ollama) only goes live if it reaches the exam's pass mark and doesn't score much worse than before; otherwise it's thrown away automatically. Switch to any kept version, or back to the plain model, any time.
+- Added: a one-click training toolkit (PyTorch, Transformers, PEFT and llama.cpp's converter, about 4-6 GB) installed into the Stellar Hub folder with uv, so the hub's own Python and your system aren't touched. The base model's original files come from Hugging Face (no account needed). Trainable models: Qwen 2.5 (1.5B-14B), Qwen 3 (0.6B-14B), Llama 3.2 (1B, 3B) and Llama 3.1 8B; the Training tab says what fits your graphics card.
+- Added: a developing personality. Every few nights while it sleeps, it looks back and grows: a "who I am" statement it only rewrites with a reason, favourites and dislikes with reasons, up to 7 core memories that shaped it (set personality.max_core in config.json, 3-15; ones it lets go of move to a "once core" archive on the Mind tab and can come back), bonds with you, its pets and visitors (trust, fondness, in-jokes), quirks it notices in itself, hopes and a fear it's facing, and a self-check that pulls it back if it drifts. All of it guides every decision and chat.
+- Added: Mind tab → "Who it's becoming" and "How it has changed" (a timeline), with a "Think about it now" button.
+- Changed: while it trains, the resident is in a deep rest: turns and chat pause so the graphics card is free. A run cut off by a restart is cleared automatically.
+- Changed: Start over keeps the training toolkit and downloads, and the new resident goes back to the plain, untrained model.
+
 ## v0.13.6
 - Added: each world now colours how the resident talks and what it notices. In the forest it speaks with a gentle storybook warmth and treats the wisps and fireflies as neighbours; on the ocean it plans around the tides and weather and uses the odd sailor's phrase; on the Moon it notices the ringed planet, the stars and the quiet. Its personality stays its own.
 - Added: five seasons in every world, each lasting one calendar month: 🌱 Spring, ☀️ Summer, 🍂 Autumn, ❄️ Winter, then a special season with far more events (☄️ Starfall on the Moon, ✨ Wild Magic in the forest, 🌀 Storm Season on the ocean). December 2026 is Winter. Each season recolours the world (autumn leaves, winter snow and frost, magic glow), shifts which events happen and how often (fewer in winter, 2.5x in the special season), and the resident knows the season and lets it shape what it does.

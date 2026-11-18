@@ -386,5 +386,152 @@ class WorldsAndReset(unittest.TestCase):
         self.assertFalse(new.q("SELECT id FROM memories"))
 
 
+
+class PersonalityAndTraining(unittest.TestCase):
+    """v0.14: a personality that develops, and real training with an exam gate."""
+
+    def setUp(self):
+        self.a = make_agent()
+        self.a.take_turn()                                 # gets a name and a first memory or two
+
+    def test_review_grows_a_personality_and_it_shows_in_prompts(self):
+        a = self.a
+        mid = a.mem.add("observation", "I watched my first meteor shower from the park and cried a little.", "park", 9)
+        added = a.apply_review({
+            "statement": {"text": "I'm curious and gentle. I care about the small lives in my colony.", "reason": ""},
+            "tastes": [{"thing": "meteor showers", "kind": "favourite", "about": "other", "why": "they make me feel tiny", "strength": 8},
+                       {"thing": "dust storms", "kind": "dislike", "about": "other", "why": "stuck indoors", "strength": "4"}],
+            "core_memories": [{"id": mid, "why": "the first time I felt wonder"}, {"id": 999999, "why": "made up"}],
+            "bonds": [{"who": "Courier", "trust": 2, "fondness": 1, "note": "my creator, kind and busy", "in_joke": "the cheese moon"}],
+            "quirks": ["hums while watering plants"], "hopes": [{"hope": "paint the comet", "progress": "sketched it"}],
+            "fear": {"fear": "forgetting things", "facing": "writing chapters"},
+            "self_check": {"like_myself": False, "note": "I chased credits all week"},
+            "changes": ["Started noticing the sky more"]})
+        p = a.persona()
+        self.assertEqual(p["core"][0]["id"], mid)
+        self.assertEqual(len(p["core"]), 1)                                # ids not in its memories are ignored
+        self.assertEqual(p["bonds"]["Courier"]["trust"], 56)
+        self.assertEqual(p["tastes"][1]["strength"], 4)
+        self.assertTrue(any("Wrote down who I am" in x for x in added))
+        self.assertTrue(p["timeline"])
+        note = a.persona_note("decide")
+        for bit in ("curious and gentle", "meteor showers", "first meteor shower", "Courier", "hums", "paint the comet",
+                    "forgetting things", "drifted"):
+            self.assertIn(bit, note)
+        self.assertEqual(a.persona_note("exam"), "")                      # the exam tests the model alone
+        a.apply_review({"statement": {"text": "I'm braver now.", "reason": "the storm taught me"}})
+        self.assertEqual(a.persona()["statement"]["history"][-1]["reason"], "the storm taught me")
+        a.apply_review({"oops": 1})                                         # junk doesn't break anything
+        m2 = a.mem.add("observation", "Moss the tortoise fell asleep on my foot during the storm.", "home", 8)
+        a.apply_review({"core_memories": [{"id": m2, "why": "felt trusted"}], "let_go": [{"id": mid, "why": "wonder is everyday now"}]})
+        p = a.persona()
+        self.assertEqual([c["id"] for c in p["core"]], [m2])
+        self.assertEqual(p["core_archive"][-1]["id"], mid)                 # let go of, but kept
+        self.assertEqual(p["core_archive"][-1]["retire_why"], "wonder is everyday now")
+        a.apply_review({"core_memories": [{"id": m2, "why": "felt trusted"}, {"id": mid, "why": "it came back to me"}]})
+        p = a.persona()
+        self.assertFalse(p["core_archive"])                                # brought back
+        self.assertTrue(any("Remembered again" in t["text"] for t in p["timeline"]))
+        a.cfg.setdefault("personality", {})["max_core"] = 3
+        m3 = a.mem.add("observation", "Painted the comet.", "gallery", 7)
+        m4 = a.mem.add("observation", "Got a letter from Courier.", "post_office", 7)
+        a.apply_review({"core_memories": [{"id": x, "why": "."} for x in (m2, mid, m3, m4)]})
+        self.assertEqual(len(a.persona()["core"]), 3)                     # the max_core setting is respected
+
+    def test_review_runs_at_night_on_a_schedule(self):
+        a = self.a
+        self.assertTrue(a.personality_due())
+        a.personality_review()
+        self.assertFalse(a.personality_due())
+        self.assertIsNone(a.personality_review())
+        self.assertIn("timeline", a.persona_view())
+
+    def test_trainer_knows_what_it_can_train(self):
+        from town import trainer as T
+        self.assertEqual(T.base_key("qwen2.5:7b"), "qwen2.5:7b")
+        self.assertEqual(T.base_key("llama3.2:3b:latest".replace(":latest", "")), "llama3.2:3b")
+        self.assertIsNone(T.base_key("gemma4:12b"))
+        self.assertLess(T.need_vram_gb(3.2), 4)                           # a 3B model fits a 4 GB card, just
+        self.assertGreater(T.need_vram_gb(8.0), 6)
+        a = self.a
+        a.cfg.setdefault("ollama", {})["model"] = "gemma4:12b"
+        st = a.trainer_status()
+        self.assertFalse(st["can_train"])
+        self.assertTrue(any("can't be trained" in p for p in st["problems"]))
+        ok, msg = a.start_training()
+        self.assertFalse(ok)
+
+    @unittest.skipIf(os.name == "nt", "uses a fake ollama script")
+    def test_a_training_run_goes_live_or_rolls_back(self):
+        import sys
+        from town import trainer as T
+        a = self.a
+        for i in range(12):
+            a.add_correction("", f"The answer number {i} is internet_cafe for the cafe.", None)
+        self.assertGreaterEqual(len(a.training_examples()), 12)
+        self.assertEqual(a.training_examples()[0]["messages"][0]["role"], "system")
+        fake = os.path.join(tempfile.mkdtemp(), "fake.py")
+        with open(fake, "w") as f:
+            f.write("#!/usr/bin/env python3\nimport sys, os\n"
+                    "if '--out' in sys.argv:\n"
+                    "    out = sys.argv[sys.argv.index('--out') + 1]; os.makedirs(out, exist_ok=True)\n"
+                    "    print('STAGE download'); print('BASE_DIR /tmp/base'); print('STAGE train 12 examples, 2 steps')\n"
+                    "    print('PROGRESS 1 2 1.5 3'); print('PROGRESS 2 2 1.2 6'); print('DONE', out)\n"
+                    "if '--outfile' in sys.argv:\n"
+                    "    open(sys.argv[sys.argv.index('--outfile') + 1], 'w').write('gguf')\n")
+        os.chmod(fake, 0o755)
+        cfg_path = os.path.join(tempfile.mkdtemp(), "config.json")
+        with open(cfg_path, "w") as f:
+            json.dump({"ollama": {"model": "qwen2.5:3b"}}, f)
+        a.cfg["_config_path"] = cfg_path
+        a.cfg["ollama"]["model"] = "qwen2.5:3b"
+        os.makedirs(a.tr_dir("toolkit"), exist_ok=True); open(a.tr_dir("toolkit", "READY"), "w").close()
+        os.makedirs(a.tr_dir("llama_cpp"), exist_ok=True)
+        import shutil as sh
+        sh.copy(fake, a.tr_dir("llama_cpp", "convert_lora_to_gguf.py"))
+        orig = (T.WORKER, T.find_ollama, T.TrainerMixin.toolkit_python, T.TrainerMixin.trainer_status)
+        calls = []
+        T.WORKER = fake
+        T.find_ollama = lambda: fake if os.name != "nt" else None
+        T.TrainerMixin.toolkit_python = lambda self: sys.executable
+        T.TrainerMixin.trainer_status = lambda self: {"toolkit": {"ready": True}, "problems": []}
+        a._gpu_cache = ({"name": "GTX 1650", "vram_gb": 4.0}, time.time())
+        scores = iter([70, 85, 70, 40])
+        a.run_exam = lambda label="": calls.append(label) or {"score": next(scores)}
+        try:
+            ok, msg = a.start_training()
+            self.assertTrue(ok, msg)
+            a._train_thread.join(30)
+            r = a.db.get("train_run")["result"]
+            self.assertTrue(r["ok"], r)
+            self.assertEqual(r["after"], 85)
+            with open(cfg_path) as f:
+                self.assertTrue(json.load(f)["ollama"]["model"].startswith("stellar-"))
+            self.assertTrue(a.model_versions()[-1]["live"])
+            self.assertEqual(a.training_base(), "qwen2.5:3b")              # always trained from the plain base
+            self.assertFalse(a.training_active())
+            ok, msg = a.start_training()                                   # second run fails the exam -> rolled back
+            a._train_thread.join(30)
+            r2 = a.db.get("train_run")["result"]
+            self.assertFalse(r2["ok"]); self.assertIn("pass mark", r2["why"])
+            self.assertEqual(len(a.model_versions()), 1)
+            self.assertTrue(a.use_model("qwen2.5:3b"))                     # back to the plain model any time
+            self.assertEqual(a.llm.model, "qwen2.5:3b")
+            self.assertFalse(a.use_model("not-a-model"))
+        finally:
+            T.WORKER, T.find_ollama, T.TrainerMixin.toolkit_python, T.TrainerMixin.trainer_status = orig
+
+    def test_it_rests_while_training(self):
+        a = self.a
+        a.db.set("train_run", {"active": True, "stage": "train", "started": time.time()})
+        out = a.take_turn()
+        self.assertIn("deep rest", out.get("result", ""))
+        with self.assertRaises(Exception):
+            a.ask("You are Nova.", "hi", "decide")
+        a.db.set("train_run", {"active": True, "stage": "train", "started": time.time() - 3600})
+        self.assertFalse(a.training_active())                             # a run cut off by a restart is cleared
+        self.assertIn("Interrupted", a.db.get("train_run")["result"]["why"])
+
+
 if __name__ == "__main__":
     unittest.main()
