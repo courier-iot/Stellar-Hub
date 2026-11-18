@@ -88,7 +88,12 @@ REGEN_ON, REGEN_OFF = 4.0, 9.0          # energy per hour: on shift / resting
 
 # ---------------------------------------------------------------- art
 def pet_frames(species):
-    """Two 12x12 frames per species."""
+    """Two 12x12 frames per species (v0.15.1: forest and ocean pets have their own drawings)."""
+    from . import worlds
+    from .world_pets import world_frames
+    wf = world_frames(worlds.current(), species)
+    if wf:
+        return wf
     out = []
     for f in (0, 1):
         c = sprites.Canvas(12, 12)

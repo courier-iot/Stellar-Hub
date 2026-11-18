@@ -533,5 +533,132 @@ class PersonalityAndTraining(unittest.TestCase):
         self.assertIn("Interrupted", a.db.get("train_run")["result"]["why"])
 
 
+
+class LivelierColony(unittest.TestCase):
+    """v0.14.1: festivals, life projects, visitors who remember, voice pacing, hub health, training report."""
+
+    def setUp(self):
+        self.a = make_agent()
+        self.a.take_turn()
+
+    def tearDown(self):
+        from town import worlds
+        worlds.set_current("moon")
+
+    def test_festivals_open_decorate_and_reward(self):
+        import datetime
+        from town import festivals, sprites, worlds
+        self.assertIsNone(festivals.current("forest", "autumn", datetime.date(2026, 11, 5)))
+        f = festivals.current("forest", "autumn", datetime.date(2026, 11, 13))
+        self.assertEqual((f["title"], f["day"], f["days"]), ("🏮 Lantern Festival", 2, 3))
+        fin = festivals.current("ocean", "special", datetime.date(2027, 1, 21))
+        self.assertTrue(fin["finale"])
+        for w in worlds.ORDER:
+            for sid in worlds.SEASON_ORDER:
+                self.assertIn(festivals.FESTIVALS[w][sid][2], BUILDINGS)
+                worlds.set_current(w)
+                rows = sprites.festival_decor(sprites.background(), festivals.FESTIVALS[w][sid][3], sid == "special")
+                self.assertFalse(set("".join(rows)) - set(sprites.PALETTE) - {"."}, (w, sid))
+        worlds.set_current("moon")
+        a = self.a
+        a.festival = lambda: {"id": "moon-autumn-x", "title": "🍂 Harvest Moon", "about": "Sharing the harvest.", "place": "home",
+                              "decor": "lanterns", "signature": None, "finale": False, "day": 1, "days": 3}
+        a.festival_turn()
+        self.assertTrue(any("FESTIVAL" in n for n in a.festival_news()))
+        self.assertIn("celebrate", dict(a.festival_actions("home")))
+        before = a.credits()
+        self.assertIn("celebrated", a.act_celebrate({"how": "shared soup"}, 5))
+        self.assertEqual(a.credits(), before + 20 + 25)                      # + the first-festival milestone
+        self.assertIn("already", a.act_celebrate({}, 5))
+        self.assertFalse(a.festival_actions("home"))
+
+    def test_a_hope_becomes_a_project_that_pays_off(self):
+        a = self.a
+        a.apply_review({"hopes": [{"hope": "write a book about the stars", "progress": ""}]})
+        a.ask = lambda system, user, task, schema=None: (
+            {"title": "Star Book", "kind": "writing", "stages": ["the first light", "the long night", "the return"], "payoff": "a book"}
+            if task == "project_plan_life" else {"work": f"Work for {task} " + "words " * 20, "feeling": "Good."})
+        a.maybe_start_project()
+        p = a.project()
+        self.assertEqual((p["title"], len(p["stages"]), p["place"]), ("Star Book", 3, "park"))
+        place = a._project_place(p)
+        self.assertIn("work_on_project", dict(a.project_actions(place)))
+        before = a.credits()
+        for i in range(3):
+            r = a.act_work_on_project({}, 5)
+            if i < 2:
+                self.assertIn("already", a.act_work_on_project({}, 5))       # once a day
+            a.db.x("UPDATE projects SET last_work=? WHERE id=?", (time.time() - 86400, p["id"]))
+        self.assertIn("finished", r)
+        self.assertIsNone(a.project())
+        self.assertEqual(a.credits(), before + 100 + 50)                     # + the first-project milestone
+        self.assertTrue(a.db.q("SELECT id FROM writings WHERE kind='project'"))
+        self.assertIsNone(a.maybe_start_project())                           # that hope has had its project
+
+    def test_visitors_remember_and_warm_up(self):
+        from town.extras import VISITORS
+        a = self.a
+        vid = list(VISITORS)[0]
+        a.db.set("visitor", {"id": vid, "building": "home", "since": time.time(), "until": time.time() + 3600, "talked": False})
+        a.set_location("home")
+        seen = []
+        a.ask = lambda system, user, task, schema=None: (seen.append(user) if task == "visitor" else None) or {
+            "conversation": "A: hi", "learned": "They map moons.", "news": "A comet is coming.", "mood": "warm"}
+        r1 = a.act_talk_to_visitor({}, 5)
+        self.assertIn("comet is coming", r1)
+        self.assertIn("first meeting", seen[0])
+        a.act_talk_to_visitor({}, 5)
+        self.assertIn("EARLIER VISITS", seen[1])
+        b = a.visitor_bonds()[vid]
+        self.assertEqual((b["visits"], b["fondness"]), (2, 62))
+        self.assertTrue(a.visitors_overview()["bonds"])
+
+    def test_every_world_has_its_own_rooms_and_pets(self):
+        from town import interiors, pets, worlds
+        moon_home = None
+        for w in worlds.ORDER:
+            worlds.set_current(w)
+            for bid in interiors.ROOMS:
+                for d in ({}, {"away": True, "floors": 3, "plants": [["e", "m", "blooming"]]}):
+                    r = interiors.interior(bid, d)
+                    used = set("".join(r["background"])) - {"."}
+                    self.assertFalse(used - set(r["palette"]), (w, bid))
+            if w == "moon":
+                moon_home = interiors.interior("home", {})["background"]
+            else:
+                self.assertNotEqual(interiors.interior("home", {})["background"], moon_home)
+            for sid in pets.SPECIES:
+                fr = pets.pet_frames(sid)
+                self.assertEqual((len(fr), len(fr[0]), len(fr[0][0])), (2, 12, 12), (w, sid))
+                self.assertFalse(set("".join(fr[0] + fr[1])) - set(sprites.PALETTE) - {"."}, (w, sid))
+        worlds.set_current("moon")
+
+    def test_voice_pace_follows_mood(self):
+        from town.tts import Voice
+        self.assertLess(Voice.pace("excited"), 1)
+        self.assertGreater(Voice.pace("sleepy and calm"), 1)
+        self.assertEqual(Voice.pace(None), 1.0)
+
+    def test_health_page_counts_calls_and_disk(self):
+        a = self.a
+        a.note_call("decide", 2.0, True); a.note_call("decide", 90.0, False)
+        h = a.health_overview()
+        self.assertEqual(h["days"][-1]["slow"], 1)
+        self.assertEqual(h["days"][-1]["errors"], 1)
+        self.assertTrue(h["disk"]["parts"])
+        self.assertIn("decide", h["by_task"])
+
+    def test_training_report_compares_both_models(self):
+        a = self.a
+        asked = []
+        a.ask = lambda system, user, task, schema=None: asked.append(a.llm.model) or {"answer": f"{a.llm.model} says hi"}
+        a.llm.model = "base:1b"
+        rep = a.probe_report("base:1b", "stellar-x:v1")
+        self.assertEqual(len(rep), 5)
+        self.assertEqual(rep[0]["before"], "base:1b says hi")
+        self.assertEqual(rep[0]["after"], "stellar-x:v1 says hi")
+        self.assertEqual(a.llm.model, "base:1b")                              # put back afterwards
+
+
 if __name__ == "__main__":
     unittest.main()

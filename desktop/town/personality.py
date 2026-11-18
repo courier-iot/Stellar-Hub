@@ -18,7 +18,7 @@ import json
 import time
 
 MAX_TASTES, MAX_CORE, MAX_QUIRKS, MAX_HOPES = 12, 7, 6, 3
-NO_PERSONA = {"exam", "grade", "quiz_grade", "code", "machine_design", "project_plan", "persona_review", "pet",
+NO_PERSONA = {"exam", "probe", "grade", "quiz_grade", "code", "machine_design", "project_plan", "persona_review", "pet",
               "identity", "summarize_chat"}
 
 REVIEW = """You are {name}, looking back over the last few days to understand yourself a little better.
@@ -245,6 +245,10 @@ class PersonalityMixin:
         for a in added:
             p["timeline"].append({"ts": now, "kind": "change", "text": a})
         self._save_persona(p)
+        try:                                        # v0.14.1: a hope can become a project
+            self.maybe_start_project()
+        except Exception:
+            pass
         if added:
             self.mem.add("reflection", "Thinking about who I'm becoming: " + "; ".join(added[:4]), "home", 6)
             self.add_event("persona", f"🌱 {self.name} grew a little", "; ".join(added[:3])[:300])

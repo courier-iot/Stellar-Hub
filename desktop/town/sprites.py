@@ -641,14 +641,50 @@ def building_sprite(bid, variant, extra=None, with_door=False):
 
 # ---------------------------------------------------------------- background
 def background():
-    """The backdrop for the current world (v0.13.5: moon, forest or ocean)."""
-    from . import worlds
+    """The backdrop for the current world (v0.13.5: moon, forest or ocean), with festival decorations (v0.14.1)."""
+    from . import festivals, worlds
     w = worlds.current()
-    if w == "forest":
-        return forest_background()
-    if w == "ocean":
-        return ocean_background()
-    return moon_background()
+    rows = forest_background() if w == "forest" else ocean_background() if w == "ocean" else moon_background()
+    f = festivals.current(w, worlds.season_id())
+    return festival_decor(rows, f["decor"], f["finale"]) if f else rows
+
+
+def festival_bg_key():
+    from . import festivals, worlds
+    f = festivals.current(worlds.current(), worlds.season_id())
+    return (worlds.current(), f["id"] if f else None)
+
+
+def festival_decor(rows, kind, finale=False):
+    """Strings of bunting, lanterns or fairy lights across the town, petals or sparkles in the air."""
+    c = Canvas(W, H)
+    c.g = [list(r) for r in rows]
+    rnd = random.Random(5)
+    span = 58
+    for x0 in range(0, W, span):                           # garlands swooping between posts above the street
+        for x in range(span):
+            y = int(GROUND_Y - 34 + 7 * math.sin(math.pi * x / span))
+            if kind in ("bunting", "lanterns", "lights"):
+                c.px(x0 + x, y, "k")
+            if kind == "bunting" and x % 6 == 3:
+                col = "rYeCm"[(x0 // span + x // 6) % 5]
+                for i in range(3):
+                    c.rect(x0 + x - 2 + i, y + 1 + i, 5 - i * 2, 1, col)
+            elif kind == "lanterns" and x % 9 == 4:
+                c.rect(x0 + x - 1, y + 1, 3, 4, "i" if "i" in PALETTE else "Y"); c.px(x0 + x, y + 2, "y"); c.px(x0 + x, y + 5, "k")
+            elif kind == "lights" and x % 4 == 2:
+                c.px(x0 + x, y + 1, "ycmw"[(x0 + x) % 4])
+    if kind in ("stars", "petals"):
+        n = 260 if finale else 140
+        for _ in range(n):
+            x, y = rnd.randrange(W), rnd.randrange(GROUND_Y + 10)
+            if kind == "petals":
+                c.px(x, y, rnd.choice("mmw")); c.px(x + 1, y + 1, "m")
+            else:
+                c.px(x, y, rnd.choice("wyq" if "q" in PALETTE else "wy"))
+                if rnd.random() < .25:
+                    c.px(x - 1, y, "t"); c.px(x + 1, y, "t"); c.px(x, y - 1, "t"); c.px(x, y + 1, "t")
+    return c.rows()
 
 
 def _sky(c):
@@ -935,8 +971,7 @@ def moon_background():
 def stars_for_twinkle():
     """Twinkling stars, only where there's open sky in the current world's backdrop."""
     global _BG
-    if _BG is None:
-        _BG = background()
+    _bg()
     rnd = random.Random(11)
     out = []
     for _ in range(240):
@@ -1023,10 +1058,22 @@ def station_sprite():
     return {"sprite": STATION, "x": 520, "y": 14}
 
 
+_BG_KEY = None
+
+
 def reset_background():
     """Called when the world changes: the backdrop is redrawn next time it's needed."""
     global _BG
     _BG = None
+
+
+def _bg():
+    """The cached backdrop, redrawn when the world or festival changes."""
+    global _BG, _BG_KEY
+    k = festival_bg_key()
+    if _BG is None or k != _BG_KEY:
+        _BG, _BG_KEY = background(), k
+    return _BG
 
 
 DECOR = {
@@ -1162,8 +1209,7 @@ def world(layout, building_states, look, extras=None):
     extras: {"plants": [...], "playing": bool, "away": bool, "decor": [...], "night": bool}"""
     global _BG
     extras = extras or {}
-    if _BG is None:
-        _BG = background()
+    _bg()
     buildings = []
     upper = extras.get("upper")
     for i in list(range(PLOTS)) + (upper_plots() if upper == "open" else []):
@@ -1220,5 +1266,5 @@ def world_version(layout, building_states, look, extras=None):
     from . import worlds
     worlds.refresh_season()
     key = [sorted((int(k), v) for k, v in (layout or {}).items()), building_states, look, extras or {}, worlds.current(),
-           worlds.season_id()]
+           worlds.season_id(), festival_bg_key()]
     return hashlib.md5(json.dumps(key, sort_keys=True).encode()).hexdigest()[:10]

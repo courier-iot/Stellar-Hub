@@ -30,7 +30,8 @@ Add-Type -AssemblyName System.Speech
 $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
 $v = $env:STELLAR_VOICE
 if ($v) { try { $s.SelectVoice($v) } catch {} }
-$s.Rate = 0
+$r = 0; if ($env:STELLAR_RATE) { $r = [int]$env:STELLAR_RATE }
+$s.Rate = $r
 $s.SetOutputToWaveFile($env:STELLAR_OUT)
 $s.Speak([Console]::In.ReadToEnd())
 $s.Dispose()
@@ -76,8 +77,19 @@ class Voice:
                 "voices": list(VOICES), "voice": self.cfg.get("piper_voice", "amy")}
 
     # ------------------------------------------------------------ speaking
-    def speak(self, text, out_path):
-        """Writes text as speech to out_path (WAV). Returns the backend used, or None."""
+    @staticmethod
+    def pace(mood):
+        """v0.14.1: speaking speed from its mood: 1.0 normal, above 1 slower, below 1 faster."""
+        m = (mood or "").lower()
+        if any(w in m for w in ("excited", "thrilled", "joy", "elated", "giddy", "eager", "playful", "festive")):
+            return 0.9
+        if any(w in m for w in ("sleepy", "tired", "calm", "sad", "wistful", "peaceful", "quiet", "melancholy", "drowsy")):
+            return 1.15
+        return 1.0
+
+    def speak(self, text, out_path, mood=None):
+        """Writes text as speech to out_path (WAV), paced by mood. Returns the backend used, or None."""
+        pace = self.pace(mood)
         text = " ".join(str(text).split())[:4000]
         if not text:
             return None
@@ -87,15 +99,17 @@ class Voice:
             try:
                 if b == "piper":
                     exe, model = self.piper()
-                    subprocess.run([exe, "--model", model, "--output_file", out_path], input=text.encode("utf-8"),
+                    subprocess.run([exe, "--model", model, "--output_file", out_path, "--length_scale", str(pace)],
+                                   input=text.encode("utf-8"),
                                    capture_output=True, timeout=180, creationflags=NO_WINDOW)
                 elif b == "windows":
-                    env = dict(os.environ, STELLAR_OUT=out_path, STELLAR_VOICE=self.cfg.get("windows_voice", ""))
+                    env = dict(os.environ, STELLAR_OUT=out_path, STELLAR_VOICE=self.cfg.get("windows_voice", ""),
+                               STELLAR_RATE=str(round((1 - pace) * 10)))
                     subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", SAPI_PS],
                                    input=text.encode("utf-8"), capture_output=True, timeout=180, env=env,
                                    creationflags=NO_WINDOW)
                 elif b == "espeak":
-                    subprocess.run(["espeak-ng", "-w", out_path, "--stdin"], input=text.encode("utf-8"),
+                    subprocess.run(["espeak-ng", "-w", out_path, "-s", str(int(165 / pace)), "--stdin"], input=text.encode("utf-8"),
                                    capture_output=True, timeout=180)
                 else:
                     return None

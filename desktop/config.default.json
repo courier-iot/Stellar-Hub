@@ -34,7 +34,8 @@
   },
   "voice": {
     "enabled": true,
-    "piper_voice": "amy"
+    "piper_voice": "amy",
+    "goodnight_log": true
   },
   "pets": {
     "enabled": true,

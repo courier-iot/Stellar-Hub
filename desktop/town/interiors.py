@@ -21,7 +21,17 @@ DOOR_X = 13            # the airlock everyone comes in through
 
 
 # ---------------------------------------------------------------- room kit
+def _skin(i):
+    """v0.15.1: the current world's version of a shared piece, or None on the Moon."""
+    from . import worlds
+    from .world_rooms import SKINS
+    s = SKINS.get(worlds.current())
+    return s[i] if s else None
+
+
 def room(c, wall, seam, trim, floor, floor2, rail=True):
+    if _skin(0):
+        return _skin(0)(c, wall, seam, trim, floor, floor2, rail)
     c.rect(0, 0, IW, WALL_TOP, "k")
     c.rect(0, WALL_TOP - 1, IW, 1, trim)
     c.rect(0, WALL_TOP, IW, FLOOR_Y - WALL_TOP, wall)
@@ -42,6 +52,8 @@ def room(c, wall, seam, trim, floor, floor2, rail=True):
 
 
 def airlock(c, lights):
+    if _skin(1):
+        return _skin(1)(c, lights)
     c.rect(3, 88, 21, 32, "k")
     c.rect(4, 89, 19, 31, "S")
     c.rect(6, 91, 15, 29, "g")
@@ -52,6 +64,8 @@ def airlock(c, lights):
 
 
 def space_window(c, x, y, w, h, seed=3, planet=False, frame="S"):
+    if _skin(2):
+        return _skin(2)(c, x, y, w, h, seed, planet, frame)
     rnd = random.Random(seed)
     c.rect(x - 1, y - 1, w + 2, h + 2, "k")
     c.rect(x, y, w, h, frame)
@@ -510,6 +524,46 @@ def r_spaceport(c, d, L):
     table(c, 32, 50, 104, "S", "g")                             # mission console
     screen(c, 36, 76, 20, 16, True, "e"); screen(c, 58, 76, 20, 16, True, "c")
     L.append([40, 80, 2, 2, "w", 650])
+    from . import worlds
+    w = worlds.current()
+    if w == "forest":                                           # v0.15.1: the trailhead into Whisper Woods
+        c.rect(96, 16, 80, 112, "g"); c.rect(98, 18, 76, 108, "a")
+        for i in range(60):
+            half = 4 + i // 2
+            c.rect(136 - half, 66 + i, half * 2, 1, "v" if i % 4 else "V")
+        for tx in (100, 112, 160, 168):
+            c.rect(tx, 18, 4, 108, "h")
+        rnd = random.Random(4)
+        for _ in range(30):
+            c.px(rnd.randrange(100, 172), rnd.randrange(20, 110), rnd.choice("qqx"))
+        if not d.get("away"):
+            c.rect(120, 104, 32, 6, "S"); c.disc(124, 112, 4, "k"); c.disc(148, 112, 4, "k")    # the explorer's cart
+            c.rect(122, 96, 28, 8, "s"); c.rect(134, 86, 2, 10, "g"); c.rect(132, 82, 6, 5, "i")
+        else:
+            sign_text(c, 116, 40, "y", "AWAY")
+        for y in range(20, 126, 16):
+            c.rect(98, y, 3, 3, "i"); c.rect(171, y, 3, 3, "i")
+        space_window(c, 190, 24, 44, 44, seed=31, planet=True)
+        return ({"console": [56, 74, "type"], "rocket": [136, 76, "sparkle"], "window": [212, 70, "sparkle"]},
+                {"start_expedition": "rocket", "read_reports": "console"}, ["console", "window", "rocket"])
+    if w == "ocean":                                            # v0.15.1: the moon pool and its submarine
+        c.rect(96, 16, 80, 112, "u"); c.rect(98, 18, 76, 108, "a")
+        for y in range(70, 126):
+            c.rect(98, y, 76, 1, "b" if y % 6 else "d")
+        c.rect(98, 70, 76, 2, "x")
+        if not d.get("away"):
+            c.disc(136, 82, 26, "y", 11); c.rect(128, 60, 14, 12, "y"); c.rect(134, 52, 2, 8, "s")
+            for px_ in (118, 136, 154):
+                c.disc(px_, 82, 4, "Y"); c.disc(px_, 82, 3, "d"); c.px(px_ - 1, 81, "i")
+            c.rect(160, 80, 6, 4, "Y")
+        else:
+            for (x, y) in ((126, 76), (136, 72), (142, 80), (130, 86)):
+                c.px(x, y, "i")
+            sign_text(c, 116, 34, "y", "AWAY")
+        c.rect(100, 22, 70, 3, "Y"); c.rect(134, 25, 2, 24, "s")    # the crane
+        space_window(c, 190, 24, 44, 44, seed=31, planet=True)
+        return ({"console": [56, 74, "type"], "rocket": [136, 50, "sparkle"], "window": [212, 70, "sparkle"]},
+                {"start_expedition": "rocket", "read_reports": "console"}, ["console", "window", "rocket"])
     c.rect(96, 16, 80, 112, "U"); c.rect(98, 18, 76, 108, "h")  # launch bay
     if not d.get("away"):
         c.disc(136, 40, 10, "w", 18); c.rect(126, 40, 21, 60, "w")   # the rocket
@@ -592,19 +646,37 @@ def r_park(c, d, L):
             c.px(x, y, "A" if y < 40 else "B" if y < 80 else "D")
     for _ in range(140):
         c.px(rnd.randrange(IW), rnd.randrange(0, 100), rnd.choice("wwsS"))
-    for x in range(IW):                                         # dome glass arc
-        y = int(6 + ((x - 120) / 120) ** 2 * 30)
-        c.px(x, y, "C")
+    from . import worlds
+    w = worlds.current()
+    if w == "moon":
+        for x in range(IW):                                     # dome glass arc
+            y = int(6 + ((x - 120) / 120) ** 2 * 30)
+            c.px(x, y, "C")
     c.disc(196, 30, 10, "s"); c.disc(193, 27, 8, "w")
+    if w == "forest":                                           # v0.15.1: a glade under the canopy
+        for _ in range(26):
+            cx, r = rnd.randrange(-10, IW + 10), rnd.randint(10, 20)
+            c.disc(cx, rnd.randrange(-4, 14), r, "a", r * .6); c.disc(cx - 2, 2, r - 5, "b", (r - 5) * .5)
+        for _ in range(30):
+            c.px(rnd.randrange(IW), rnd.randrange(30, FLOOR_Y), "q")
+    if w == "ocean":                                            # v0.15.1: a lagoon with the sea beyond
+        c.rect(0, 92, IW, FLOOR_Y - 92, "b")
+        for _ in range(60):
+            c.rect(rnd.randrange(IW), rnd.randrange(94, FLOOR_Y), 3, 1, "d")
+        c.rect(0, 92, IW, 1, "J")
+    ground, fleck = ("l", "t") if w == "ocean" else ("E", "e")
     for y in range(FLOOR_Y, IH):
         for x in range(IW):
-            c.px(x, y, "E" if (x * 3 + y * 7) % 11 else "e")
-    c.rect(0, FLOOR_Y, IW, 1, "e")
+            c.px(x, y, ground if (x * 3 + y * 7) % 11 else fleck)
+    c.rect(0, FLOOR_Y, IW, 1, fleck)
     for y in range(FLOOR_Y + 4, IH, 6):
         for x in range(rnd.randrange(3), IW, 7):
-            c.px(x, y, "e")
-    c.rect(2, 88, 22, 32, "S"); c.rect(4, 90, 18, 30, "g"); c.rect(12, 90, 1, 30, "k"); c.rect(11, 85, 5, 2, "e")
-    L.append([11, 85, 5, 2, "e", 1600])
+            c.px(x, y, fleck)
+    if w == "moon":
+        c.rect(2, 88, 22, 32, "S"); c.rect(4, 90, 18, 30, "g"); c.rect(12, 90, 1, 30, "k"); c.rect(11, 85, 5, 2, "e")
+        L.append([11, 85, 5, 2, "e", 1600])
+    else:
+        airlock(c, L)
     for tx, h, r in ((40, 64, 18), (226, 56, 15)):              # trees
         c.rect(tx - 2, BASE_Y - h + r, 5, h - r, "o")
         c.disc(tx, BASE_Y - h + r, r, "E"); c.disc(tx - 3, BASE_Y - h + r - 3, r - 5, "e")
@@ -897,7 +969,9 @@ ROOMS = {"home": (r_home, "Home Dome"), "library": (r_library, "Library"), "inte
 
 
 def interior_version(bid, data):
-    return hashlib.md5(json.dumps([bid, data, 4], sort_keys=True, default=str).encode()).hexdigest()[:10]
+    from . import worlds
+    return hashlib.md5(json.dumps([bid, data, 5, worlds.current(), worlds.season_id()], sort_keys=True,
+                                  default=str).encode()).hexdigest()[:10]
 
 
 def interior(bid, data, resident_palette=None):

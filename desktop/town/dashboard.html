@@ -245,6 +245,11 @@
     <div id="persona" style="margin-top:8px">Loading…</div>
   </section>
   <section>
+    <h2>Life projects</h2>
+    <div class="meta">When it has a hope, it turns it into a project of a few stages and works on one stage a day.</div>
+    <div id="projects" style="margin-top:8px"></div>
+  </section>
+  <section>
     <h2>How it has changed</h2>
     <div id="ptimeline" class="scroll" style="max-height:360px"></div>
   </section>
@@ -361,6 +366,10 @@
 </main>
 
 <main class="pane" data-pane="monitor">
+  <section class="wide" style="padding:14px">
+    <h2>Hub health</h2>
+    <div id="health">Loading…</div>
+  </section>
   <section class="wide" style="padding:14px">
     <h2>Colony economy</h2>
     <div class="meta">Where the credits come from and where they go. Your resident gets a short version every Monday.</div>
@@ -808,6 +817,7 @@ async function refreshInner() {
   if (s.now_playing) cap += `<br>♪ Now playing: ${esc(s.now_playing.title)} by ${esc(s.now_playing.artist)}`;
   if (s.event) cap += `<br>${esc(s.event.title)}: ${esc(s.event.about)}`;
   if (s.season) cap += `<br><span class="meta">${esc(s.season.title)} · ${s.season.days_left} day(s) left, then ${esc(s.season.next)}</span>`;
+  if (s.festival) cap += `<br><b>${esc(s.festival.title)}</b> <span class="meta">day ${s.festival.day} of ${s.festival.days} · ${esc(s.festival.about)}</span>`;
   document.getElementById("plan").innerHTML = s.map ? esc(s.map).replace(/; /g, "<br>") +
     (s.blueprints && s.blueprints.length ? `<br><br>Blueprints waiting to be built: ${esc(s.blueprints.map(b => NAMES[b] || b).join(", "))}` : "") +
     `<br><br>Sleeps ${s.sleep.bed}:00 to ${s.sleep.wake}:00` : "";
@@ -1162,6 +1172,8 @@ async function loadExtras() {
      (placed ? `<div style="margin-top:6px">${placed}</div>` : "");
   const vn = vis.now;
   document.getElementById("visitors").innerHTML = (vn ? `<div class="warnbox">🧳 ${esc(vn.name)}, ${esc(vn.who)}, is at the ${esc(NAMES[vn.building] || vn.building)} until ${when(vn.until)}</div>` : "No visitors right now.") +
+     ((vis.bonds || []).length ? `<div class="row" style="flex-wrap:wrap; gap:6px; margin:6px 0">` + vis.bonds.map(b =>
+       `<span class="tag" title="${esc(b.who)}">${b.fondness >= 75 ? "💖" : b.fondness >= 58 ? "🙂" : b.fondness < 40 ? "😐" : "👋"} ${esc(b.name)} · ${b.visits} visit(s)</span>`).join("") + `</div>` : "") +
      (vis.visits || []).map(v => `<div class="item"><b>${esc(v.visitor)}</b> <span class="meta">${when(v.ts)} · ${esc(NAMES[v.building] || v.building)}</span>
        <pre class="meta">${esc(v.talk)}</pre>${v.learned ? `<div><i>${esc(v.learned)}</i></div>` : ""}</div>`).join("");
 }
@@ -1428,6 +1440,10 @@ async function loadTrainer() {
   if (run.result && !run.active) {
     const r = run.result;
     h += `<div class="item" style="margin-top:8px">${r.ok ? "✅" : "❌"} Last run v${r.n} (${when(r.ended)}): ${r.ok ? `live · exam ${r.before}% → ${r.after}%` : esc(r.why || "didn't finish")}</div>`;
+    if ((r.report || []).length) h += `<details style="margin-top:6px" open><summary><b>Before and after</b> <span class="meta">same questions, old model vs v${r.n}</span></summary>
+      <table style="width:100%; border-collapse:collapse; font-size:13px">` + r.report.map(x => `<tr><td colspan="2" class="meta" style="padding-top:8px">${esc(x.prompt)}</td></tr>
+      <tr><td style="vertical-align:top; width:50%; padding:4px; border-left:3px solid var(--line, #444)"><span class="meta">before</span><br>${esc(x.before || "")}</td>
+      <td style="vertical-align:top; padding:4px; border-left:3px solid var(--accent, #5ef2ff)"><span class="meta">after</span><br>${esc(x.after || "")}</td></tr>`).join("") + `</table></details>`;
   }
   if ((t.run_log || []).length) h += `<details style="margin-top:6px"><summary class="meta">Run log</summary><pre class="meta scroll" style="max-height:220px">${esc(t.run_log.join("\n"))}</pre></details>`;
   const vs = (t.versions || []).slice().reverse();
@@ -1475,6 +1491,54 @@ async function loadPersona() {
   document.getElementById("ptimeline").innerHTML = (p.timeline || []).map(t => `<div class="item"><span class="meta">${when(t.ts)}</span> ${esc(t.text)}</div>`).join("") ||
     `<div class="meta">Nothing yet. Changes show up here as it grows.</div>`;
 }
+function bars(vals, labels, color, h = 60, fmt = v => v) {
+  const max = Math.max(1, ...vals.map(v => v || 0)), w = 100 / Math.max(1, vals.length);
+  return `<svg viewBox="0 0 100 ${h + 14}" preserveAspectRatio="none" style="width:100%; height:${h + 30}px">` +
+    vals.map((v, i) => `<rect x="${i * w + w * 0.15}" y="${h - (v || 0) / max * h}" width="${w * 0.7}" height="${(v || 0) / max * h}" fill="${color}"><title>${esc(labels[i])}: ${v == null ? "—" : fmt(v)}</title></rect>`).join("") +
+    `<line x1="0" y1="${h}" x2="100" y2="${h}" stroke="currentColor" stroke-opacity=".3" stroke-width=".3"/></svg>`;
+}
+const gb = b => b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : (b / 1e6).toFixed(0) + " MB";
+async function loadHealth() {
+  let h; try { h = await api("/api/health"); } catch (e) { return; }
+  const ms = h.model_status || {};
+  let out = `<div>Model <b>${esc(h.model || "?")}</b> · ${ms.ok === false ? `<span style="color:var(--bad)">${esc(ms.note || "not working")}</span>` : "working"}
+    · answers in about <b>${h.avg_s == null ? "—" : h.avg_s + " s"}</b> (last 50 calls)</div>
+    <div class="meta">AI calls today: ${h.today} of ${h.limit}${h.today > h.limit * 0.8 ? ` <span style="color:var(--warn)">(close to the daily limit)</span>` : ""}</div>`;
+  const tasks = Object.entries(h.by_task || {});
+  if (tasks.length) out += `<div class="meta">Average by kind: ${tasks.map(([k, v]) => `${esc(k)} ${v}s`).join(" · ")}</div>`;
+  out += `<h2 class="sub">AI calls per day (14 days)</h2>` + bars(h.days.map(d => d.calls), h.days.map(d => d.day), "#5ef2ff") +
+    `<h2 class="sub">Average answer time per day</h2>` + bars(h.days.map(d => d.avg_s), h.days.map(d => d.day), "#ffd86b", 50, v => v + " s");
+  const slow = h.days.reduce((a, d) => a + d.slow, 0), errs = h.days.reduce((a, d) => a + d.errors, 0);
+  if (slow || errs) out += `<div class="meta">${slow} slow answers (over a minute) and ${errs} failed calls in the last 14 days.</div>`;
+  const dk = h.disk || {parts: []};
+  out += `<h2 class="sub">Disk</h2>` + dk.parts.map(p => `<div class="row" style="gap:8px"><span style="min-width:230px">${esc(p.label)}</span>
+      <span style="flex:1; background:var(--line, #333); height:6px; border-radius:3px"><span style="display:block; width:${Math.round(100 * p.bytes / Math.max(1, dk.total))}%; height:6px; border-radius:3px; background:#ff8ad8"></span></span>
+      <span class="meta">${gb(p.bytes)}</span></div>`).join("") +
+    `<div class="meta">Stellar Hub uses ${gb(dk.total)}${dk.free != null ? ` · ${gb(dk.free)} free on this drive` : ""}</div>`;
+  const tr = h.training || [];
+  out += `<h2 class="sub">Training history</h2>` + (tr.length ? `<div class="meta">Exam score before (grey) and after (blue) each run; ✅ went live.</div>` +
+    `<svg viewBox="0 0 100 70" preserveAspectRatio="none" style="width:100%; height:110px">` + tr.map((r, i) => {
+      const w = 100 / tr.length, x = i * w;
+      return `<rect x="${x + w * .1}" y="${60 - (r.before || 0) * .6}" width="${w * .35}" height="${(r.before || 0) * .6}" fill="#777"><title>v${r.n} before: ${r.before}%</title></rect>
+        <rect x="${x + w * .5}" y="${60 - (r.after || 0) * .6}" width="${w * .35}" height="${(r.after || 0) * .6}" fill="${r.ok ? "#5ef2ff" : "#ff5d73"}"><title>v${r.n} after: ${r.after == null ? "didn't finish" : r.after + "%"}</title></rect>`; }).join("") +
+    `</svg><div class="meta">${tr.map(r => `v${r.n} ${r.ok ? "✅" : "❌"}`).join(" · ")}</div>` : `<div class="meta">No training runs yet.</div>`);
+  document.getElementById("health").innerHTML = out;
+}
+setTimeout(loadHealth, 1600); setInterval(loadHealth, 30000);
+
+async function loadProjects() {
+  let r; try { r = await api("/api/projects"); } catch (e) { return; }
+  document.getElementById("projects").innerHTML = (r.projects || []).map(p => {
+    const done = p.stages.filter(x => x.work).length, pct = Math.round(100 * done / p.stages.length);
+    const icon = p.status === "done" ? "🏁" : p.status === "active" ? "🛠️" : "💤";
+    return `<details class="item" ${p.status === "active" ? "open" : ""}><summary>${icon} <b>${esc(p.title)}</b> <span class="meta">${esc(p.kind)} · ${done}/${p.stages.length} stages${p.status === "set_aside" ? " · set aside" : ""}</span></summary>
+      <div class="meta">For the hope: ${esc(p.hope)}</div>
+      <div style="background:var(--line, #333); height:6px; border-radius:3px; margin:6px 0"><div style="width:${pct}%; height:6px; border-radius:3px; background:var(--accent, #5ef2ff)"></div></div>
+      ${p.stages.map((x, i) => `<div style="margin-top:4px">${x.work ? "✅" : i === p.current && p.status === "active" ? "▶️" : "▫️"} ${esc(x.title)}
+        ${x.work ? `<details><summary class="meta">what it made</summary><div style="white-space:pre-wrap">${esc(x.work)}</div></details>` : ""}</div>`).join("")}
+    </details>`; }).join("") || `<div class="meta">No projects yet. One starts after a personality review, from one of its hopes.</div>`;
+}
+setTimeout(loadProjects, 1300); setInterval(loadProjects, 60000);
 async function reviewPersona() {
   const r = await api("/api/persona/review", {});
   if (!r.ok) { alert(r.error || "Not right now."); return; }

@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS expeditions(
 CREATE TABLE IF NOT EXISTS paintings(
     id INTEGER PRIMARY KEY, ts REAL, title TEXT, about TEXT, size INTEGER, rows TEXT, hung TEXT, hung_ts REAL);
 CREATE TABLE IF NOT EXISTS writings(id INTEGER PRIMARY KEY, ts REAL, kind TEXT, title TEXT, text TEXT);
+CREATE TABLE IF NOT EXISTS projects(id INTEGER PRIMARY KEY, ts REAL, title TEXT, kind TEXT, hope TEXT, place TEXT,
+    stages TEXT, current INTEGER, status TEXT, last_work REAL, finished REAL, payoff TEXT);
 CREATE TABLE IF NOT EXISTS compositions(
     id INTEGER PRIMARY KEY, ts REAL, title TEXT, mood TEXT, melody TEXT, bass TEXT, bpm INTEGER, wave TEXT, seconds REAL);
 CREATE TABLE IF NOT EXISTS quizzes(

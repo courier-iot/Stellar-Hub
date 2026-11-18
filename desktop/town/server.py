@@ -311,6 +311,8 @@ def make_server(agent, host, port, pair_code):
                       "/api/training": agent.training_summary,
                       "/api/trainer": agent.trainer_status,
                       "/api/persona": agent.persona_view,
+                      "/api/projects": lambda: {"projects": agent.projects(), "festival": agent.festival()},
+                      "/api/health": agent.health_overview,
                       "/api/training/exam": lambda: {"questions": agent.exam(), "runs": (agent.db.get("exam_runs") or [])[-5:],
                                                      "running": getattr(agent, "_exam_running", False)},
                       "/api/training/corrections": lambda: {"corrections": agent.corrections()},

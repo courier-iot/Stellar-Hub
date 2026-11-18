@@ -62,7 +62,17 @@ Reply as JSON: {{"title": "<short show title>", "script": "<what you say>", "son
 VISITOR_PROMPT = """You are writing a short scene for {name}, a young AI living in a space colony.
 A visitor is at the {place}: {vname}, {vwho}. {name} talks with them. Write the conversation (4-8 short lines,
 "Name: line" format), true to {name}'s personality, then what {name} took away from it.
-Reply as JSON: {{"conversation": "<the lines>", "learned": "<one sentence>", "mood": "<one word>"}}"""
+{vname} remembers earlier visits (listed below, if any): let them call back to something from before, naturally,
+and bring a bit of news from their travels. How warmly they act depends on how they feel about {name}.
+Reply as JSON: {{"conversation": "<the lines>", "learned": "<one sentence>", "news": "<one sentence of news they brought, or empty>",
+ "mood": "<one word for how the visit went>"}}"""
+WARM = {"warm", "happy", "joyful", "cheerful", "friendly", "fun", "delighted", "kind", "excited", "grateful", "cozy", "cosy",
+        "playful", "hopeful", "glad", "lovely", "great", "good", "curious", "inspired", "touching", "sweet"}
+COLD = {"awkward", "tense", "sad", "cold", "angry", "bored", "annoyed", "upset", "rushed", "distant", "strained"}
+
+GOODNIGHT_PROMPT = """You are {name}, about to go to sleep. Record a short goodnight log for {creator}, to be spoken
+aloud: 2-4 sentences about the best part of today, one thing on your mind, and goodnight. Your own voice, no stage
+directions. Reply as JSON: {{"log": "..."}}"""
 
 GIFT_POEM_PROMPT = """You are {name}, a young AI in a space colony, writing a short poem (4-10 lines) as a gift for your
 creator, {creator}. Make it personal: draw on the memories given. Reply as JSON: {{"title": "...", "poem": "..."}}"""
@@ -189,12 +199,34 @@ class ExtrasMixin:
 
         def work():
             path = os.path.join(self.audio_dir(), f"{aid}.wav")
-            ok = self.voice().speak(text, path)
+            try:
+                mood = self.mood_word()
+            except Exception:
+                mood = None
+            ok = self.voice().speak(text, path, mood)          # v0.14.1: paced by its mood
             self.db.x("UPDATE audio SET status=?, file=? WHERE id=?", ("ready" if ok else "failed", path if ok else None, aid))
             if ok:
                 self.add_event("voice", f"🔊 {title}", text[:300], aid)
         threading.Thread(target=work, daemon=True).start()
         return aid
+
+    def goodnight_log(self):
+        """v0.14.1: a short spoken log as it goes to bed (once a night), sent to the phone like other logs."""
+        if not self.cfg.get("voice", {}).get("goodnight_log", True) or not self.voice().backend():
+            return None
+        if self.db.get("goodnight_date") == self._today() or not self.db.get("name"):
+            return None
+        self.db.set("goodnight_date", self._today())
+        mems = self.db.q("SELECT content FROM memories WHERE ts > ? AND kind IN ('observation','journal') ORDER BY importance DESC LIMIT 8",
+                         (time.time() - 18 * 3600,))
+        out = self.ask(GOODNIGHT_PROMPT.format(name=self.name, creator=self.creator),
+                       "TODAY:\n" + "\n".join(f"- {m['content'][:200]}" for m in mems), "goodnight")
+        text = str(out.get("log", "")).strip()[:800]
+        if not text:
+            return None
+        bid = self.db.x("INSERT INTO broadcasts(ts, text) VALUES(?,?)", (time.time(), text))
+        self.add_event("log", f"🌙 {self.name}'s goodnight log", text, bid)
+        return self.speak_async("log", f"🌙 {self.name}'s goodnight log", text, bid)
 
     def audio_list(self, limit=30):
         return self.db.q("SELECT id, ts, kind, title, text, status FROM audio ORDER BY id DESC LIMIT ?", (limit,))
@@ -315,11 +347,15 @@ class ExtrasMixin:
             self.mem.add("observation", f"{VISITORS[v['id']]['name']} left the colony.", v["building"], 3)
         return None
 
-    def maybe_visitor(self):
+    def maybe_visitor(self, force=False):
         chance = 0.05 * self.tick_scale() * (1 + 0.15 * len(self.exhibits()))      # Museum exhibits draw more visitors
-        if self.visitor_now() or random.random() > chance:     # about two or three visits a week at 30-minute turns
+        if self.festival():
+            chance *= 2                                       # v0.14.1: festivals draw a crowd
+        if self.visitor_now() or (not force and random.random() > chance):   # about two or three visits a week
             return
-        vid = random.choice(list(VISITORS))
+        bonds = self.visitor_bonds()                          # v0.14.1: visitors who like it come back more often
+        ids = list(VISITORS)
+        vid = random.choices(ids, [1 + bonds.get(i, {}).get("fondness", 50) / 50 for i in ids])[0]
         v = VISITORS[vid]
         places = [b for b in v["likes"] if self.is_built(b)] or [b for b in ("park", "library", "post_office") if self.is_built(b)] or ["home"]
         b = random.choice(places)
@@ -333,23 +369,60 @@ class ExtrasMixin:
         now = dict(v, name=VISITORS[v["id"]]["name"], who=VISITORS[v["id"]]["who"]) if v else None
         visits = [dict(r, visitor=VISITORS.get(r["visitor"], {}).get("name", r["visitor"]))
                   for r in self.db.q("SELECT * FROM visits ORDER BY id DESC LIMIT 20")]
-        return {"now": now, "visits": visits}
+        bonds = [dict(b, id=k, name=VISITORS[k]["name"], who=VISITORS[k]["who"]) for k, b in self.visitor_bonds().items() if k in VISITORS]
+        return {"now": now, "visits": visits, "bonds": sorted(bonds, key=lambda b: -b["fondness"])}
+
+    # v0.14.1: visitors remember. How each one feels about the resident, built up visit by visit.
+    def visitor_bonds(self):
+        return self.db.get("visitor_bonds") or {}
+
+    def update_visitor_bond(self, vid, mood):
+        bonds = self.visitor_bonds()
+        b = bonds.get(vid, {"fondness": 50, "trust": 50, "visits": 0})
+        d = 6 if mood in WARM else -5 if mood in COLD else 2
+        b["fondness"] = max(0, min(100, b["fondness"] + d))
+        b["trust"] = min(100, b["trust"] + 3)
+        b["visits"] += 1
+        b["last"] = time.time()
+        b["last_mood"] = mood[:20]
+        bonds[vid] = b
+        self.db.set("visitor_bonds", bonds)
+        if b["visits"] in (3, 10):
+            self.add_event("visitor", f"🤝 {VISITORS[vid]['name']} keeps coming back", f"{b['visits']} visits now")
+        return b
 
     def act_talk_to_visitor(self, a, imp):
         v = self.visitor_now()
         if not v or v["building"] != self.db.get("location"):
             return "There's no visitor here right now."
         info = VISITORS[v["id"]]
-        ctx = f"WHO {self.name.upper()} IS:\n{self.personality()}\n\nWHAT'S ON ITS MIND: {self.db.get('goals', [])}"
+        bond = self.visitor_bonds().get(v["id"], {"fondness": 50, "trust": 50, "visits": 0})
+        past = self.db.q("SELECT ts, talk, learned FROM visits WHERE visitor=? ORDER BY id DESC LIMIT 3", (v["id"],))
+        feel = ("very fond of" if bond["fondness"] >= 75 else "fond of" if bond["fondness"] >= 58 else
+                "a little cool towards" if bond["fondness"] < 40 else "friendly with")
+        ctx = (f"WHO {self.name.upper()} IS:\n{self.personality()}\n\nWHAT'S ON ITS MIND: {self.db.get('goals', [])}\n\n"
+               f"{info['name'].upper()} HAS MET {self.name.upper()} {bond['visits']} TIME(S) BEFORE and is {feel} them.\n"
+               + ("EARLIER VISITS:\n" + "\n".join(f"- {r['learned'] or ''} | {(r['talk'] or '')[:220]}" for r in past) if past else "This is their first meeting."))
         out = self.ask(VISITOR_PROMPT.format(name=self.name, place=BUILDINGS[v["building"]]["name"], vname=info["name"],
                                              vwho=info["who"]), ctx, "visitor")
         talk = str(out.get("conversation", "")).strip()[:1500]
         learned = str(out.get("learned", "")).strip()[:300]
+        news = str(out.get("news", "")).strip()[:300]
+        self.update_visitor_bond(v["id"], str(out.get("mood", "")).lower())
         self.db.x("INSERT INTO visits(ts, visitor, building, talk, learned) VALUES(?,?,?,?,?)",
                   (time.time(), v["id"], v["building"], talk, learned))
         extra = ""
-        if not v.get("talked") and random.random() < 0.35:
-            extra = " Before we parted, they gave me something: " + self.find_curio(f"{info['name']}'s pack")
+        fond = self.visitor_bonds().get(v["id"], {}).get("fondness", 50)
+        if not v.get("talked") and random.random() < 0.2 + fond / 250:      # fonder visitors bring gifts more often
+            if fond >= 70 and random.random() < 0.3:
+                gift = random.randint(10, 30)
+                self.earn(gift, f"a gift from {info['name']}")
+                extra = f" Before we parted, they pressed {gift} credits into my hand, \"for the colony\"."
+            else:
+                extra = " Before we parted, they gave me something: " + self.find_curio(f"{info['name']}'s pack")
+        if news:
+            extra += f" They had news: {news}"
+            self.mem.add("observation", f"News from {info['name']}: {news}", v["building"], 5)
         v["talked"] = True
         self.db.set("visitor", v)
         self.add_event("visitor", f"💬 {self.name} talked with {info['name']}", (learned or talk)[:300])
@@ -548,6 +621,7 @@ class ExtrasMixin:
 
     def extra_news(self):
         news = list(self.pet_news()) + list(self.workshop_news()) + list(self.people_news()) + list(self.money_news())
+        news += self.festival_news() + self.project_news()                  # v0.14.1
         w = self.weather()
         if w == "dust_storm":
             news.append("WEATHER: a dust storm has closed the walkway. You can only do things where you are until it clears.")
@@ -593,6 +667,7 @@ class ExtrasMixin:
         v = self.visitor_now()
         if v and v["building"] == bid:
             out.append(("talk_to_visitor", f"{{}}  talk with {VISITORS[v['id']]['name']}, who is visiting here"))
+        out += self.festival_actions(bid) + self.project_actions(bid)       # v0.14.1
         return out
 
     def daily_extras(self):

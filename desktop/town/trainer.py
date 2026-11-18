@@ -41,15 +41,23 @@ BASES = {
     "llama3.2:1b": ("unsloth/Llama-3.2-1B-Instruct", 1.2), "llama3.2:3b": ("unsloth/Llama-3.2-3B-Instruct", 3.2),
     "llama3.1:8b": ("unsloth/Meta-Llama-3.1-8B-Instruct", 8.0),
 }
+PROBES = [   # v0.14.1: asked to the old and new model after every run, so you can see what changed
+    "Introduce yourself in two or three sentences.",
+    "What's your favourite place in the colony, and why?",
+    "How has your week been?",
+    "What do you hope for?",
+    "Your creator says: hello, I missed you today. Reply to them.",
+]
 STRENGTH = {"gentle": {"epochs": 1, "lr": 1e-4, "rank": 8}, "normal": {"epochs": 2, "lr": 1.5e-4, "rank": 16},
             "strong": {"epochs": 3, "lr": 2e-4, "rank": 16}}
 STAGES = ["check", "exam_before", "examples", "rest", "download", "load", "prepare", "train", "save", "convert",
-          "create", "exam_after", "decide", "done"]
+          "create", "exam_after", "report", "decide", "done"]
 STAGE_LABELS = {"check": "Checking everything's ready", "exam_before": "Exam on today's model", "examples": "Building examples",
                 "rest": "Resting so the graphics card is free", "download": "Downloading the base model (first time only)",
                 "load": "Loading the base model", "prepare": "Preparing examples", "train": "Training",
                 "save": "Saving the adapter", "convert": "Converting for Ollama", "create": "Making the new model",
-                "exam_after": "Exam on the new model", "decide": "Deciding", "done": "Finished"}
+                "exam_after": "Exam on the new model", "report": "Comparing old and new answers",
+                "decide": "Deciding", "done": "Finished"}
 
 
 def base_key(model):
@@ -397,6 +405,9 @@ class TrainerMixin:
             finally:
                 self.llm.model = live
             result["after"] = after.get("score")
+            # before/after report: the same questions to both models
+            self._set_run(stage="report")
+            result["report"] = self.probe_report(live, tag)
             self._rlog(f"Exam on v{n}: {after.get('score')}% (pass mark {st['pass_mark']}%, before {before.get('score')}%)")
             # 7. decide
             self._set_run(stage="decide")
@@ -436,6 +447,27 @@ class TrainerMixin:
                 self.ensure_model(force=True)
             except Exception:
                 pass
+
+    def probe_report(self, old_model, new_model):
+        """Asks both models the same few questions, in the resident's own voice."""
+        system = (f"You are {self.name}, a self-developing AI who lives in Stellar Hub, made by {self.creator}. "
+                  "Answer in your own voice, briefly. Reply ONLY with JSON: {\"answer\": \"...\"}")
+        out = []
+        keep = getattr(self.llm, "model", None)
+        try:
+            for q in PROBES:
+                row = {"prompt": q}
+                for key, model in (("before", old_model), ("after", new_model)):
+                    self.llm.model = model
+                    try:
+                        a = self.ask(system, q, "probe")
+                        row[key] = str(a.get("answer", a) if isinstance(a, dict) else a)[:700]
+                    except Exception as e:
+                        row[key] = f"(couldn't answer: {str(e)[:120]})"
+                out.append(row)
+        finally:
+            self.llm.model = keep
+        return out
 
     def _run_worker(self, cmd):
         """Runs the trainer, following its progress lines. Returns the base model's folder."""

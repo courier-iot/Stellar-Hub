@@ -268,6 +268,10 @@ class LifeMixin:
         if self.db.get("dreamed") == night_key:
             return {"building": "home", "action": "sleep", "thought": "", "result": "Asleep."}
         self.db.set("dreamed", night_key)
+        try:
+            self.goodnight_log()                 # v0.14.1: a spoken goodnight log
+        except Exception:
+            pass
         mems = self.db.q("SELECT kind, content FROM memories WHERE ts > ? AND kind != 'dream' ORDER BY id DESC LIMIT 40",
                          (time.time() - 86400,))
         ctx = f"WHO YOU ARE:\n{self.personality()}\n\nYOUR DAY:\n" + "\n".join(f"- {m['content'][:200]}" for m in reversed(mems))
@@ -406,6 +410,9 @@ class LifeMixin:
         from . import worlds
         worlds.refresh_season()
         per_week = self.cfg.get("events_per_week", 4) * worlds.season()["event_rate"]   # v0.13.6: seasons
+        f = self.festival()
+        if f and f["finale"]:
+            per_week *= 2                                  # v0.14.1: the special season's finale
         turns_per_week = 7 * 16 * 60 / max(5, self.cfg["tick_minutes"])
         if random.random() < per_week / turns_per_week:
             self.start_space_event(random.choices(list(EVENT_TYPES), [e["weight"] for e in EVENT_TYPES.values()])[0])

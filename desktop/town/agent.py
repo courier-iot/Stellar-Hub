@@ -22,6 +22,9 @@ from .economy import EconomyMixin
 from .training import TrainingMixin
 from .personality import PersonalityMixin
 from .trainer import TrainerMixin
+from .festivals import FestivalMixin
+from .projects import ProjectsMixin
+from .health import HealthMixin
 from .hobbies import HobbiesMixin, level_for
 from .life import LifeMixin
 from .plants import SPECIES as PLANT_SPECIES
@@ -34,7 +37,7 @@ class BudgetExceeded(Exception):
     pass
 
 
-class Agent(PersonalityMixin, TrainerMixin, ExtrasMixin, MonitorMixin, DevicesMixin, EconomyMixin, TrainingMixin, StyleMixin, WorkshopMixin, MuseumMixin, PetsMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
+class Agent(PersonalityMixin, TrainerMixin, FestivalMixin, ProjectsMixin, HealthMixin, ExtrasMixin, MonitorMixin, DevicesMixin, EconomyMixin, TrainingMixin, StyleMixin, WorkshopMixin, MuseumMixin, PetsMixin, ColonyMixin, LifeMixin, HobbiesMixin, ExchangeMixin):
     def __init__(self, cfg, db, llm, data_dir):
         self.cfg, self.db, self.llm = cfg, db, llm
         self.data_dir = data_dir
@@ -119,16 +122,24 @@ class Agent(PersonalityMixin, TrainerMixin, ExtrasMixin, MonitorMixin, DevicesMi
     def ask(self, system, user, task, schema=None):
         if self._usage()["llm_calls"] >= self.cfg["limits"]["llm_calls_per_day"]:
             raise BudgetExceeded("Daily AI-call limit reached.")
-        if task != "exam" and self.training_active():
+        if task not in ("exam", "probe") and self.training_active():
             raise BudgetExceeded("Resting while it trains.")    # v0.14: the graphics card is busy learning
         self._bump("llm_calls")
         system = system + self.persona_note(task)       # v0.14: who it is, in its own words
-        if schema:
-            try:
-                return self.llm.chat_json(system, user, task=task, schema=schema)
-            except TypeError:             # a model backend without schema support
-                pass
-        return self.llm.chat_json(system, user, task=task)
+        t0, ok = time.time(), False
+        try:
+            if schema:
+                try:
+                    out = self.llm.chat_json(system, user, task=task, schema=schema)
+                    ok = True
+                    return out
+                except TypeError:             # a model backend without schema support
+                    pass
+            out = self.llm.chat_json(system, user, task=task)
+            ok = True
+            return out
+        finally:
+            self.note_call(task, time.time() - t0, ok)    # v0.14.1: for the health page
 
     def decision_schema(self):
         """The answer's shape for this turn: "building" can only be a place it can go right now, and "action" only
@@ -397,6 +408,7 @@ What do you do now?"""
                 return self._special_turn(self.sleep_turn())
             self.space_event()          # ends an event that has run its course
             self.maybe_space_event()
+            self.festival_turn()        # v0.14.1: opens a festival the first time it's seen
             self.maybe_digest()
             self.resolve_auctions()
             self.plan_day_if_new()
@@ -998,6 +1010,7 @@ What do you do now?"""
             "hour": datetime.datetime.now().hour,
             "sleep": self.bedtime(), "night": self.is_night(), "daylight": self.daylight(),
             "chat": bool(self.chat_state()), "event": self.space_event(), "season": worlds.season(),
+            "festival": self.festival(),
             "blueprints": self.blueprints(), "map": self.map_text(),
             "last_backup": self.db.get("last_backup"), "model": self.model_status,
             "in_orbit": self.db.get("location") == "station" and bool((self.db.get("last_turn") or 0) > time.time() - 30 * 60),
