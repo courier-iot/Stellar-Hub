@@ -53,6 +53,18 @@ DAY_MILESTONES = [(7, "One week old", 15), (30, "One month old", 40), (100, "100
 CREDIT_MILESTONES = [(100, "Saved 100 credits", 10), (500, "Saved 500 credits", 25), (1500, "Saved 1,500 credits", 50)]
 
 
+def clean_chat_reply(text, name, people=()):
+    """v0.15: plain speech only: drops *action* narration, and lines it wrote as if someone else were speaking."""
+    import re
+    t = re.sub(r"\*[^*\n]{1,160}\*", "", text)
+    t = re.sub(r"^\s*" + re.escape(name) + r"\s*:\s*", "", t.strip())
+    others = [p for p in people if p and p.lower() != name.lower()]
+    if others:
+        pat = re.compile(r"^\s*(" + "|".join(re.escape(p) for p in others) + r")\s*:", re.I)
+        t = "\n".join(l for l in t.splitlines() if not pat.match(l))
+    return " ".join(t.split()).strip()
+
+
 class LifeMixin:
     # ================================================================ plots
     def layout(self):
@@ -339,7 +351,8 @@ class LifeMixin:
         ctx = (f"WHO YOU ARE:\n{self.personality()}\nYou are {where}.{about}\nRECENT MEMORIES:\n{recent}\n\n"
                f"MEMORIES THAT MIGHT BE RELATED:\n{related}\n\nCONVERSATION SO FAR:\n{history}\n\n{self.name}:")
         out = self.ask(prompts.CHAT.format(name=self.name, creator=self.creator), ctx, "chat")
-        reply = str(out.get("reply", "")).strip()[:2000] or "…"
+        everyone = set(present) | {self.creator} | {p["name"] for p in self.people()}
+        reply = clean_chat_reply(str(out.get("reply", "")), self.name, everyone)[:2000] or "…"
         st = self.chat_state() or st
         st["messages"].append({"who": "resident", "text": reply, "ts": time.time()})
         st["messages"] = st["messages"][-40:]

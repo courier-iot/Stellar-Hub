@@ -21,8 +21,17 @@ PIPER_ZIP = "piper_windows_amd64.zip" if IS_WIN else "piper_linux_x86_64.tar.gz"
 VOICES = {   # name: Hugging Face path under rhasspy/piper-voices
     "amy": "en/en_US/amy/medium/en_US-amy-medium",
     "ryan": "en/en_US/ryan/medium/en_US-ryan-medium",
+    "lessac": "en/en_US/lessac/medium/en_US-lessac-medium",
+    "joe": "en/en_US/joe/medium/en_US-joe-medium",
     "alba": "en/en_GB/alba/medium/en_GB-alba-medium",
+    "cori": "en/en_GB/cori/medium/en_GB-cori-medium",
+    "jenny": "en/en_GB/jenny_dioco/medium/en_GB-jenny_dioco-medium",
+    "northern": "en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium",
 }
+VOICE_ABOUT = {"amy": "American, warm (female)", "ryan": "American, clear (male)", "lessac": "American, bright (female)",
+               "joe": "American, relaxed (male)", "alba": "Scottish (female)", "cori": "English, soft (female)",
+               "jenny": "English, cheerful (female)", "northern": "Northern English (male)"}
+SAMPLE_BASE = "https://rhasspy.github.io/piper-samples/samples/"   # short recordings of each voice, to hear before downloading
 VOICE_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/"
 
 SAPI_PS = r"""[Console]::InputEncoding = [Text.Encoding]::UTF8
@@ -43,6 +52,7 @@ class Voice:
         self.dir = os.path.join(data_dir, "piper")
         self.cfg = cfg
         self.install_state = None
+        self.last_error = None
         self.lock = threading.Lock()
 
     # ------------------------------------------------------------ which voice
@@ -53,9 +63,10 @@ class Voice:
                 if p and os.path.exists(p):
                     exe = p
                     break
-        want = self.cfg.get("piper_voice", "amy")
+        want = os.path.basename(VOICES.get(self.cfg.get("piper_voice", "amy"), "amy"))
         models = sorted(glob.glob(os.path.join(self.dir, "*.onnx")))
-        model = next((m for m in models if want in os.path.basename(m)), models[0] if models else None)
+        model = next((m for m in models if os.path.basename(m) == want + ".onnx"),
+                     next((m for m in models if want in os.path.basename(m)), models[0] if models else None))
         return (exe, model) if exe and model else (None, None)
 
     def backend(self):
@@ -72,9 +83,40 @@ class Voice:
     def status(self):
         b = self.backend()
         names = {"piper": "Piper (natural voice)", "windows": "Windows built-in voice", "espeak": "espeak-ng", None: "none"}
+        exe, model = self.piper()
+        have = self.installed_voices()
+        if b == "piper" and model:
+            names["piper"] = f"Piper: {next((v for v, p in VOICES.items() if os.path.basename(p) in model), 'custom')}"
         return {"backend": b, "name": names[b], "enabled": self.cfg.get("enabled", True),
-                "piper_installed": bool(self.piper()[0]), "install": self.install_state,
-                "voices": list(VOICES), "voice": self.cfg.get("piper_voice", "amy")}
+                "piper_installed": bool(exe), "install": self.install_state,
+                "voices": [{"id": v, "about": VOICE_ABOUT.get(v, ""), "installed": v in have,
+                            "sample": SAMPLE_BASE + p.rsplit("/", 1)[0] + "/speaker_0.mp3"} for v, p in VOICES.items()],
+                "voice": self.cfg.get("piper_voice", "amy"), "last_error": self.last_error}
+
+    def installed_voices(self):
+        files = {os.path.basename(m) for m in glob.glob(os.path.join(self.dir, "*.onnx"))}
+        return [v for v, p in VOICES.items() if os.path.basename(p) + ".onnx" in files]
+
+    def install_voice(self, voice):
+        """v0.15: download another voice for an installed Piper (no need to reinstall Piper)."""
+        if voice not in VOICES or voice in self.installed_voices():
+            return self.install_state
+        if self.install_state and self.install_state.get("running"):
+            return self.install_state
+        self.install_state = {"running": True, "step": f"Downloading the {voice} voice…"}
+
+        def go():
+            try:
+                os.makedirs(self.dir, exist_ok=True)
+                path = VOICES[voice]
+                name = os.path.basename(path)
+                self._download(VOICE_BASE + path + ".onnx", os.path.join(self.dir, name + ".onnx"))
+                self._download(VOICE_BASE + path + ".onnx.json", os.path.join(self.dir, name + ".onnx.json"))
+                self.install_state = {"running": False, "step": f"The {voice} voice is ready ✓", "ok": True}
+            except Exception as e:
+                self.install_state = {"running": False, "step": f"Couldn't download the {voice} voice", "error": str(e)}
+        threading.Thread(target=go, daemon=True).start()
+        return self.install_state
 
     # ------------------------------------------------------------ speaking
     @staticmethod
@@ -99,10 +141,16 @@ class Voice:
             try:
                 if b == "piper":
                     exe, model = self.piper()
-                    subprocess.run([exe, "--model", model, "--output_file", out_path, "--length_scale", str(pace)],
-                                   input=text.encode("utf-8"),
-                                   capture_output=True, timeout=180, creationflags=NO_WINDOW)
-                elif b == "windows":
+                    r = subprocess.run([exe, "--model", model, "--output_file", out_path, "--length_scale", str(pace)],
+                                       input=text.encode("utf-8"),
+                                       capture_output=True, timeout=180, creationflags=NO_WINDOW)
+                    if os.path.exists(out_path) and os.path.getsize(out_path) > 100:
+                        self.last_error = None
+                    else:                         # v0.15: say why, and fall back to the built-in voice for now
+                        err = (r.stderr or b"").decode("utf-8", "replace").strip().splitlines()
+                        self.last_error = "Piper couldn't speak: " + (err[-1][:200] if err else f"exit {r.returncode}")
+                        b = "windows" if IS_WIN else ("espeak" if shutil.which("espeak-ng") else None)
+                if b == "windows":
                     env = dict(os.environ, STELLAR_OUT=out_path, STELLAR_VOICE=self.cfg.get("windows_voice", ""),
                                STELLAR_RATE=str(round((1 - pace) * 10)))
                     subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", SAPI_PS],

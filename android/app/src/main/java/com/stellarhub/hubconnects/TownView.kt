@@ -90,6 +90,9 @@ class TownView(context: Context) : View(context) {
     private val viewW get() = minOf(worldW, 320)
     private var camX = -1f
     private var dragLastX = 0f
+    private var downX = 0f
+    private var downY = 0f
+    private var dragged = false
     private var manualUntil = 0L
 
     // where the resident is and what it's doing
@@ -120,6 +123,7 @@ class TownView(context: Context) : View(context) {
 
     /** Asks the app to fetch a room from the hub (GET /api/interior/<id>), then hand it to setRoom. */
     var onNeedRoom: ((String) -> Unit)? = null
+    var onBuildingTap: ((String) -> Unit)? = null     // v0.15: tap a building to read about it
     /** Called when the view goes inside or back outside, so the app can update its buttons. */
     var onViewChanged: (() -> Unit)? = null
     /** Follow the resident into buildings automatically. */
@@ -435,12 +439,24 @@ class TownView(context: Context) : View(context) {
         if (inside) return true
         val scale = width.toFloat() / viewW
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { dragLastX = event.x; manualUntil = Long.MAX_VALUE }
+            MotionEvent.ACTION_DOWN -> {
+                dragLastX = event.x; downX = event.x; downY = event.y; dragged = false; manualUntil = Long.MAX_VALUE
+            }
             MotionEvent.ACTION_MOVE -> {
+                if (abs(event.x - downX) > 12 * resources.displayMetrics.density) dragged = true
                 camX = (camX - (event.x - dragLastX) / scale).coerceIn(0f, (worldW - viewW).toFloat())
                 dragLastX = event.x
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> manualUntil = SystemClock.uptimeMillis() + 6000
+            MotionEvent.ACTION_UP -> {
+                manualUntil = SystemClock.uptimeMillis() + 6000
+                if (!dragged) {                                  // a tap, not a drag: which building is under it?
+                    val wx = camX.roundToInt() + event.x / scale
+                    val wy = event.y / scale
+                    buildings.lastOrNull { wx >= it.x && wx < it.x + it.bitmap.width && wy >= it.y && wy < it.y + it.bitmap.height }
+                        ?.let { onBuildingTap?.invoke(it.id) }
+                }
+            }
+            MotionEvent.ACTION_CANCEL -> manualUntil = SystemClock.uptimeMillis() + 6000
         }
         return true
     }

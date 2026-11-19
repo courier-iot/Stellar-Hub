@@ -142,6 +142,11 @@
 </main>
 
 <main class="pane" data-pane="colony">
+  <section class="wide">
+    <h2>Building guide</h2>
+    <div class="meta">What every building is for, and what your resident can do there. (In Hub Connect S, tap a building.)</div>
+    <div id="bguide" style="margin-top:8px"></div>
+  </section>
   <section>
     <h2>Buildings</h2>
     <div id="buildings"></div>
@@ -1158,13 +1163,23 @@ async function loadExtras() {
        <span class="meta">${f.completes}✓ ${f.skips}⏭</span></div>`).join("") :
      "Share your listening from Stellar Disc in the Hub Connect S app (Hub tab), and it learns what you love.";
   const inst = voi.install || {};
-  document.getElementById("voice").innerHTML = `Voice: <b>${esc(voi.name)}</b>${voi.enabled ? "" : " (off)"}<br>
+  const vs = voi.voices || [];
+  document.getElementById("voice").innerHTML = `Speaking with: <b>${esc(voi.name)}</b>${voi.enabled ? "" : " (off)"}<br>
      Spoken colony logs and radio shows are sent to your phone. Speech is made on this computer.
-     ${voi.piper_installed ? "" : `<div class="row"><button class="ghost" onclick="voiceInstall()">Install natural voice (Piper, ~80 MB)</button>
-       <select id="pipervoice">${voi.voices.map(v => `<option ${v === voi.voice ? "selected" : ""}>${v}</option>`).join("")}</select></div>`}
+     <div class="meta" style="margin-top:6px">Natural voices (Piper). Press ▶ to hear a sample before choosing:</div>
+     ${vs.map(v => `<div class="row" style="gap:6px; margin:2px 0">
+       <label style="min-width:210px"><input type="radio" name="pipervoice" value="${esc(v.id)}" ${v.id === voi.voice ? "checked" : ""}
+         onchange="voiceSet({piper_voice: this.value})"> <b>${esc(v.id)}</b> <span class="meta">${esc(v.about)}</span></label>
+       <button class="ghost" onclick="playSample('${esc(v.sample)}', this)">▶ sample</button>
+       <span class="meta">${v.installed ? "downloaded" : ""}</span></div>`).join("")}
+     ${voi.piper_installed ? `<div class="meta">Choosing a voice you haven't used yet downloads it (about 60 MB).</div>`
+       : `<div class="row"><button onclick="voiceInstall()">Install Piper with the chosen voice (~80 MB)</button></div>
+          <div class="meta">Until Piper is installed, the computer's built-in voice is used.</div>`}
      ${inst.step ? `<div class="${inst.error ? "err" : "meta"}">${esc(inst.step)}${inst.error ? ": " + esc(inst.error) : ""}</div>` : ""}
-     <div class="row"><button class="ghost" onclick="voiceTest()" ${voi.backend ? "" : "disabled"}>Test voice</button>
-       <button class="ghost" onclick="voiceSet({enabled: ${!voi.enabled}})">${voi.enabled ? "Turn voice off" : "Turn voice on"}</button></div>`;
+     <div class="row"><button class="ghost" onclick="voiceTest()" ${voi.backend ? "" : "disabled"}>Test the voice it uses now</button>
+       <button class="ghost" onclick="voiceSet({enabled: ${!voi.enabled}})">${voi.enabled ? "Turn voice off" : "Turn voice on"}</button></div>
+     <div id="voicetest" class="meta"></div>`;
+  if (inst.running) setTimeout(() => { loadExtras.last = null; loadExtras(); }, 3000);
   const owned = Object.entries(dec.owned || {}).map(([k, n]) => `${k.replace(/_/g, " ")} ×${n}`).join(", ");
   const placed = Object.entries(dec.placed || {}).filter(([b, s]) => Object.keys(s).length).map(([b, s]) =>
      `<div><b>${esc(NAMES[b] || b)}</b>: ${Object.entries(s).map(([sl, it]) => `${sl} ${esc(it.replace(/_/g, " "))}`).join(", ")}</div>`).join("");
@@ -1248,9 +1263,33 @@ async function loadMuseum() {
 }
 async function petBrain() { await api("/api/pets/brain", {}); loadPets.last = null; setTimeout(loadPets, 800); }
 
-async function voiceInstall() { const v = document.getElementById("pipervoice"); if (v) await api("/api/voice/settings", {piper_voice: v.value});
-  await api("/api/voice/install", {}); loadExtras.last = null; setTimeout(loadExtras, 500); }
-async function voiceTest() { await api("/api/voice/test", {}); alert("Recording a test… it shows up under Radio Tower → Radio shows & spoken logs in a few seconds."); }
+async function voiceInstall() { await api("/api/voice/install", {}); loadExtras.last = null; setTimeout(loadExtras, 500); }
+let sampleAudio = null;
+function playSample(url, btn) {
+  if (sampleAudio) { sampleAudio.pause(); }
+  sampleAudio = new Audio(url);
+  btn.textContent = "… loading";
+  sampleAudio.oncanplay = () => btn.textContent = "■ playing";
+  sampleAudio.onended = () => btn.textContent = "▶ sample";
+  sampleAudio.onerror = () => btn.textContent = "couldn't load (no internet?)";
+  sampleAudio.play().catch(() => btn.textContent = "couldn't play");
+}
+async function voiceTest() {   // v0.15: plays right here once it's recorded, and says which voice made it
+  const box = document.getElementById("voicetest");
+  const r = await api("/api/voice/test", {});
+  if (!r.ok) { box.textContent = "No voice is available yet."; return; }
+  box.textContent = `Recording with ${r.backend}…`;
+  for (let i = 0; i < 40; i++) {
+    await new Promise(ok => setTimeout(ok, 1000));
+    const a = ((await api("/api/audio")).audio || []).find(x => x.id === r.id);
+    if (a && a.status === "ready") {
+      const st = await api("/api/voice");
+      box.innerHTML = (st.last_error ? `<div class="err">${esc(st.last_error)} The built-in voice was used instead.</div>` : `Recorded with ${esc(r.backend)}:`) +
+        ` <audio controls autoplay src="/api/audio/${r.id}.wav"></audio>`; return; }
+    if (a && a.status === "failed") { box.textContent = `Recording with ${r.backend} failed. Check the install message above.`; return; }
+  }
+  box.textContent = "Still recording… it will show up under Radio Tower → spoken logs.";
+}
 async function voiceSet(v) { await api("/api/voice/settings", v); loadExtras.last = null; loadExtras(); }
 
 async function loadPairing() {
@@ -1273,8 +1312,13 @@ async function loadDevices() {
         <button class="ok" onclick="setDevice(${dv.id}, {status: 'active', role: document.getElementById('joinrole-${dv.id}').value})">Approve</button>
         <button class="deny" onclick="setDevice(${dv.id}, {status: 'removed'})">Decline</button></div></div>`
     : `<div class="item"><b>📱 ${esc(dv.name)}</b> ${pick(dv)} <span class="meta">${esc(dv.platform || "phone")} · last seen ${when(dv.last_seen)}</span>
+        <label class="meta" title="Who your resident thinks it's talking to"><input type="checkbox" ${dv.is_creator ? "checked" : ""}
+          onchange="setDevice(${dv.id}, {is_creator: this.checked})"> this is me (its creator)</label>
         <button class="ghost" onclick="if (confirm('Remove ${esc(dv.name)}\'s device? It will need to join again.')) setDevice(${dv.id}, {status: 'removed'})">Remove</button></div>`
   ).join("") || `<div class="meta">No phones yet.</div>`;
+  const devs = (d.devices || []).filter(x => x.status === "active");
+  if (devs.filter(x => x.is_creator).length > 1 && new Set(devs.filter(x => x.is_creator).map(x => x.name.toLowerCase())).size > 1)
+    document.getElementById("devices").insertAdjacentHTML("afterbegin", `<div class="warnbox">More than one username is marked as you. Your resident treats them all as the same person: untick anyone who isn't you.</div>`);
 }
 async function setDevice(id, change) { await api(`/api/devices/${id}`, change); loadDevices.last = null; loadDevices(); }
 setTimeout(loadDevices, 1200); setInterval(loadDevices, 10000);
@@ -1525,6 +1569,16 @@ async function loadHealth() {
   document.getElementById("health").innerHTML = out;
 }
 setTimeout(loadHealth, 1600); setInterval(loadHealth, 30000);
+
+async function loadGuide() {   // v0.15: building guide
+  let r; try { r = await api("/api/buildings"); } catch (e) { return; }
+  document.getElementById("bguide").innerHTML = r.buildings.map(b => `<details class="item"><summary><b>${esc(b.name)}</b>
+      <span class="tag ${b.status === "Open" ? "" : "pending"}">${esc(b.status)}</span></summary>
+      <div style="margin:4px 0">${esc(b.about)}</div>
+      ${b.does.length ? `<div class="meta">There it can:</div><ul style="margin:2px 0 6px 18px; padding:0">${b.does.map(d => `<li>${esc(d)}</li>`).join("")}</ul>` : ""}
+    </details>`).join("");
+}
+setTimeout(loadGuide, 1400); setInterval(loadGuide, 120000);
 
 async function loadProjects() {
   let r; try { r = await api("/api/projects"); } catch (e) { return; }

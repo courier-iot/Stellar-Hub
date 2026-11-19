@@ -135,8 +135,12 @@ def make_server(agent, host, port, pair_code):
 
         @property
         def person(self):
-            """The speaker's name for the resident, or None when it's the creator (the owner)."""
-            return None if self.role == "owner" else (self.who or {}).get("name")
+            """The speaker's name for the resident, or None when it's the creator.
+            v0.15: decided per person (Hub tab → this is me), not by the owner role, so two owners stay two people."""
+            if (self.who or {}).get("local"):
+                return None
+            name = (self.who or {}).get("name")
+            return None if agent.is_creator(name) else name
 
         def _join(self, body):
             ip = self.client_address[0]
@@ -311,6 +315,7 @@ def make_server(agent, host, port, pair_code):
                       "/api/training": agent.training_summary,
                       "/api/trainer": agent.trainer_status,
                       "/api/persona": agent.persona_view,
+                      "/api/buildings": lambda: {"buildings": agent.buildings_guide()},
                       "/api/projects": lambda: {"projects": agent.projects(), "festival": agent.festival()},
                       "/api/health": agent.health_overview,
                       "/api/training/exam": lambda: {"questions": agent.exam(), "runs": (agent.db.get("exam_runs") or [])[-5:],
@@ -442,6 +447,10 @@ def make_server(agent, host, port, pair_code):
             m = re.fullmatch(r"/api/devices/(\d+)", path)
             if m:
                 ok = agent.update_device(int(m.group(1)), body.get("role"), body.get("status"), body.get("name"))
+                if ok and "is_creator" in body:
+                    d = agent.db.q("SELECT name FROM devices WHERE id=?", (int(m.group(1)),))
+                    if d:
+                        agent.set_is_creator(d[0]["name"], bool(body["is_creator"]))
                 return self._json({"ok": ok, "devices": agent.devices_list()})
             if path == "/api/phone/music":
                 tracks = body.get("tracks")
@@ -461,12 +470,15 @@ def make_server(agent, host, port, pair_code):
                 if path.endswith("test"):
                     aid = agent.speak_async("test", "🔊 Voice test", f"Hello, {agent.creator}. This is {agent.name}, "
                                             "testing the radio. Can you hear me?")
-                    return self._json({"ok": bool(aid), "id": aid})
+                    return self._json({"ok": bool(aid), "id": aid, "backend": agent.voice().status()["name"]})
                 from .config import save_setting
                 for k in ("enabled", "piper_voice"):
                     if k in body:
                         save_setting(agent.cfg, "voice", k, body[k])
-                return self._json(agent.voice().status())
+                v = agent.voice()
+                if "piper_voice" in body and v.piper()[0] and body["piper_voice"] not in v.installed_voices():
+                    v.install_voice(body["piper_voice"])           # v0.15: switching voices after Piper is installed
+                return self._json(v.status())
             if path == "/api/training/settings":
                 return self._json({"settings": agent.set_training_settings(body)})
             if path == "/api/training/review":

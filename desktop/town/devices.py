@@ -73,7 +73,9 @@ class DevicesMixin:
         return d
 
     def devices_list(self):
-        return [{k: d[k] for k in ("id", "name", "role", "status", "created", "last_seen", "platform")}
+        me = set(self.creator_names())
+        return [dict({k: d[k] for k in ("id", "name", "role", "status", "created", "last_seen", "platform")},
+                     is_creator=d["name"].lower() in me or d["name"].lower() == self.creator.lower())
                 for d in self.db.q("SELECT * FROM devices WHERE status != 'removed' ORDER BY status='pending' DESC, id")]
 
     def update_device(self, did, role=None, status=None, name=None):
@@ -95,12 +97,28 @@ class DevicesMixin:
         return True
 
     # ------------------------------------------------------------ people the resident knows
+    def creator_names(self):
+        """v0.15: which usernames are the creator. Owner only means 'can manage the hub' now: a second person can be an
+        owner and still be their own person. Until the owner says, the first owner device to join is the creator."""
+        names = self.db.get("creator_names")
+        if names is None:
+            first = self.db.q("SELECT name FROM devices WHERE status='active' AND role='owner' ORDER BY id LIMIT 1")
+            names = [first[0]["name"].lower()] if first else []
+        return [n.lower() for n in names]
+
+    def set_is_creator(self, name, yes):
+        names = set(self.creator_names())
+        (names.add if yes else names.discard)(str(name).lower())
+        self.db.set("creator_names", sorted(names))
+        if not yes:
+            d = self.db.q("SELECT role FROM devices WHERE lower(name)=? AND status='active'", (str(name).lower(),))
+            self.meet_person(name, d[0]["role"] if d else "member")
+
     def people(self):
         """Everyone with an approved device, other than its creator."""
         out = {}
-        owners = {d["name"].lower() for d in self.db.q("SELECT name FROM devices WHERE status='active' AND role='owner'")}
         for d in self.db.q("SELECT name, role, last_seen FROM devices WHERE status='active'"):
-            if d["name"].lower() == self.creator.lower() or d["name"].lower() in owners:
+            if self.is_creator(d["name"]):
                 continue
             p = out.setdefault(d["name"], {"name": d["name"], "role": d["role"], "last_seen": d["last_seen"] or 0})
             if ROLES.index(d["role"]) < ROLES.index(p["role"]):
@@ -111,7 +129,7 @@ class DevicesMixin:
     def is_creator(self, who):
         if not who or who.lower() == self.creator.lower():
             return True
-        return bool(self.db.q("SELECT id FROM devices WHERE lower(name)=? AND role='owner' AND status='active'", (who.lower(),)))
+        return who.lower() in self.creator_names()
 
     def meet_person(self, name, role):
         if self.is_creator(name):

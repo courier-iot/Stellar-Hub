@@ -2,6 +2,14 @@
 
 Stellar Hub's update manager shows the entries newer than the version you have.
 
+## v0.15.1
+- Added: hear every voice before choosing. Hub tab → Voice lists eight natural voices (amy, ryan, lessac, joe, alba, cori, jenny, northern), each with a ▶ sample button, and stays visible after Piper is installed. Picking a new voice downloads just that voice.
+- Added: a building guide. Colony tab → Building guide, and in Hub Connect S, tap any building in the town to see what it is, whether it's open, and what your resident can do there.
+- Added: "this is me (its creator)" for each username in Hub tab → Phones, so your resident knows who is who.
+- Changed: "Test voice" now plays the recording right on the dashboard and says which voice made it. If Piper fails, it explains why and uses the built-in voice instead of failing silently.
+- Changed: owner is now only about managing the hub. A second person with the owner role is treated as their own person, not as the creator; by default, the first owner to join is the creator.
+- Changed: in live chat, every person is kept separate, and the resident speaks only as itself: no *actions in asterisks*, no lines written as someone else, and no play-acting about who's who.
+
 ## v0.15.0
 - Added: a before-and-after report for every training run: the same five questions answered by the old model and the new one, side by side in the Training tab (kept for runs that didn't go live too).
 - Added: festivals. Every season in every world has one (the 12th-14th): Seedling Day, Sunfire Fair, Harvest Moon and Long Night Lights on the Moon; the Blossom Dance, Firefly Night, Lantern Festival and Frostlight Vigil in the forest; the Shell Gathering, Summer Regatta, Harvest of the Tides and Beacon Night on the ocean. Each special season ends with a 4-day finale (the 20th-23rd: The Great Starfall, Night of a Thousand Wisps, The Great Tide) with twice the events. Decorations go up across the town (bunting, lanterns, fairy lights, petals or sparkles), a visitor and the festival's signature event arrive, and the resident can celebrate once a day for credits and keepsakes.

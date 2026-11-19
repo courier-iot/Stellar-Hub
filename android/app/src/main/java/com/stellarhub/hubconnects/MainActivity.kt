@@ -160,6 +160,7 @@ class MainActivity : Activity() {
         town = TownView(this)
         town.follow = prefs.getBoolean("follow", true)
         town.onNeedRoom = { id -> fetchRoom(id) }
+        town.onBuildingTap = { id -> showBuilding(id) }
         town.onViewChanged = { updateViewButtons() }
         root.addView(town, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         // controls right under the colony: take a turn, step inside / outside, follow on or off
@@ -342,6 +343,33 @@ class MainActivity : Activity() {
         bgTask({ it.post("/api/turn") }) {
             toast("Your resident is taking a turn…")
             main.postDelayed({ pollStatus() }, 1500)
+        }
+    }
+
+    // v0.15: tap a building in the town to read what it is and what happens there
+    private fun showBuilding(id: String) {
+        val a = api ?: return
+        side.execute {
+            try {
+                val list = a.getObject("/api/buildings").getJSONArray("buildings")
+                val b = (0 until list.length()).map { list.getJSONObject(it) }.firstOrNull { it.optString("id") == id } ?: return@execute
+                val does = b.optJSONArray("does")
+                val sb = StringBuilder(b.optString("about"))
+                sb.append("\n\n").append(b.optString("status"))
+                if (does != null && does.length() > 0) {
+                    sb.append("\n\nThere it can:")
+                    for (i in 0 until does.length()) sb.append("\n• ").append(does.optString(i))
+                }
+                main.post {
+                    if (!isFinishing) android.app.AlertDialog.Builder(this)
+                        .setTitle(b.optString("name"))
+                        .setMessage(sb.toString())
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            } catch (e: Exception) {
+                main.post { toast("Couldn't load that building") }
+            }
         }
     }
 

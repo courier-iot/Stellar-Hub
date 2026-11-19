@@ -779,6 +779,33 @@ What do you do now?"""
         self.db.set("unlocked", sorted(set(self.db.get("unlocked", [])) - {bid}))
         return False
 
+    def buildings_guide(self):
+        """v0.15: every building's name, description, state and what happens there, for you to read."""
+        import re as _re
+        states = self.building_states()
+        out = []
+        for bid, b in BUILDINGS.items():
+            st = states.get(bid, "open")
+            built = self.is_built(bid)
+            if self.is_locked(bid):
+                status = f"Locked: unlocks for {b.get('unlock_price', '?')} credits" if b.get("unlockable") else "Locked"
+            elif bid in self.constructions():
+                status = "Being built"
+            elif not built:
+                status = "Not built yet" + (f" (an add-on to the {BUILDINGS[b['upgrade_of']]['name']})" if b.get("upgrade_of") else "")
+            else:
+                status = {"closed": "Closed right now", "construction": "Being built"}.get(st, "Open")
+            does = []
+            for act, desc in (b.get("actions") or {}).items():
+                text = _re.sub(r"\{[^{}]*\}", "", str(desc).split("  ", 1)[-1]).strip(" .;:")
+                text = _re.sub(r"\s+", " ", text).split(". Items:")[0].strip()
+                if text:
+                    does.append(text[0].upper() + text[1:])
+            out.append({"id": bid, "name": b["name"], "about": _re.sub(r"\{[^{}]*\}", "", b.get("about", "")).strip(),
+                        "status": status, "built": built, "does": does[:10],
+                        "part_of": BUILDINGS[b["upgrade_of"]]["name"] if b.get("upgrade_of") else None})
+        return out
+
     def building_states(self):
         out = {}
         cons = self.constructions()

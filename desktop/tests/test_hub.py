@@ -568,7 +568,7 @@ class LivelierColony(unittest.TestCase):
         self.assertIn("celebrate", dict(a.festival_actions("home")))
         before = a.credits()
         self.assertIn("celebrated", a.act_celebrate({"how": "shared soup"}, 5))
-        self.assertEqual(a.credits(), before + 20 + 25)                      # + the first-festival milestone
+        self.assertGreaterEqual(a.credits(), before + 20 + 25)              # + the first-festival milestone (+ maybe a keepsake)
         self.assertIn("already", a.act_celebrate({}, 5))
         self.assertFalse(a.festival_actions("home"))
 
@@ -632,6 +632,42 @@ class LivelierColony(unittest.TestCase):
                 self.assertEqual((len(fr), len(fr[0]), len(fr[0][0])), (2, 12, 12), (w, sid))
                 self.assertFalse(set("".join(fr[0] + fr[1])) - set(sprites.PALETTE) - {"."}, (w, sid))
         worlds.set_current("moon")
+
+    def test_two_owners_are_two_people(self):
+        a = self.a
+        for n, name in enumerate(("Courier", "Sam")):
+            a.db.x("INSERT INTO devices(name, token_hash, role, status, created) VALUES(?,?,?,?,?)", (name, f"h{n}", "owner", "active", n))
+        self.assertTrue(a.is_creator("Courier"))                          # the first owner is the creator by default
+        self.assertFalse(a.is_creator("Sam"))                              # a second owner is their own person
+        self.assertEqual([p["name"] for p in a.people()], ["Sam"])
+        a.set_is_creator("Sam", True)
+        self.assertTrue(a.is_creator("Sam"))
+        a.set_is_creator("Sam", False)
+        self.assertFalse(a.is_creator("Sam"))
+        self.assertEqual({d["name"]: d["is_creator"] for d in a.devices_list()}, {"Courier": True, "Sam": False})
+        a.ask = lambda system, user, task, schema=None: {"reply": "*twinkles at Sam* Hello Sam!\nCourier: hi"}
+        r = a.chat_say("hi there", who="Sam")
+        self.assertEqual(r, "Hello Sam!")
+        self.assertEqual(a.chat_state()["messages"][0]["name"], "Sam")
+
+    def test_building_guide_lists_every_building(self):
+        from town import worlds
+        g = self.a.buildings_guide()
+        self.assertEqual(len(g), len(BUILDINGS))
+        home = next(b for b in g if b["id"] == "home")
+        self.assertEqual(home["status"], "Open")
+        self.assertTrue(home["does"] and not any("{" in d for d in home["does"]))
+        worlds.set_current("forest")
+        self.assertEqual(next(b for b in self.a.buildings_guide() if b["id"] == "home")["name"], "Sprout House")
+
+    def test_voice_choices_can_be_heard_and_changed(self):
+        from town.tts import Voice
+        v = Voice(tempfile.mkdtemp(), {"enabled": True, "piper_voice": "ryan"})
+        st = v.status()
+        self.assertGreaterEqual(len(st["voices"]), 6)
+        self.assertTrue(all(x["sample"].startswith("https://") and x["sample"].endswith(".mp3") for x in st["voices"]))
+        self.assertEqual(st["voice"], "ryan")
+        self.assertFalse(any(x["installed"] for x in st["voices"]))
 
     def test_voice_pace_follows_mood(self):
         from town.tts import Voice
